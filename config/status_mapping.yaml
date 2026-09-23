@@ -1,0 +1,28 @@
+# Соответствие наших исходов статусам в системе заказчика (ТЗ, «Интеграция» ->
+# «Соответствие статусов»). Значения partner_status — из словаря заглушки fake_partner
+# (new | on_call | on_review | rejected | manual_decision | approved); для реального
+# партнёра словарь будет другим — меняется только здесь, не в коде.
+
+rejected_a:
+  partner_status: rejected
+  comment_template: "Отказ на стадии А. Причина: {reason_code}."
+
+ocr_failed:
+  partner_status: on_call
+  comment_template: "Не удалось распознать фото паспорта — нужно перефотографировать или внести данные вручную при звонке."
+
+to_operator:
+  partner_status: on_call
+  comment_template: "Передано оператору на звонок. {summary}"
+
+rejected_b:
+  partner_status: rejected
+  comment_template: "Отказ на стадии Б. Причина: {reason_code}."
+
+gray_zone:
+  partner_status: manual_decision
+  comment_template: "Требуется решение оператора. {summary}"
+
+approved:
+  partner_status: approved
+  comment_template: "Одобрено: сумма {approved_amount}, срок {approved_term} мес., тариф {offered_tariff}, первый взнос {required_down_pay}."

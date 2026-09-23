@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.DS_Store
+node_modules/
+frontend/dist/
+
+# Настоящие выгрузки реестров (ФИО, паспорта) никогда не попадают в репозиторий —
+# только .gitkeep, сами файлы кладёт оператор (см. docs/registries.md)
+data/registries/*
+!data/registries/.gitkeep

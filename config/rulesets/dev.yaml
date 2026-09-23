@@ -1,0 +1,114 @@
+# Начальный конфиг для разработки — по образцу из ТЗ, раздел «Конфиг правил и пороги».
+# Пороги — стартовые допущения (см. там же, «Начальные значения»), уточняются после
+# разбора исторических данных заказчика.
+version: 1
+comment: "Начальная версия для разработки (T06)"
+effective_from: 2026-01-01
+
+ocr:
+  min_confidence_key_fields: 0.85 # серия, номер, ФИО, дата рождения
+
+sources:
+  rosfinmon:
+    name_match_min_similarity: 0.7 # нечёткий поиск по перечням (pg_trgm)
+  registries:
+    max_staleness_days: 2 # алерт, если реестр МВД/Росфинмониторинга старше
+  passport:
+    # Выключено: справочник "регион выдачи -> код подразделения" пока
+    # иллюстративный (не настоящие данные МВД) — см. открытые вопросы T08.
+    department_code_check_enabled: false
+
+# Стадия А: только жёсткие стоп-факторы, без БКИ
+hard_stops:
+  - id: age_min
+    field: age
+    op: lt
+    value: 21
+    reason: AGE_BELOW_MIN
+  - id: passport_format_invalid
+    field: passport_format_valid
+    op: eq
+    value: false
+    reason: PASSPORT_FORMAT_INVALID
+  - id: passport_expired
+    field: passport_expired
+    op: eq
+    value: true
+    reason: PASSPORT_EXPIRED
+  - id: passport_issue_date_invalid
+    field: passport_issue_date_invalid
+    op: eq
+    value: true
+    reason: PASSPORT_ISSUE_DATE_INVALID
+  - id: passport_invalid
+    field: checks.mvd.status
+    op: eq
+    value: hit
+    reason: PASSPORT_INVALID
+  - id: sanctions
+    field: checks.rosfinmon.status
+    op: eq
+    value: hit
+    reason: SANCTIONS_HIT
+    freeze: true
+  - id: blacklist
+    field: checks.blacklist.status
+    op: eq
+    value: hit
+    reason: BLACKLISTED
+  - id: fssp_credit_debt
+    field: features.fssp_credit_debt_amount
+    op: gt
+    value: 50000
+    reason: FSSP_CREDIT_DEBT
+
+# Стадия Б: до запроса БКИ
+stage_b_pre_bki:
+  - id: sharia_goods
+    field: goods.sharia_allowed
+    op: eq
+    value: false
+    reason: GOODS_NOT_ALLOWED
+
+# Стадия Б: после получения КИ
+soft_rules:
+  - id: pti_high
+    field: features.pti
+    op: gt
+    value: 0.55
+    action: manual_review
+    reason: PTI_HIGH
+  - id: fssp_minor
+    field: features.fssp_total_amount
+    op: between
+    value: [5000, 50000]
+    action: manual_review
+
+limits:
+  amount_min: 15000
+  amount_max: 500000
+  term_min: 3
+  term_max: 24
+  pti_max: 0.60
+  declared_income_cap: 80000 # потолок неподтверждённого дохода
+
+bki:
+  cache_days: 30
+  on_unavailable: manual_review
+
+score_thresholds:
+  enabled: true
+  auto_approve_above: 700
+  auto_reject_below: 450
+
+matrix:
+  - when: {amount_gt: 200000}
+    override: {auto_approve_above: 780}
+  - when: {goods_liquidity: low}
+    override: {auto_approve_above: 760, require_down_payment: 0.20}
+  - when: {is_repeat: true, prior_defaults: 0}
+    override: {auto_approve_above: 650}
+
+antifraud:
+  max_applications_per_phone_30d: 3
+  duplicate_window_days: 30

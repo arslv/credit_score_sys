@@ -1,0 +1,155 @@
+import os
+import asyncio
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+
+# Тесты всегда работают с отдельной базой (текущая БД + суффикс "_test"),
+# а не с той, что задана для api/worker — чтобы не задеть данные приложения.
+_base_db_url = os.environ.get(
+    "DATABASE_URL", "postgresql+asyncpg://dialog:dialog@localhost:5432/dialog"
+)
+_parts = urlsplit(_base_db_url)
+_test_db_name = _parts.path.lstrip("/") + "_test"
+os.environ["DATABASE_URL"] = _parts._replace(path=f"/{_test_db_name}").geturl()
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")
+
+# Быстрые повторы для тестов адаптера интеграции — иначе реальный экспоненциальный
+# backoff растянул бы тесты на секунды. lru_cache в get_settings() читает env один
+# раз за процесс, поэтому значения нужно выставить до первого импорта app.config.
+os.environ.setdefault("INTEGRATION_RETRY_MAX_ATTEMPTS", "3")
+os.environ.setdefault("INTEGRATION_RETRY_BASE_DELAY_SECONDS", "0.05")
+os.environ.setdefault("INTEGRATION_RETRY_MAX_DELAY_SECONDS", "0.2")
+
+import asyncpg
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+
+async def _ensure_test_database() -> None:
+    from app.config import get_settings
+
+    parts = urlsplit(get_settings().database_url.replace("+asyncpg", ""))
+    db_name = parts.path.lstrip("/")
+
+    conn = await asyncpg.connect(
+        host=parts.hostname,
+        port=parts.port or 5432,
+        user=parts.username,
+        password=parts.password,
+        database="postgres",
+    )
+    try:
+        # Каждый прогон тестов стартует с чистой базы: так проверка
+        # "миграции применяются на чистой БД" остаётся честной раз за разом.
+        await conn.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE datname = $1 AND pid <> pg_backend_pid()",
+            db_name,
+        )
+        await conn.execute(f'DROP DATABASE IF EXISTS "{db_name}"')
+        await conn.execute(f'CREATE DATABASE "{db_name}"')
+    finally:
+        await conn.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def apply_migrations():
+    asyncio.run(_ensure_test_database())
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=BACKEND_DIR,
+        check=True,
+    )
+    yield
+
+
+@pytest_asyncio.fixture
+async def client():
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture
+async def db_session():
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    from app.config import get_settings
+
+    # Собственный движок на тест: pytest-asyncio даёт каждому тесту свой event
+    # loop, а закэшированный в app.db глобальный движок привязан к своему loop'у.
+    engine = create_async_engine(get_settings().database_url)
+    try:
+        async with engine.connect() as conn:
+            trans = await conn.begin()
+            session = AsyncSession(bind=conn, expire_on_commit=False)
+            try:
+                yield session
+            finally:
+                await session.close()
+                await trans.rollback()
+    finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def session_factory():
+    """Настоящий sessionmaker (без обёртки rollback) для кода, который сам
+    управляет своими транзакциями — например, адаптер интеграции."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.config import get_settings
+
+    engine = create_async_engine(get_settings().database_url)
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        yield maker
+    finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def partner_admin():
+    """Прямой httpx-клиент к fake_partner для служебных /_test/ эндпоинтов —
+    не часть PartnerClient, только для подготовки данных в тестах."""
+    import httpx
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    client = httpx.AsyncClient(
+        base_url=settings.partner_base_url,
+        headers={"Authorization": f"Bearer {settings.partner_token}"},
+        timeout=10.0,
+    )
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+@pytest_asyncio.fixture
+async def partner_client():
+    from app.config import get_settings
+    from app.integrations.fake_partner_client import FakePartnerClient
+
+    settings = get_settings()
+    client = FakePartnerClient(settings.partner_base_url, settings.partner_token)
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+@pytest.fixture
+def storage(tmp_path):
+    from app.storage.local import LocalDirectoryStorage
+
+    return LocalDirectoryStorage(str(tmp_path))

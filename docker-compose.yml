@@ -1,0 +1,109 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dialog}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dialog}
+      POSTGRES_DB: ${POSTGRES_DB:-dialog}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dialog}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
+      PARTNER_TOKEN: ${FAKE_PARTNER_TOKEN:-dev-token}
+      STORAGE_DIR: /data/storage
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}
+    volumes:
+      - storage_data:/data/storage
+      - ./config:/app/config:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fake_partner:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
+      PARTNER_TOKEN: ${FAKE_PARTNER_TOKEN:-dev-token}
+      STORAGE_DIR: /data/storage
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}
+      REGISTRIES_DIR: /data/registries
+    volumes:
+      - storage_data:/data/storage
+      - ./config:/app/config:ro
+      # Сюда оператор кладёт свежевыгруженные файлы реестров вручную/полуавтоматически
+      # (docs/registries.md) — bind mount, а не именованный volume, чтобы к каталогу
+      # был обычный файловый доступ (scp/rsync) с хоста.
+      - ./data/registries:/data/registries:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fake_partner:
+        condition: service_healthy
+    command: celery -A app.celery_app worker --loglevel=info
+
+  beat:
+    build: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
+      PARTNER_TOKEN: ${FAKE_PARTNER_TOKEN:-dev-token}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app beat --loglevel=info
+
+  # Заглушка системы заказчика для локальной разработки — их реальный API пока неизвестен.
+  fake_partner:
+    build: ./fake_partner
+    environment:
+      FAKE_PARTNER_TOKEN: ${FAKE_PARTNER_TOKEN:-dev-token}
+    ports:
+      - "8100:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db_data:
+  storage_data:
