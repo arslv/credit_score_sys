@@ -138,10 +138,14 @@ class RegistriesConfig(BaseModel):
 class PassportSourceConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Справочник «регион выдачи серии -> код подразделения» пока иллюстративный
-    # (не настоящие данные МВД) — включать только после загрузки реального
-    # справочника, иначе флаг случаен и вводит оператора в заблуждение.
+    # Справочник кодов подразделений — hflabs/fms-unit (config/reference/fms_unit.csv,
+    # см. docs/registries.md и config/reference/fms_unit.SOURCE.md).
     department_code_check_enabled: bool
+    # Дата выдачи раньше года бланка (цифры 3-4 серии) или позже него больше чем
+    # на N лет — флаг оператору (bланки не лежат на складе десятилетиями), не
+    # автоотказ. Год бланка позже текущего года — отдельный hard_stop
+    # PASSPORT_BLANK_YEAR_FUTURE (структурно невалидная серия, не порог конфига).
+    blank_year_max_issue_offset_years: int = Field(ge=0)
 
 
 class SourcesConfig(BaseModel):

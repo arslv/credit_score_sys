@@ -15,7 +15,10 @@ def _config(effective_from: str) -> RulesetConfig:
             "sources": {
                 "rosfinmon": {"name_match_min_similarity": 0.7},
                 "registries": {"max_staleness_days": 2},
-                "passport": {"department_code_check_enabled": False},
+                "passport": {
+                    "department_code_check_enabled": False,
+                    "blank_year_max_issue_offset_years": 3,
+                },
             },
             "limits": {
                 "amount_min": 15000,

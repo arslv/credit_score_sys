@@ -7,7 +7,9 @@ _DEFAULT_VALUES = {
     "birth_date": "1990-01-15",
     "birth_place": "г. Тестоград",
     "gender": "male",
-    "passport_series": "1234",
+    # Год бланка "00" -> 2000 (безопасно в прошлом для любых обозримых дат теста,
+    # T08) и регион "77" совпадает с department_code по умолчанию ниже.
+    "passport_series": "7700",
     "passport_number": "567890",
     "issue_date": "2015-03-10",
     "issued_by": "УМВД России по тестовому региону",

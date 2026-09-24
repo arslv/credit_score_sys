@@ -44,7 +44,7 @@ async def test_run_ocr_creates_ocr_result_above_threshold(db_session):
     stored = await db_session.get(OcrResult, outcome.ocr_result_id)
     assert stored.provider == "fake"
     assert stored.fields["below_threshold"] is False
-    assert stored.fields["fields"]["passport_series"]["value"] == "1234"
+    assert stored.fields["fields"]["passport_series"]["value"] == "7700"
     assert float(stored.min_confidence) == 0.97
 
 

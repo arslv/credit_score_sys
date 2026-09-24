@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     # вручную/полуавтоматически, см. app/registries/downloader.py
     registries_dir: str = "/data/registries"
     registries_sync_interval_seconds: int = 86400  # ежесуточно, как публикуют источники
+    # local — читает файлы из registries_dir (по умолчанию, надёжный вариант);
+    # http — качает по URL из *_registry_url. Рабочие URL не подтверждены (см.
+    # app/registries/downloader.py) — просто так переключать в http нельзя.
+    registries_downloader: str = "local"
+    mvd_registry_url: str = ""
+    rosfinmon_registry_url: str = ""
+
+    # Справочник кодов подразделений (T08) — hflabs/fms-unit, статичный файл,
+    # не синхронизируется периодически (см. docs/registries.md).
+    department_codes_path: str = "config/reference/fms_unit.csv"
 
 
 @lru_cache

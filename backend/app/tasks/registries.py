@@ -7,7 +7,7 @@ from app.celery_app import celery_app
 from app.config import get_settings
 from app.db import new_sessionmaker
 from app.models import RegistrySyncLog
-from app.registries.downloader import LocalFileDownloader
+from app.registries.downloader import HttpDownloader, LocalFileDownloader, RegistryDownloader
 from app.registries.jobs import sync_invalid_passports, sync_sanctions_list
 from app.registries.sync import RegistrySyncError
 
@@ -44,10 +44,21 @@ async def _sync_one(session_factory, downloader, registry: str) -> str:
         return "download_error"
 
 
+def _build_downloader(settings) -> RegistryDownloader:
+    if settings.registries_downloader == "http":
+        return HttpDownloader(
+            {
+                "mvd_invalid_passports": settings.mvd_registry_url,
+                "rosfinmon_sanctions": settings.rosfinmon_registry_url,
+            }
+        )
+    return LocalFileDownloader(settings.registries_dir)
+
+
 async def _run() -> dict[str, str]:
     settings = get_settings()
     engine, session_factory = new_sessionmaker()
-    downloader = LocalFileDownloader(settings.registries_dir)
+    downloader = _build_downloader(settings)
 
     summary: dict[str, str] = {}
     try:

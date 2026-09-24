@@ -6,10 +6,7 @@ from sqlalchemy import select, text
 
 from app.models import InvalidPassport, RegistrySyncLog
 from app.registries.sync import RegistrySyncError, atomic_registry_reload, is_registry_stale
-
-
-def _unique_series() -> str:
-    return str(uuid.uuid4().int % 10000).zfill(4)
+from tests.conftest import unique_valid_passport_series
 
 
 async def _temp_tables(session_factory, target_table: str) -> list[str]:
@@ -25,7 +22,7 @@ async def _temp_tables(session_factory, target_table: str) -> list[str]:
 
 
 async def test_successful_sync_replaces_content_and_leaves_no_temp_tables(session_factory):
-    series = _unique_series()
+    series = unique_valid_passport_series()
     rows = [
         {"passport_series": series, "passport_number": "111111", "loaded_at": datetime.now(timezone.utc)}
     ]
@@ -56,7 +53,7 @@ async def test_successful_sync_replaces_content_and_leaves_no_temp_tables(sessio
 
 
 async def test_sync_failure_does_not_clobber_previous_version(session_factory):
-    series_ok = _unique_series()
+    series_ok = unique_valid_passport_series()
     # Сначала успешная загрузка — она играет роль «предыдущей версии».
     await atomic_registry_reload(
         session_factory,

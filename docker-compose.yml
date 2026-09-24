@@ -61,6 +61,9 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}
       REGISTRIES_DIR: /data/registries
+      REGISTRIES_DOWNLOADER: ${REGISTRIES_DOWNLOADER:-local}
+      MVD_REGISTRY_URL: ${MVD_REGISTRY_URL:-}
+      ROSFINMON_REGISTRY_URL: ${ROSFINMON_REGISTRY_URL:-}
     volumes:
       - storage_data:/data/storage
       - ./config:/app/config:ro

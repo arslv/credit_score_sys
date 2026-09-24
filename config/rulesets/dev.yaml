@@ -14,12 +14,36 @@ sources:
   registries:
     max_staleness_days: 2 # алерт, если реестр МВД/Росфинмониторинга старше
   passport:
-    # Выключено: справочник "регион выдачи -> код подразделения" пока
-    # иллюстративный (не настоящие данные МВД) — см. открытые вопросы T08.
-    department_code_check_enabled: false
+    # Справочник — config/reference/fms_unit.csv (hflabs/fms-unit, CC BY-SA 4.0,
+    # см. docs/registries.md).
+    department_code_check_enabled: true
+    blank_year_max_issue_offset_years: 3 # выдача позже года бланка больше чем на N лет — флаг
 
-# Стадия А: только жёсткие стоп-факторы, без БКИ
+# Стадия А: только жёсткие стоп-факторы, без БКИ.
+# ПОРЯДОК ПРАВИЛ ВАЖЕН: при одновременном совпадении нескольких стоп-факторов
+# reason_code в решении берётся от ПЕРВОГО совпавшего по порядку в этом списке
+# (app.engine.rules.StopOutcome.reason_code) — не по алфавиту и не по имени
+# признака. Список отсортирован по тяжести: санкции -> чёрный список ->
+# недействительный паспорт -> всё остальное. freeze (заморозка) от порядка НЕ
+# зависит — срабатывает по любому совпавшему правилу с freeze: true, где бы оно
+# ни стояло в списке (StopOutcome.freeze = any(...)).
 hard_stops:
+  - id: sanctions
+    field: checks.rosfinmon.status
+    op: eq
+    value: hit
+    reason: SANCTIONS_HIT
+    freeze: true
+  - id: blacklist
+    field: checks.blacklist.status
+    op: eq
+    value: hit
+    reason: BLACKLISTED
+  - id: passport_invalid
+    field: checks.mvd.status
+    op: eq
+    value: hit
+    reason: PASSPORT_INVALID
   - id: age_min
     field: age
     op: lt
@@ -40,22 +64,11 @@ hard_stops:
     op: eq
     value: true
     reason: PASSPORT_ISSUE_DATE_INVALID
-  - id: passport_invalid
-    field: checks.mvd.status
+  - id: passport_blank_year_future
+    field: passport_blank_year_future
     op: eq
-    value: hit
-    reason: PASSPORT_INVALID
-  - id: sanctions
-    field: checks.rosfinmon.status
-    op: eq
-    value: hit
-    reason: SANCTIONS_HIT
-    freeze: true
-  - id: blacklist
-    field: checks.blacklist.status
-    op: eq
-    value: hit
-    reason: BLACKLISTED
+    value: true
+    reason: PASSPORT_BLANK_YEAR_FUTURE
   - id: fssp_credit_debt
     field: features.fssp_credit_debt_amount
     op: gt

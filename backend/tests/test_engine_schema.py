@@ -5,6 +5,7 @@ import yaml
 from pydantic import ValidationError
 
 from app.config import get_settings
+from app.engine.rules import evaluate_hard_stops
 from app.engine.schema import load_ruleset_from_yaml, parse_ruleset
 
 # Путь берём из настроек — тот же относительный путь ("config/rulesets/dev.yaml"),
@@ -21,7 +22,10 @@ def _base_config(**overrides):
         "sources": {
             "rosfinmon": {"name_match_min_similarity": 0.7},
             "registries": {"max_staleness_days": 2},
-            "passport": {"department_code_check_enabled": False},
+            "passport": {
+                "department_code_check_enabled": False,
+                "blank_year_max_issue_offset_years": 3,
+            },
         },
         "hard_stops": [],
         "stage_b_pre_bki": [],
@@ -58,6 +62,44 @@ def test_dev_ruleset_file_is_valid():
     assert len(config.matrix) == 3
     assert config.sources.rosfinmon.name_match_min_similarity is not None
     assert config.limits.amount_min < config.limits.amount_max
+
+
+def test_dev_ruleset_blank_year_hard_stop_wired_correctly():
+    """Проверяет реальный hard_stop из dev.yaml напрямую движком (без БД/пайплайна
+    — не оставляет висящих версий в ruleset_versions, влияющих на другие тесты):
+    что правило в файле ссылается на верное имя признака и даёт верный
+    reason_code. Саму арифметику года бланка (когда признак действительно
+    становится True) проверяет test_engine_passport.py."""
+    config = load_ruleset_from_yaml(DEV_RULESET_PATH)
+
+    outcome = evaluate_hard_stops(config, {"age": 30, "passport_blank_year_future": True})
+
+    assert outcome.matched is True
+    assert outcome.reason_code == "PASSPORT_BLANK_YEAR_FUTURE"
+
+
+def test_dev_ruleset_sanctions_reason_code_wins_and_freezes_regardless_of_other_matches():
+    """Порядок hard_stops в dev.yaml — по тяжести (комментарий в самом файле):
+    санкции первые. При одновременном совпадении санкций и любого другого
+    правила reason_code обязан остаться SANCTIONS_HIT, а не смениться на то,
+    что стоит ниже по списку. freeze не зависит от порядка (см. отдельный тест
+    test_hard_stops_reason_code_and_freeze в test_engine_rules.py, где freeze
+    стоит вторым правилом и всё равно срабатывает) — здесь дополнительно
+    проверяем это на реальном dev.yaml с реальными сработавшими правилами."""
+    config = load_ruleset_from_yaml(DEV_RULESET_PATH)
+
+    outcome = evaluate_hard_stops(
+        config,
+        {
+            "age": 30,
+            "checks": {"rosfinmon": {"status": "hit"}},
+            "passport_blank_year_future": True,
+        },
+    )
+
+    assert outcome.reason_code == "SANCTIONS_HIT"
+    assert outcome.freeze is True
+    assert {r.id for r in outcome.triggered_rules} == {"sanctions", "passport_blank_year_future"}
 
 
 @pytest.mark.parametrize(

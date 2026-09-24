@@ -1,6 +1,11 @@
+from app.engine.department_codes import load_department_codes
+from app.engine.duplicates import is_passport_reused_with_different_identity
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_age, compute_stage_a_features
 from app.engine.passport import (
     check_department_code_region,
+    compute_blank_year,
+    is_blank_year_future,
+    is_issue_date_blank_year_mismatch,
     is_issue_date_implausible,
     is_passport_expired,
     validate_passport_format,
@@ -66,7 +71,12 @@ __all__ = [
     "NoActiveRulesetError",
     "run_stage_a",
     "check_department_code_region",
+    "compute_blank_year",
+    "is_blank_year_future",
+    "is_issue_date_blank_year_mismatch",
     "is_issue_date_implausible",
     "is_passport_expired",
     "validate_passport_format",
+    "is_passport_reused_with_different_identity",
+    "load_department_codes",
 ]

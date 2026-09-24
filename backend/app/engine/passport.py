@@ -13,15 +13,6 @@ _NUMBER_RE = re.compile(r"^\d{6}$")
 _REPLACEMENT_AGES = (20, 45)
 _MIN_ISSUE_AGE = 14
 
-# ПРИМЕР структуры для флага «код подразделения против региона выдачи» — НЕ настоящий
-# справочник МВД. Ключ — первые 2 цифры серии (регион выдачи), значение — известные
-# префиксы кода подразделения для этого региона. Для серий вне таблицы флаг не
-# ставится (нет данных — не гадаем), таблицу нужно заменить реальной перед продакшеном.
-_KNOWN_DEPARTMENT_PREFIXES: dict[str, set[str]] = {
-    "77": {"770", "771", "772"},
-    "78": {"780", "781", "782"},
-}
-
 
 def validate_passport_format(series: str | None, number: str | None) -> bool:
     """Формат: серия — 4 цифры, номер — 6 цифр. Официального контрольного разряда
@@ -52,12 +43,40 @@ def is_issue_date_implausible(birth_date: date, issue_date: date, as_of: date) -
     return age_at_issue < _MIN_ISSUE_AGE
 
 
-def check_department_code_region(passport_series: str, department_code: str) -> bool | None:
-    """True — код подразделения похож на код для региона выдачи серии;
-    False — не похож (флаг оператору); None — по региону нет данных, не флагуем."""
-    region_prefix = passport_series[:2]
-    known_prefixes = _KNOWN_DEPARTMENT_PREFIXES.get(region_prefix)
-    if known_prefixes is None:
+def compute_blank_year(series: str, *, current_year: int) -> int | None:
+    """Год бланка — цифры 3-4 серии. Формат в ходу с 1997 года: 97-99 -> 19xx
+    (1997-1999), 00 до последних двух цифр текущего года -> 20xx (бланк уже мог
+    быть выпущен). Всё, что осталось бы между ними, дало бы год позже текущего —
+    бланк из будущего, структурно невалидная серия: возвращаем None, см.
+    is_blank_year_future."""
+    yy = int(series[2:4])
+    if yy >= 97:
+        return 1900 + yy
+    if yy <= current_year % 100:
+        return 2000 + yy
+    return None
+
+
+def is_blank_year_future(blank_year: int | None) -> bool:
+    return blank_year is None
+
+
+def is_issue_date_blank_year_mismatch(issue_date: date, blank_year: int, max_years_after: int) -> bool:
+    """Дата выдачи не может быть раньше года бланка (бланк не мог использоваться
+    до печати) и не должна отставать от него больше чем на N лет — бланки не
+    лежат на складе десятилетиями."""
+    return issue_date.year < blank_year or issue_date.year > blank_year + max_years_after
+
+
+def check_department_code_region(
+    passport_series: str, department_code: str, known_codes: frozenset[str] | set[str]
+) -> bool | None:
+    """Код подразделения — формат RRR-NNN, где RRR — регион (справочник
+    hflabs/fms-unit, см. app.engine.department_codes и docs/registries.md).
+    True — первые 2 цифры кода совпадают с регионом выдачи серии; False — не
+    совпадают (флаг оператору, не автоотказ); None — код отсутствует в
+    справочнике (features.passport_department_code_not_found, а не флаг
+    несовпадения — с несуществующим кодом не с чем сравнивать)."""
+    if department_code not in known_codes:
         return None
-    dept_prefix = department_code.split("-")[0]
-    return dept_prefix in known_prefixes
+    return department_code[:2] == passport_series[:2]

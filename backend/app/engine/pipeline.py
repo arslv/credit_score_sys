@@ -9,6 +9,9 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.config import get_settings
+from app.engine.department_codes import load_department_codes
+from app.engine.duplicates import is_passport_reused_with_different_identity
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_stage_a_features
 from app.engine.rules import TriggeredRule, evaluate_hard_stops
 from app.engine.schema import RulesetConfig
@@ -187,12 +190,33 @@ async def run_stage_a(
             raise NoActiveRulesetError("нет активной версии конфига правил")
         config = load_config(ruleset_row)
 
+        department_code_check_enabled = config.sources.passport.department_code_check_enabled
+        known_department_codes = (
+            load_department_codes(get_settings().department_codes_path)
+            if department_code_check_enabled
+            else frozenset()
+        )
         features = compute_stage_a_features(
             ocr_outcome.fields,
-            department_code_check_enabled=config.sources.passport.department_code_check_enabled,
+            department_code_check_enabled=department_code_check_enabled,
+            known_department_codes=known_department_codes,
+            blank_year_max_issue_offset_years=config.sources.passport.blank_year_max_issue_offset_years,
         )
         subject = _subject_from_ocr(ocr_outcome.fields, application)
         features["checks"] = await _run_local_checks(session, config, application, subject)
+
+        if subject.passport_series and subject.passport_number and subject.last_name and subject.first_name:
+            features["passport_reused"] = await is_passport_reused_with_different_identity(
+                session,
+                application_id=application.id,
+                passport_series=subject.passport_series,
+                passport_number=subject.passport_number,
+                last_name=subject.last_name,
+                first_name=subject.first_name,
+                middle_name=subject.middle_name,
+                birth_date=(ocr_outcome.fields.get("birth_date") or {}).get("value"),
+            )
+
         await session.commit()
 
         stop_outcome = evaluate_hard_stops(config, features)

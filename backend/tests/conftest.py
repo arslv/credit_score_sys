@@ -2,6 +2,7 @@ import os
 import asyncio
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -28,6 +29,19 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+
+def unique_valid_passport_series() -> str:
+    """Случайная серия паспорта для тестов, где регион не важен, но должен
+    получаться ВАЛИДНЫЙ год бланка (T08, app.engine.passport.compute_blank_year):
+    цифры 3-4 фиксированы как "00" (год бланка 2000) — заведомо не в будущем
+    вплоть до 2100 года, независимо от даты прогона тестов. Единственный общий
+    генератор случайной серии в тестах — используется везде, где серия должна
+    быть случайной (см. T08: без этого ~70% случайных серий давали год бланка
+    в будущем и ложно срабатывал hard_stop PASSPORT_BLANK_YEAR_FUTURE раньше
+    проверяемого в тесте правила)."""
+    region = f"{uuid.uuid4().int % 100:02d}"
+    return f"{region}00"
 
 
 async def _ensure_test_database() -> None:

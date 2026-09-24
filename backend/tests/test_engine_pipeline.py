@@ -15,6 +15,7 @@ from app.models import Application, Decision, FeatureSnapshot, InvalidPassport, 
 from app.ocr.fake_provider import FakeOcrProvider, build_ocr_result
 from app.registries.sync import is_registry_stale
 from app.sources.name_normalize import full_name, normalize_name
+from tests.conftest import unique_valid_passport_series
 
 
 def _unique_name() -> str:
@@ -195,7 +196,7 @@ async def test_stage_a_mvd_hit_rejects(
 ):
     external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
 
-    series = f"{uuid.uuid4().int % 10000:04d}"
+    series = unique_valid_passport_series()
     number = f"{uuid.uuid4().int % 1000000:06d}"
     async with session_factory() as session:
         session.add(
@@ -369,3 +370,179 @@ async def test_stage_a_rosfinmon_threshold_actually_used_from_config(
             )
         ).scalar_one()
         assert similar_decision.reason_code == "SANCTIONS_HIT"
+
+
+async def test_stage_a_blank_year_mismatch_is_flag_only_not_auto_reject(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    ocr_provider = FakeOcrProvider(
+        build_ocr_result(
+            overrides={
+                "birth_date": "1990-01-01",
+                "issue_date": "2020-01-01",
+                "passport_series": "1210",  # год бланка 2010; N=3 -> выдача позже 2013 — расхождение
+            }
+        )
+    )
+
+    final_status = await run_stage_a(
+        session_factory, application_id,
+        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+    )
+
+    assert final_status == "to_operator"  # флаг, не автоотказ
+
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.reason_code is None
+        snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
+        assert snapshot.features["passport_blank_year"] == 2010
+        assert snapshot.features["passport_blank_year_mismatch"] is True
+        assert snapshot.features["passport_blank_year_future"] is False
+
+
+async def test_stage_a_blank_year_future_is_hard_stop(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    ocr_provider = FakeOcrProvider(
+        build_ocr_result(
+            overrides={
+                **_age_overrides(30),
+                "passport_series": "1250",  # yy=50 > текущих двух цифр года -> бланк из будущего
+            }
+        )
+    )
+
+    final_status = await run_stage_a(
+        session_factory, application_id,
+        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+    )
+
+    assert final_status == "rejected_a"
+
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.reason_code == "PASSPORT_BLANK_YEAR_FUTURE"
+        snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
+        assert snapshot.features["passport_blank_year"] is None
+        assert snapshot.features["passport_blank_year_future"] is True
+
+
+async def test_stage_a_department_code_region_mismatch_is_flag_only(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    ocr_provider = FakeOcrProvider(
+        build_ocr_result(
+            overrides={
+                **_age_overrides(30),
+                # серия по умолчанию "7700" (регион 77), код — реальный код другого
+                # региона (010-001, Адыгея, см. config/reference/fms_unit.csv) -> расхождение
+                "department_code": "010-001",
+            }
+        )
+    )
+
+    final_status = await run_stage_a(
+        session_factory, application_id,
+        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+    )
+
+    assert final_status == "to_operator"  # флаг, не автоотказ
+
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.reason_code is None
+        snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
+        assert snapshot.features["passport_department_code_flag"] is True
+        assert "passport_department_code_not_found" not in snapshot.features
+
+
+async def test_stage_a_department_code_not_in_reference_is_marked_not_flagged(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    ocr_provider = FakeOcrProvider(
+        build_ocr_result(
+            overrides={
+                **_age_overrides(30),
+                "department_code": "999-999",  # заведомо нет в справочнике (нет региона 99)
+            }
+        )
+    )
+
+    final_status = await run_stage_a(
+        session_factory, application_id,
+        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+    )
+
+    assert final_status == "to_operator"
+
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.reason_code is None
+        snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
+        assert snapshot.features["passport_department_code_not_found"] is True
+        assert "passport_department_code_flag" not in snapshot.features
+
+
+async def test_stage_a_passport_reused_is_flag_only_not_auto_reject(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    shared_series = unique_valid_passport_series()
+    shared_number = f"{uuid.uuid4().int % 1000000:06d}"
+
+    _, first_application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    first_ocr = FakeOcrProvider(
+        build_ocr_result(
+            overrides={
+                **_age_overrides(30),
+                "passport_series": shared_series,
+                "passport_number": shared_number,
+                "last_name": "Иванов",
+                "first_name": "Иван",
+                "middle_name": "Иванович",
+            }
+        )
+    )
+    await run_stage_a(
+        session_factory, first_application_id,
+        ocr_provider=first_ocr, partner_client=partner_client, storage=storage,
+    )
+
+    external_id_2, second_application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    second_ocr = FakeOcrProvider(
+        build_ocr_result(
+            overrides={
+                **_age_overrides(30),
+                "passport_series": shared_series,
+                "passport_number": shared_number,
+                "last_name": "Петров",
+                "first_name": "Пётр",
+                "middle_name": "Петрович",
+            }
+        )
+    )
+    final_status = await run_stage_a(
+        session_factory, second_application_id,
+        ocr_provider=second_ocr, partner_client=partner_client, storage=storage,
+    )
+
+    assert final_status == "to_operator"  # флаг, не автоотказ
+
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == second_application_id))
+        ).scalar_one()
+        snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
+        assert snapshot.features["passport_reused"] is True
