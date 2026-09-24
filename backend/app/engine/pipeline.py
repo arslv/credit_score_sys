@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import Settings, get_settings
+from app.engine.clients import compute_client_history_features, find_or_create_client
 from app.engine.department_codes import load_department_codes
 from app.engine.duplicates import is_passport_reused_with_different_identity
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_stage_a_features
@@ -29,7 +30,16 @@ from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.adapter import write_decision_status
 from app.integrations.base import PartnerClient
 from app.integrations.status_mapping import get_reason_note, get_status_mapping, render_comment
-from app.models import Application, Check, Decision, Document, FeatureSnapshot, FsspRequest, OcrResult
+from app.models import (
+    Application,
+    Check,
+    Client,
+    Decision,
+    Document,
+    FeatureSnapshot,
+    FsspRequest,
+    OcrResult,
+)
 from app.ocr.base import OcrProvider
 from app.ocr.service import run_ocr
 from app.sources.base import CheckResult, CheckStatus, Subject
@@ -103,6 +113,42 @@ def _subject_from_ocr(ocr_fields: dict, application: Application) -> Subject:
         passport_number=value("passport_number"),
         phone=(application.profile or {}).get("phone"),
     )
+
+
+async def _resolve_client(session, application: Application, ocr_fields: dict) -> UUID | None:
+    """Привязывает application.client_id, если данных достаточно (ФИО, дата
+    рождения, паспорт, телефон) — иначе оставляет None, как и при ocr_failed:
+    привязка появится позже вместе с данными, не подставляем частичную запись
+    (T09, п. «подключение таблицы clients»). Не коммитит — на совести
+    вызывающего кода."""
+
+    def value(name: str) -> str | None:
+        return (ocr_fields.get(name) or {}).get("value")
+
+    last_name = value("last_name")
+    first_name = value("first_name")
+    middle_name = value("middle_name")
+    birth_date_raw = value("birth_date")
+    series = value("passport_series")
+    number = value("passport_number")
+    phone = (application.profile or {}).get("phone")
+
+    if not (last_name and first_name and birth_date_raw and series and number and phone):
+        return None
+
+    client, _passport_changed = await find_or_create_client(
+        session,
+        last_name=last_name,
+        first_name=first_name,
+        middle_name=middle_name,
+        birth_date=date.fromisoformat(birth_date_raw),
+        passport_series=series,
+        passport_number=number,
+        phone=phone,
+    )
+    application.client_id = client.id
+    await session.flush()
+    return client.id
 
 
 async def _compute_local_features(
@@ -289,14 +335,18 @@ async def run_stage_a(
             raise NoActiveRulesetError("нет активной версии конфига правил")
         config = load_config(ruleset_row)
 
-        # Заморозка (T09): тот же паспорт уже давал санкционный хит раньше —
-        # отказ немедленно, без единой новой проверки.
-        series = (ocr_outcome.fields.get("passport_series") or {}).get("value")
-        number = (ocr_outcome.fields.get("passport_number") or {}).get("value")
-        if series and number:
-            freeze_reason = await find_active_sanctions_freeze(
-                session, passport_series=series, passport_number=number
-            )
+        # Клиент (T09, довершает T02): ищется/создаётся сразу после успешного
+        # OCR — только неполных данных достаточно, чтобы пропустить (останется
+        # без привязки, как и при ocr_failed; привязка — позже, когда данные
+        # появятся). Заморозка ниже работает по client_id, поэтому клиент
+        # нужен раньше неё.
+        client_id = await _resolve_client(session, application, ocr_outcome.fields)
+
+        # Заморозка (T09): тот же клиент уже давал санкционный хит раньше (тем
+        # же паспортом или другим, см. app.engine.clients) — отказ немедленно,
+        # без единой новой проверки.
+        if client_id is not None:
+            freeze_reason = await find_active_sanctions_freeze(session, client_id=client_id)
             if freeze_reason:
                 return await _reject_for_active_freeze(
                     session, session_factory, application, ruleset_row, freeze_reason, partner_client
@@ -503,6 +553,24 @@ async def finalize_stage_a(
                 first_name=subject.first_name,
                 middle_name=subject.middle_name,
                 birth_date=(ocr_fields.get("birth_date") or {}).get("value"),
+            )
+
+        # Клиент (T09): применение уже привязанного client_id (сама привязка —
+        # в run_stage_a, до постановки в очередь на ФССП). is_repeat — имя поля
+        # фиксировано матрицей в dev.yaml.
+        if application.client_id is not None:
+            features.update(
+                await compute_client_history_features(
+                    session, client_id=application.client_id, exclude_application_id=application_id
+                )
+            )
+            client = await session.get(Client, application.client_id)
+            features["client_passport_changed"] = bool(
+                client
+                and subject.passport_series
+                and subject.passport_number
+                and (client.passport_series, client.passport_number)
+                != (subject.passport_series, subject.passport_number)
             )
 
         checks = await _latest_checks(session, application_id)

@@ -113,10 +113,46 @@ async def db_session():
         await engine.dispose()
 
 
+# Справочники — заполняются не тестами, а сидом/будущей миграцией (сейчас
+# реальных сидов нет вообще, см. app/models/reference.py) — и не должны
+# зависеть от того, какой тест выполнялся последним. Исключены из TRUNCATE
+# ниже; правильность исключения проверяет
+# test_session_isolation.py::test_truncate_mutable_tables_spares_reference_tables.
+REFERENCE_TABLES = {"reason_codes", "goods_categories"}
+
+
+async def truncate_mutable_tables(engine) -> None:
+    """TRUNCATE всех таблиц приложения, кроме REFERENCE_TABLES. Вынесено в
+    отдельную функцию (не инлайн в фикстуре), чтобы её можно было проверить
+    напрямую одним самодостаточным тестом — не полагаясь на состояние в конце
+    ВСЕЙ сессии pytest: там же есть test_migration_downgrades_and_upgrades_cleanly,
+    который легитимно дропает и пересоздаёт всю схему (alembic downgrade base +
+    upgrade head), и при случайном порядке (pytest-randomly) он может
+    выполниться в любой момент — сентинел-строка, вставленная в начале сессии,
+    это переживёт только случайно."""
+    from sqlalchemy import text
+
+    from app.models import Base
+
+    table_names = ", ".join(
+        f'"{t.name}"' for t in Base.metadata.sorted_tables if t.name not in REFERENCE_TABLES
+    )
+    async with engine.begin() as conn:
+        await conn.execute(text(f"TRUNCATE TABLE {table_names} RESTART IDENTITY CASCADE"))
+
+
 @pytest_asyncio.fixture
 async def session_factory():
     """Настоящий sessionmaker (без обёртки rollback) для кода, который сам
-    управляет своими транзакциями — например, адаптер интеграции."""
+    управляет своими транзакциями — например, адаптер интеграции.
+
+    После теста TRUNCATE всех таблиц приложения, кроме REFERENCE_TABLES (см.
+    truncate_mutable_tables): commit одного теста иначе протекает в остальные
+    до конца сессии pytest. Этот класс бага ловили трижды за одну рабочую
+    сессию (T08: ruleset_versions дважды по разным причинам; T09: заморозка по
+    санкциям на общем дефолтном паспорте) — каждый раз чинили точечно, в
+    конкретном тесте. Это фикс на уровне фикстуры: избавляет от необходимости
+    держать это в голове при каждом новом тесте на session_factory."""
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     from app.config import get_settings
@@ -126,6 +162,7 @@ async def session_factory():
     try:
         yield maker
     finally:
+        await truncate_mutable_tables(engine)
         await engine.dispose()
 
 

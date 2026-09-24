@@ -13,9 +13,9 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.engine.pipeline import finalize_stage_a, run_stage_a
-from app.engine.rules import _MISSING, get_field
+from app.engine.rules import _MISSING, get_field, parse_matrix_key
 from app.engine.schema import load_ruleset_from_yaml
-from app.models import Check, Decision, FeatureSnapshot, FsspRequest, SanctionsList
+from app.models import Application, Check, Client, Decision, FeatureSnapshot, FsspRequest, SanctionsList
 from app.ocr.fake_provider import FakeOcrProvider, build_ocr_result
 from app.sources.fedresurs import FakeFedresursSource
 from app.sources.fns import FakeFnsSource
@@ -406,6 +406,12 @@ _NOT_YET_IMPLEMENTED_RULE_IDS = {
     "pti_high",  # soft_rules -> features.pti, T11 (после запроса в БКИ)
 }
 
+# Аналогично для полей matrix (условия when в dev.yaml) — сумма сделки и
+# ликвидность товара считаются не в стадии А, а при оценке матрицы в стадии Б
+# (T10); просрочки по прошлым договорам появятся только с импортом платежей
+# (T15). Убирать по мере реализации.
+_NOT_YET_IMPLEMENTED_MATRIX_FIELDS = {"amount", "goods_liquidity", "prior_defaults"}
+
 
 async def test_dev_ruleset_rule_field_paths_all_resolve_against_real_snapshot(
     partner_admin, partner_client, storage, session_factory, active_ruleset
@@ -448,3 +454,209 @@ async def test_dev_ruleset_rule_field_paths_all_resolve_against_real_snapshot(
         if rule.id not in _NOT_YET_IMPLEMENTED_RULE_IDS and get_field(features, rule.field) is _MISSING
     ]
     assert unresolved == [], f"правила ссылаются на несуществующие в снапшоте поля: {unresolved}"
+
+    # matrix: условия when — отдельная структура (нет id, несколько полей на
+    # запись), поэтому проверяется отдельно тем же способом.
+    matrix_unresolved = [
+        key
+        for entry in config.matrix
+        for key in entry.when
+        if parse_matrix_key(key)[0] not in _NOT_YET_IMPLEMENTED_MATRIX_FIELDS
+        and get_field(features, parse_matrix_key(key)[0]) is _MISSING
+    ]
+    assert matrix_unresolved == [], f"matrix.when ссылается на несуществующие в снапшоте поля: {matrix_unresolved}"
+
+
+# --- подключение clients (T09) --------------------------------------------------
+
+
+async def test_two_applications_same_passport_link_to_same_client(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    series, number = unique_valid_passport_series(), f"{uuid.uuid4().int % 1000000:06d}"
+
+    _, application_id_1 = await _ingest(partner_admin, partner_client, storage, session_factory)
+    await run_stage_a(
+        session_factory, application_id_1,
+        ocr_provider=FakeOcrProvider(build_ocr_result(overrides={
+            **_age_overrides(30), "passport_series": series, "passport_number": number,
+        })),
+        partner_client=partner_client, storage=storage,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+    )
+
+    _, application_id_2 = await _ingest(partner_admin, partner_client, storage, session_factory)
+    await run_stage_a(
+        session_factory, application_id_2,
+        ocr_provider=FakeOcrProvider(build_ocr_result(overrides={
+            **_age_overrides(30), "passport_series": series, "passport_number": number,
+        })),
+        partner_client=partner_client, storage=storage,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+    )
+
+    async with session_factory() as session:
+        app_1 = await session.get(Application, application_id_1)
+        app_2 = await session.get(Application, application_id_2)
+
+        assert app_1.client_id is not None
+        assert app_1.client_id == app_2.client_id
+
+        clients = (await session.execute(select(Client))).scalars().all()
+        assert len(clients) == 1  # ровно один клиент, не два
+
+
+async def test_ocr_failed_does_not_create_or_link_client(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    ocr_provider = FakeOcrProvider(build_ocr_result(confidence=0.99, confidence_overrides={"passport_series": 0.1}))
+
+    final_status = await run_stage_a(
+        session_factory, application_id,
+        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+    )
+    assert final_status == "to_operator"
+
+    async with session_factory() as session:
+        application = await session.get(Application, application_id)
+        assert application.client_id is None
+
+        clients = (await session.execute(select(Client))).scalars().all()
+        assert clients == []
+
+
+async def test_same_name_and_birth_date_different_passport_links_to_same_client_and_flags_change(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    birth_date = _age_overrides(30)["birth_date"]
+
+    _, application_id_1 = await _ingest(partner_admin, partner_client, storage, session_factory)
+    await run_stage_a(
+        session_factory, application_id_1,
+        ocr_provider=FakeOcrProvider(build_ocr_result(overrides={
+            **_age_overrides(30),
+            "passport_series": unique_valid_passport_series(),
+            "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
+        })),
+        partner_client=partner_client, storage=storage,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+    )
+
+    _, application_id_2 = await _ingest(partner_admin, partner_client, storage, session_factory)
+    await run_stage_a(
+        session_factory, application_id_2,
+        ocr_provider=FakeOcrProvider(build_ocr_result(overrides={
+            **_age_overrides(30),
+            "passport_series": unique_valid_passport_series(),  # новый паспорт — переоформление
+            "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
+        })),
+        partner_client=partner_client, storage=storage,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+    )
+
+    async with session_factory() as session:
+        app_1 = await session.get(Application, application_id_1)
+        app_2 = await session.get(Application, application_id_2)
+        assert app_1.client_id == app_2.client_id  # тот же человек, найден по ФИО+ДР
+
+        clients = (await session.execute(select(Client))).scalars().all()
+        assert len(clients) == 1
+
+        decision_2 = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id_2))
+        ).scalar_one()
+        snapshot_2 = await session.get(FeatureSnapshot, decision_2.feature_snapshot_id)
+        assert snapshot_2.features["client_passport_changed"] is True
+
+
+async def test_freeze_persists_for_same_client_across_passport_change(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Ключевая новая возможность T09: заморозка теперь по клиенту, не только
+    по паспорту — тот же человек с новым (переоформленным) паспортом всё равно
+    остаётся заблокирован, потому что находится по ФИО+ДР и привязывается к
+    тому же client_id, что и в момент заморозки."""
+    last_name, first_name, middle_name = "Магомедов", "Магомед", "Магомедович"
+
+    async with session_factory() as session:
+        session.add(SanctionsList(
+            list_type="te", full_name=f"{last_name} {first_name} {middle_name}",
+            name_normalized="магомедов магомед магомедович",
+            birth_date=None, loaded_at=datetime.now(timezone.utc),
+        ))
+        await session.commit()
+
+    _, application_id_1 = await _ingest(partner_admin, partner_client, storage, session_factory)
+    await run_stage_a(
+        session_factory, application_id_1,
+        ocr_provider=FakeOcrProvider(build_ocr_result(overrides={
+            **_age_overrides(30),
+            "last_name": last_name, "first_name": first_name, "middle_name": middle_name,
+            "passport_series": unique_valid_passport_series(),
+            "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
+        })),
+        partner_client=partner_client, storage=storage,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+    )
+
+    # Новая заявка — то же ФИО+ДР, но СОВСЕМ ДРУГОЙ паспорт (переоформление).
+    _, application_id_2 = await _ingest(partner_admin, partner_client, storage, session_factory)
+    fns_2 = _CallTrackingSource(FakeFnsSource())
+    final_status = await run_stage_a(
+        session_factory, application_id_2,
+        ocr_provider=FakeOcrProvider(build_ocr_result(overrides={
+            **_age_overrides(30),
+            "last_name": last_name, "first_name": first_name, "middle_name": middle_name,
+            "passport_series": unique_valid_passport_series(),
+            "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
+        })),
+        partner_client=partner_client, storage=storage,
+        fns_source=fns_2, fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+    )
+
+    assert final_status == "rejected_a"
+    assert fns_2.calls == 0  # заморозка сработала раньше внешних проверок
+
+    async with session_factory() as session:
+        decision_2 = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id_2))
+        ).scalar_one()
+        assert decision_2.reason_code == "SANCTIONS_HIT"
+        assert decision_2.freeze is True
+
+
+async def test_is_repeat_and_prior_counts_computed_from_client_history(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    series, number = unique_valid_passport_series(), f"{uuid.uuid4().int % 1000000:06d}"
+
+    # Первая заявка клиента: отказ по возрасту — считается как "прошлый отказ".
+    _, application_id_1 = await _ingest(partner_admin, partner_client, storage, session_factory)
+    await run_stage_a(
+        session_factory, application_id_1,
+        ocr_provider=FakeOcrProvider(build_ocr_result(overrides={
+            **_age_overrides(19), "passport_series": series, "passport_number": number,
+        })),
+        partner_client=partner_client, storage=storage,
+    )
+
+    # Вторая заявка того же клиента (тот же паспорт) — чистая.
+    _, application_id_2 = await _ingest(partner_admin, partner_client, storage, session_factory)
+    await run_stage_a(
+        session_factory, application_id_2,
+        ocr_provider=FakeOcrProvider(build_ocr_result(overrides={
+            **_age_overrides(30), "passport_series": series, "passport_number": number,
+        })),
+        partner_client=partner_client, storage=storage,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+    )
+
+    async with session_factory() as session:
+        decision_2 = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id_2))
+        ).scalar_one()
+        snapshot_2 = await session.get(FeatureSnapshot, decision_2.feature_snapshot_id)
+        assert snapshot_2.features["is_repeat"] is True
+        assert snapshot_2.features["prior_applications_count"] == 1
+        assert snapshot_2.features["prior_rejections_count"] == 1

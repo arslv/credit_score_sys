@@ -1,3 +1,4 @@
+from app.engine.clients import compute_client_history_features, find_or_create_client
 from app.engine.department_codes import load_department_codes
 from app.engine.duplicates import is_passport_reused_with_different_identity
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_age, compute_stage_a_features
@@ -85,4 +86,6 @@ __all__ = [
     "validate_passport_format",
     "is_passport_reused_with_different_identity",
     "load_department_codes",
+    "find_or_create_client",
+    "compute_client_history_features",
 ]
