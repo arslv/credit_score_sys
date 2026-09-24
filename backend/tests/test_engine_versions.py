@@ -19,6 +19,7 @@ def _config(effective_from: str) -> RulesetConfig:
                     "department_code_check_enabled": False,
                     "blank_year_max_issue_offset_years": 3,
                 },
+                "fssp": {"classification": []},
             },
             "limits": {
                 "amount_min": 15000,

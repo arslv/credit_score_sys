@@ -1,7 +1,14 @@
 """Оркестратор стадии А: заявка уже получена адаптером (T04) -> распознавание ->
-признаки -> движок -> решение -> статус в систему заказчика (T07)."""
+признаки -> движок -> решение -> статус в систему заказчика (T07).
 
-from datetime import date
+T09: внешние источники шага 3 (ФНС, Федресурс, ФССП) добавляют вторую точку
+входа, finalize_stage_a — общий "хвост" (признаки -> движок -> решение),
+вызываемый и из run_stage_a напрямую (быстрый путь), и из периодической задачи
+опроса ФССП (app/tasks/fssp_poll.py, отложенный путь). Идемпотентность и защита
+от двойной финализации — через SELECT ... FOR UPDATE на строке applications."""
+
+import asyncio
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -9,25 +16,29 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.engine.department_codes import load_department_codes
 from app.engine.duplicates import is_passport_reused_with_different_identity
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_stage_a_features
+from app.engine.freeze import find_active_sanctions_freeze
+from app.engine.fssp import summarize_productions
 from app.engine.rules import TriggeredRule, evaluate_hard_stops
 from app.engine.schema import RulesetConfig
 from app.engine.state_machine import transition
 from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.adapter import write_decision_status
 from app.integrations.base import PartnerClient
-from app.integrations.status_mapping import get_status_mapping, render_comment
-from app.models import Application, Decision, Document, FeatureSnapshot
+from app.integrations.status_mapping import get_reason_note, get_status_mapping, render_comment
+from app.models import Application, Check, Decision, Document, FeatureSnapshot, FsspRequest, OcrResult
 from app.ocr.base import OcrProvider
 from app.ocr.service import run_ocr
-from app.sources.base import Subject
+from app.sources.base import CheckResult, CheckStatus, Subject
 from app.sources.blacklist import BlacklistSource
+from app.sources.factory import build_fedresurs_source, build_fns_source, build_fssp_source
+from app.sources.fssp import FsspSource, FsspSubmitError
 from app.sources.mvd import MvdSource
 from app.sources.rosfinmon import RosfinmonSource
-from app.sources.runner import run_and_record_check
+from app.sources.runner import execute_check, record_check, run_and_record_check
 from app.storage.base import Storage
 
 logger = structlog.get_logger()
@@ -94,19 +105,33 @@ def _subject_from_ocr(ocr_fields: dict, application: Application) -> Subject:
     )
 
 
-async def _run_local_checks(
-    session, config: RulesetConfig, application: Application, subject: Subject
-) -> dict[str, dict[str, str]]:
-    """МВД, Росфинмониторинг, чёрный список — локальные источники стадии А, шаг 2
-    (ТЗ; T08). Каждый — через SourceBase, результат в checks и в признаки движка."""
+async def _compute_local_features(
+    session, config: RulesetConfig, application: Application, ocr_fields: dict
+) -> tuple[dict[str, Any], Subject]:
+    """Признаки по паспорту + локальные источники (МВД/Росфинмониторинг/чёрный
+    список) + внутренние дубли — всё, что не требует внешнего HTTP (T07/T08)."""
+    department_code_check_enabled = config.sources.passport.department_code_check_enabled
+    known_department_codes = (
+        load_department_codes(get_settings().department_codes_path)
+        if department_code_check_enabled
+        else frozenset()
+    )
+    features = compute_stage_a_features(
+        ocr_fields,
+        department_code_check_enabled=department_code_check_enabled,
+        known_department_codes=known_department_codes,
+        blank_year_max_issue_offset_years=config.sources.passport.blank_year_max_issue_offset_years,
+    )
+
+    subject = _subject_from_ocr(ocr_fields, application)
+
     sources = (
         MvdSource(session),
         RosfinmonSource(session, name_match_min_similarity=config.sources.rosfinmon.name_match_min_similarity),
         BlacklistSource(session),
     )
-    checks: dict[str, dict[str, str]] = {}
     for source in sources:
-        check = await run_and_record_check(
+        await run_and_record_check(
             session,
             source,
             application_id=application.id,
@@ -114,8 +139,31 @@ async def _run_local_checks(
             subject_id=None,
             subject=subject,
         )
-        checks[source.source_name] = {"status": check.status}
-    return checks
+
+    if subject.passport_series and subject.passport_number and subject.last_name and subject.first_name:
+        features["passport_reused"] = await is_passport_reused_with_different_identity(
+            session,
+            application_id=application.id,
+            passport_series=subject.passport_series,
+            passport_number=subject.passport_number,
+            last_name=subject.last_name,
+            first_name=subject.first_name,
+            middle_name=subject.middle_name,
+            birth_date=(ocr_fields.get("birth_date") or {}).get("value"),
+        )
+
+    return features, subject
+
+
+async def _latest_checks(session, application_id: UUID) -> dict[str, dict[str, Any]]:
+    stmt = (
+        select(Check)
+        .where(Check.application_id == application_id)
+        .order_by(Check.source, Check.started_at.desc())
+        .distinct(Check.source)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    return {c.source: {"status": c.status, "parsed": c.parsed} for c in rows}
 
 
 async def _write_back(
@@ -128,6 +176,9 @@ async def _write_back(
 ) -> None:
     mapping = get_status_mapping(our_status)
     comment = render_comment(mapping, reason_code=reason_code or "-")
+    note = get_reason_note(reason_code)
+    if note:
+        comment = f"{comment} {note}"
     await write_decision_status(
         session_factory,
         partner_client,
@@ -139,6 +190,43 @@ async def _write_back(
     )
 
 
+async def _reject_for_active_freeze(
+    session,
+    session_factory: async_sessionmaker,
+    application: Application,
+    ruleset_row,
+    reason_code: str,
+    partner_client: PartnerClient,
+) -> str:
+    """Заявка того же паспорта, что уже был заморожен раньше (T09, п. «Отдельно —
+    заморозка при санкциях»): отказ с тем же reason_code, без единой проверки.
+    error, а не info — это не техническая ошибка, а событие, которое должно
+    быть видно в мониторинге."""
+    logger.error(
+        "sanctions_freeze_reapplied",
+        application_id=str(application.id),
+        reason_code=reason_code,
+    )
+    decision = Decision(
+        application_id=application.id,
+        stage="A",
+        outcome="reject",
+        reason_code=reason_code,
+        freeze=True,
+        triggered_rules=[],
+        ruleset_version_id=ruleset_row.id,
+        feature_snapshot_id=None,
+    )
+    session.add(decision)
+    await session.flush()
+
+    transition(session, application, "rejected_a", actor_type="system")
+    await session.commit()
+
+    await _write_back(session_factory, partner_client, application, "rejected_a", reason_code=reason_code)
+    return application.status
+
+
 async def run_stage_a(
     session_factory: async_sessionmaker,
     application_id: UUID,
@@ -146,8 +234,19 @@ async def run_stage_a(
     ocr_provider: OcrProvider,
     partner_client: PartnerClient,
     storage: Storage,
+    fns_source=None,
+    fedresurs_source=None,
+    fssp_source: FsspSource | None = None,
 ) -> str:
-    """Прогоняет одну заявку через стадию А целиком. Возвращает финальный статус."""
+    """Прогоняет заявку через стадию А до точки, откуда решение можно принять
+    сразу (локальный hard_stop уже сработал, или ФССП не принял запрос), либо
+    до постановки в очередь на опрос ФССП. Возвращает статус заявки на этот
+    момент — не обязательно финальный, если ФССП ещё не ответил (T09)."""
+    settings = get_settings()
+    fns_source = fns_source or build_fns_source(settings)
+    fedresurs_source = fedresurs_source or build_fedresurs_source(settings)
+    fssp_source = fssp_source or build_fssp_source(settings)
+
     async with session_factory() as session:
         application = await session.get(Application, application_id)
         if application is None:
@@ -190,6 +289,196 @@ async def run_stage_a(
             raise NoActiveRulesetError("нет активной версии конфига правил")
         config = load_config(ruleset_row)
 
+        # Заморозка (T09): тот же паспорт уже давал санкционный хит раньше —
+        # отказ немедленно, без единой новой проверки.
+        series = (ocr_outcome.fields.get("passport_series") or {}).get("value")
+        number = (ocr_outcome.fields.get("passport_number") or {}).get("value")
+        if series and number:
+            freeze_reason = await find_active_sanctions_freeze(
+                session, passport_series=series, passport_number=number
+            )
+            if freeze_reason:
+                return await _reject_for_active_freeze(
+                    session, session_factory, application, ruleset_row, freeze_reason, partner_client
+                )
+
+        features, subject = await _compute_local_features(session, config, application, ocr_outcome.fields)
+        features["checks"] = {
+            source: {"status": status["status"]} for source, status in (await _latest_checks(session, application.id)).items()
+        }
+        await session.commit()
+
+        # T09, п.1: локальный hard_stop уже решает всё — внешние источники шага 3
+        # не вызываются вовсе (ни ФНС/Федресурс, ни тем более заявка на ФССП).
+        local_stop_outcome = evaluate_hard_stops(config, features)
+        if local_stop_outcome.matched:
+            return await finalize_stage_a(session_factory, application_id, partner_client=partner_client)
+
+        await _run_external_checks(
+            session,
+            settings=settings,
+            application=application,
+            subject=subject,
+            fns_source=fns_source,
+            fedresurs_source=fedresurs_source,
+            fssp_source=fssp_source,
+        )
+        fssp_settled = await _submit_fssp(session, settings, application, subject, fssp_source)
+        await session.commit()
+
+    if fssp_settled:
+        return await finalize_stage_a(session_factory, application_id, partner_client=partner_client)
+
+    logger.info("stage_a_awaiting_fssp", application_id=str(application_id))
+    return application.status
+
+
+async def _run_external_checks(
+    session,
+    *,
+    settings: Settings,
+    application: Application,
+    subject: Subject,
+    fns_source,
+    fedresurs_source,
+    fssp_source: FsspSource,
+) -> None:
+    """ФНС и Федресурс — параллельно (asyncio.gather), в рамках общего дедлайна
+    на весь синхронный внешний блок (T09, п.2 и п. про общий дедлайн). I/O —
+    конкурентно; запись в общую AsyncSession — последовательно после."""
+    try:
+        (fns_result, fns_started, fns_finished, fns_duration), (
+            fedresurs_result,
+            fedresurs_started,
+            fedresurs_finished,
+            fedresurs_duration,
+        ) = await asyncio.wait_for(
+            asyncio.gather(execute_check(fns_source, subject), execute_check(fedresurs_source, subject)),
+            timeout=settings.stage_a_external_checks_deadline_seconds,
+        )
+    except asyncio.TimeoutError:
+        now = datetime.now(timezone.utc)
+        timeout_result = CheckResult(
+            status=CheckStatus.SOURCE_UNAVAILABLE, error_text="общий дедлайн внешнего блока стадии А истёк"
+        )
+        fns_result = fedresurs_result = timeout_result
+        fns_started = fedresurs_started = now
+        fns_finished = fedresurs_finished = now
+        fns_duration = fedresurs_duration = 0
+
+    await record_check(
+        session,
+        application_id=application.id,
+        subject_type="applicant",
+        subject_id=None,
+        source_name=fns_source.source_name,
+        result=fns_result,
+        started_at=fns_started,
+        finished_at=fns_finished,
+        duration_ms=fns_duration,
+    )
+    await record_check(
+        session,
+        application_id=application.id,
+        subject_type="applicant",
+        subject_id=None,
+        source_name=fedresurs_source.source_name,
+        result=fedresurs_result,
+        started_at=fedresurs_started,
+        finished_at=fedresurs_finished,
+        duration_ms=fedresurs_duration,
+    )
+
+
+async def _submit_fssp(session, settings: Settings, application: Application, subject: Subject, fssp_source: FsspSource) -> bool:
+    """Возвращает True, если ФССП уже "settled" (отказался принять запрос) и
+    финализировать можно сразу; False — запрос поставлен в очередь на опрос,
+    финализация откладывается до fssp.poll_pending (T09, п.4 поправок).
+
+    После успешного submit() пробуем ОДИН немедленный poll() — не цикл и не
+    sleep (запрещено п.2 исходной постановки T09), просто использование того,
+    что уже есть под рукой: если источник ответил мгновенно (в т.ч. фейковый
+    источник без сконфигурированной задержки в тестах и в безопасном режиме
+    "нет доступа" по умолчанию), не заставляем стадию А ждать следующего тика
+    отдельной задачи опроса ради результата, который уже готов."""
+    now = datetime.now(timezone.utc)
+    try:
+        request_id = await fssp_source.submit(subject)
+    except FsspSubmitError as exc:
+        await record_check(
+            session,
+            application_id=application.id,
+            subject_type="applicant",
+            subject_id=None,
+            source_name="fssp",
+            result=CheckResult(status=CheckStatus.SOURCE_UNAVAILABLE, error_text=str(exc)),
+            started_at=now,
+            finished_at=datetime.now(timezone.utc),
+            duration_ms=0,
+        )
+        return True
+
+    immediate_result = await fssp_source.poll(request_id)
+    if immediate_result is not None:
+        await record_check(
+            session,
+            application_id=application.id,
+            subject_type="applicant",
+            subject_id=None,
+            source_name="fssp",
+            result=immediate_result,
+            started_at=now,
+            finished_at=datetime.now(timezone.utc),
+            duration_ms=0,
+        )
+        return True
+
+    session.add(
+        FsspRequest(
+            application_id=application.id,
+            external_request_id=request_id,
+            status="pending",
+            deadline=now + timedelta(seconds=settings.fssp_poll_deadline_seconds),
+        )
+    )
+    return False
+
+
+async def finalize_stage_a(
+    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerClient
+) -> str:
+    """Хвост стадии А: признаки -> движок -> решение -> статус -> запись в
+    систему заказчика. Общий для быстрого пути (локальный hard_stop, или ФССП
+    сразу отказал в приёме запроса) и отложенного (опрос ФССП разрешился или
+    истёк дедлайн). Идемпотентна: SELECT ... FOR UPDATE на строке applications
+    гарантирует, что при двух параллельных вызовах только один довершит
+    решение — второй увидит статус, отличный от "stage_a", и не сделает ничего
+    (T09, п.3 поправок)."""
+    async with session_factory() as session:
+        application = (
+            await session.execute(
+                select(Application).where(Application.id == application_id).with_for_update()
+            )
+        ).scalar_one()
+
+        if application.status != "stage_a":
+            return application.status
+
+        ruleset_row = await get_active_ruleset_version(session)
+        if ruleset_row is None:
+            raise NoActiveRulesetError("нет активной версии конфига правил")
+        config = load_config(ruleset_row)
+
+        ocr_result = (
+            await session.execute(
+                select(OcrResult)
+                .where(OcrResult.application_id == application_id)
+                .order_by(OcrResult.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+        ocr_fields = dict((ocr_result.fields or {}).get("fields") or {})
+
         department_code_check_enabled = config.sources.passport.department_code_check_enabled
         known_department_codes = (
             load_department_codes(get_settings().department_codes_path)
@@ -197,32 +486,40 @@ async def run_stage_a(
             else frozenset()
         )
         features = compute_stage_a_features(
-            ocr_outcome.fields,
+            ocr_fields,
             department_code_check_enabled=department_code_check_enabled,
             known_department_codes=known_department_codes,
             blank_year_max_issue_offset_years=config.sources.passport.blank_year_max_issue_offset_years,
         )
-        subject = _subject_from_ocr(ocr_outcome.fields, application)
-        features["checks"] = await _run_local_checks(session, config, application, subject)
 
+        subject = _subject_from_ocr(ocr_fields, application)
         if subject.passport_series and subject.passport_number and subject.last_name and subject.first_name:
             features["passport_reused"] = await is_passport_reused_with_different_identity(
                 session,
-                application_id=application.id,
+                application_id=application_id,
                 passport_series=subject.passport_series,
                 passport_number=subject.passport_number,
                 last_name=subject.last_name,
                 first_name=subject.first_name,
                 middle_name=subject.middle_name,
-                birth_date=(ocr_outcome.fields.get("birth_date") or {}).get("value"),
+                birth_date=(ocr_fields.get("birth_date") or {}).get("value"),
             )
 
-        await session.commit()
+        checks = await _latest_checks(session, application_id)
+        features["checks"] = {source: {"status": c["status"]} for source, c in checks.items()}
+
+        # Вложенный неймспейс "features" (не опечатка) — так же, как features.pti,
+        # уже задумано в ТЗ/dev.yaml с T06: hard_stop fssp_credit_debt и soft_rule
+        # fssp_minor ссылаются именно на "features.fssp_*", а не на плоский путь.
+        fssp_check = checks.get("fssp")
+        if fssp_check and fssp_check.get("parsed"):
+            productions = fssp_check["parsed"].get("productions", [])
+            features["features"] = summarize_productions(productions, config.sources.fssp.classification)
 
         stop_outcome = evaluate_hard_stops(config, features)
 
         feature_snapshot = FeatureSnapshot(
-            application_id=application.id,
+            application_id=application_id,
             stage="A",
             features=features,
             feature_set_ver=STAGE_A_FEATURE_SET_VERSION,
@@ -230,11 +527,21 @@ async def run_stage_a(
         session.add(feature_snapshot)
         await session.flush()
 
+        if stop_outcome.freeze:
+            # error, а не info — заморозка должна быть видна в мониторинге, не
+            # затеряться среди обычных логов решений (T09).
+            logger.error(
+                "sanctions_freeze_triggered",
+                application_id=str(application_id),
+                reason_code=stop_outcome.reason_code,
+            )
+
         decision = Decision(
-            application_id=application.id,
+            application_id=application_id,
             stage="A",
             outcome="reject" if stop_outcome.matched else "manual_review",
             reason_code=stop_outcome.reason_code,
+            freeze=stop_outcome.freeze,
             triggered_rules=_serialize_triggered_rules(stop_outcome.triggered_rules),
             ruleset_version_id=ruleset_row.id,
             feature_snapshot_id=feature_snapshot.id,
@@ -248,13 +555,12 @@ async def run_stage_a(
 
         logger.info(
             "stage_a_decision",
-            application_id=str(application.id),
+            application_id=str(application_id),
             outcome=decision.outcome,
             reason_code=decision.reason_code,
             new_status=new_status,
         )
+        reason_code = stop_outcome.reason_code
 
-        await _write_back(
-            session_factory, partner_client, application, new_status, reason_code=stop_outcome.reason_code
-        )
-        return application.status
+    await _write_back(session_factory, partner_client, application, new_status, reason_code=reason_code)
+    return application.status

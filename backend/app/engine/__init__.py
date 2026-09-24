@@ -1,6 +1,8 @@
 from app.engine.department_codes import load_department_codes
 from app.engine.duplicates import is_passport_reused_with_different_identity
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_age, compute_stage_a_features
+from app.engine.freeze import find_active_sanctions_freeze
+from app.engine.fssp import classify_production, summarize_productions
 from app.engine.passport import (
     check_department_code_region,
     compute_blank_year,
@@ -10,7 +12,7 @@ from app.engine.passport import (
     is_passport_expired,
     validate_passport_format,
 )
-from app.engine.pipeline import NoActiveRulesetError, run_stage_a
+from app.engine.pipeline import NoActiveRulesetError, finalize_stage_a, run_stage_a
 from app.engine.rules import (
     FinancialOutcome,
     RuleEvaluationError,
@@ -70,6 +72,10 @@ __all__ = [
     "transition",
     "NoActiveRulesetError",
     "run_stage_a",
+    "finalize_stage_a",
+    "find_active_sanctions_freeze",
+    "classify_production",
+    "summarize_productions",
     "check_department_code_region",
     "compute_blank_year",
     "is_blank_year_future",

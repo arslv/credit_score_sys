@@ -57,6 +57,28 @@ class Settings(BaseSettings):
     # не синхронизируется периодически (см. docs/registries.md).
     department_codes_path: str = "config/reference/fms_unit.csv"
 
+    # ФССП/ФНС/Федресурс (T09): таймауты/повторы — технические параметры, не
+    # бизнес-правило (правило 2 CLAUDE.md касается порогов вида возраст/сумма/
+    # срок; ср. ocr_name_match_min_ratio выше). Числа — из таблицы ТЗ «Стадия А,
+    # шаг 3». Классификация типов производств ФССП, в отличие от этого, —
+    # business-правило и живёт в YAML-конфиге (sources.fssp.classification).
+    external_sources_mode: str = "fake"  # fake (по умолчанию) | http — см. app/sources/*.py
+    fns_base_url: str = ""
+    fns_request_timeout_seconds: float = 10.0
+    fns_max_attempts: int = 2
+    fedresurs_request_timeout_seconds: float = 20.0
+    fedresurs_max_attempts: int = 2
+    fssp_base_url: str = ""
+    fssp_api_key: str = ""
+    fssp_submit_timeout_seconds: float = 10.0
+    fssp_submit_max_attempts: int = 3
+    fssp_poll_interval_seconds: int = 5
+    fssp_poll_deadline_seconds: int = 120  # "120 с на опрос" из таблицы ТЗ
+    # Потолок на ВЕСЬ внешний блок шага 3 целиком (ФНС + Федресурс + ожидание
+    # ФССП) — отдельно от таймаутов конкретных запросов, чтобы сумма ретраев не
+    # растягивала стадию А на неопределённое время.
+    stage_a_external_checks_deadline_seconds: float = 180.0
+
 
 @lru_cache
 def get_settings() -> Settings:

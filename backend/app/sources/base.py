@@ -41,8 +41,12 @@ class CheckResult:
 
 
 class SourceBase(Protocol):
-    """Реализуют mvd.py, rosfinmon.py, blacklist.py (T08), позже fssp.py,
-    fedresurs.py, fns.py, bki.py (T09/T11) — все по этому интерфейсу."""
+    """Реализуют mvd.py, rosfinmon.py, blacklist.py (T08), fedresurs.py, fns.py
+    (T09), позже bki.py (T11) — однократный запрос/ответ. Исключение — fssp.py
+    (T09): официальное API асинхронное (запрос -> ID -> опрос), не укладывается
+    в один check(), поэтому там отдельный протокол FsspSource (submit/poll) с
+    тем же принципом "никогда не бросает исключение наружу" для poll(), но не
+    для submit() — см. app/sources/fssp.py."""
 
     source_name: str  # mvd | rosfinmon | fssp | fedresurs | fns | bki | blacklist
 

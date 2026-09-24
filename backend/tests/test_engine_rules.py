@@ -24,6 +24,7 @@ def _config(**overrides) -> RulesetConfig:
                 "department_code_check_enabled": False,
                 "blank_year_max_issue_offset_years": 3,
             },
+            "fssp": {"classification": []},
         },
         "hard_stops": [],
         "stage_b_pre_bki": [],

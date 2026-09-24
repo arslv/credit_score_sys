@@ -40,3 +40,13 @@ def get_status_mapping(our_status: str) -> StatusMappingEntry:
 
 def render_comment(mapping: StatusMappingEntry, **context: Any) -> str:
     return mapping.comment_template.format_map(_SafeDict(context))
+
+
+def get_reason_note(reason_code: str | None) -> str | None:
+    """Доп. пометка оператору по reason_code (T09, раздел reason_notes в
+    status_mapping.yaml) — например, куда передать санкционный хит. Текст только
+    из конфига, в коде не хардкодится."""
+    if reason_code is None:
+        return None
+    raw = _load_raw()
+    return (raw.get("reason_notes") or {}).get(reason_code)

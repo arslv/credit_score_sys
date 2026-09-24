@@ -148,14 +148,43 @@ class PassportSourceConfig(BaseModel):
     blank_year_max_issue_offset_years: int = Field(ge=0)
 
 
+class FsspCategory(StrEnum):
+    CREDIT_DEBT = "credit_debt"  # взыскание по кредитному договору — сильный сигнал
+    NOISE = "noise"  # штрафы ГИБДД и т.п. на небольшие суммы — шум
+    OTHER = "other"  # не подошло ни под одно правило — не шум, но не кредитный долг
+
+
+class FsspClassificationRule(BaseModel):
+    """Классификация типа исполнительного производства ФССП по подстрокам в
+    названии/предмете производства (ТЗ: штрафы ГИБДД — шум, взыскание по
+    кредитному договору — сильный сигнал). Правила проверяются по порядку,
+    выигрывает первое совпавшее (без учёта регистра); производство, не
+    подошедшее ни под одно правило, получает категорию FsspCategory.OTHER.
+    Формулировки — стартовые, правятся по живым данным (T09), без изменения кода."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    category: FsspCategory
+    match: list[str] = Field(min_length=1)
+
+
+class FsspSourceConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    classification: list[FsspClassificationRule] = Field(default_factory=list)
+
+
 class SourcesConfig(BaseModel):
-    """Пороги локальных источников стадии А, шаг 2 (ТЗ, «Источники данных», T08)."""
+    """Пороги локальных источников стадии А, шаг 2 (ТЗ, «Источники данных», T08)
+    и классификация ФССП, шаг 3 (T09). Таймауты/повторы внешних источников —
+    технические, не бизнес-параметры, см. app.config.Settings."""
 
     model_config = ConfigDict(extra="forbid")
 
     rosfinmon: RosfinmonSourceConfig
     registries: RegistriesConfig
     passport: PassportSourceConfig
+    fssp: FsspSourceConfig
 
 
 class RulesetConfig(BaseModel):

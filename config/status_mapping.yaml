@@ -26,3 +26,8 @@ gray_zone:
 approved:
   partner_status: approved
   comment_template: "Одобрено: сумма {approved_amount}, срок {approved_term} мес., тариф {offered_tariff}, первый взнос {required_down_pay}."
+
+# Доп. пометка оператору по конкретной причине отказа (не по статусу) — дописывается
+# к обычному комментарию, если reason_code решения совпадает с ключом (T09).
+reason_notes:
+  SANCTIONS_HIT: "Совпадение по перечню Росфинмониторинга. Передать в комплаенс. Клиенту причину не сообщать."

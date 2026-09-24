@@ -8,7 +8,7 @@ celery_app = Celery(
     "dialog_scoring",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.tasks.integration", "app.tasks.stage_a", "app.tasks.registries"],
+    include=["app.tasks.integration", "app.tasks.stage_a", "app.tasks.registries", "app.tasks.fssp_poll"],
 )
 
 celery_app.conf.update(
@@ -29,6 +29,10 @@ celery_app.conf.update(
         "sync-registries": {
             "task": "registries.sync_all",
             "schedule": settings.registries_sync_interval_seconds,
+        },
+        "poll-fssp": {
+            "task": "fssp.poll_pending",
+            "schedule": settings.fssp_poll_interval_seconds,
         },
     },
 )

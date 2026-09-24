@@ -116,11 +116,17 @@ async def test_stage_a_sends_adult_applicant_to_operator(
         assert decision.reason_code is None
 
         # Контракт по всему конвейеру: чистые проверки (ok) -> to_operator, не rejected_a.
+        # ФНС/Федресурс/ФССП (T09) — фейковые источники по умолчанию без данных:
+        # ФНС не находит ИНН без предварительно заданного ответа (no_data), ФССП
+        # немедленно резолвится в "нет производств" (см. _submit_fssp).
         snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
         assert snapshot.features["checks"] == {
             "mvd": {"status": "ok"},
             "rosfinmon": {"status": "ok"},
             "blacklist": {"status": "ok"},
+            "fns": {"status": "no_data"},
+            "fedresurs": {"status": "ok"},
+            "fssp": {"status": "ok"},
         }
 
     detail = await partner_client.get_application(external_id)
@@ -263,6 +269,11 @@ async def test_stage_a_rosfinmon_hit_rejects(
                 "last_name": last_name,
                 "first_name": first_name,
                 "middle_name": middle_name,
+                # Уникальный паспорт (T09): санкционный хит теперь персистит freeze
+                # (app.engine.pipeline) — с общим дефолтным паспортом это заморозило
+                # бы его для всех остальных тестов до конца сессии pytest.
+                "passport_series": unique_valid_passport_series(),
+                "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
             }
         )
     )
@@ -335,6 +346,9 @@ async def test_stage_a_rosfinmon_threshold_actually_used_from_config(
                 "last_name": "Гаджиев",
                 "first_name": "Гаджи",
                 "middle_name": "Гажиевич",
+                # Уникальный паспорт (T09) — см. комментарий в test_stage_a_rosfinmon_hit_rejects.
+                "passport_series": unique_valid_passport_series(),
+                "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
             }
         )
     )

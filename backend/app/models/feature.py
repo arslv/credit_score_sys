@@ -54,6 +54,9 @@ class Decision(Base):
     stage: Mapped[str] = mapped_column(sa.Text, nullable=False)
     outcome: Mapped[str] = mapped_column(sa.Text, nullable=False)
     reason_code: Mapped[str | None] = mapped_column(sa.Text)
+    # Заморозка (например, санкционный хит) — персистится отдельно от triggered_rules,
+    # т.к. на неё опирается запрет повторных проверок того же клиента (T09).
+    freeze: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
     triggered_rules: Mapped[dict] = mapped_column(JSONB, nullable=False)
     score: Mapped[sa.Numeric | None] = mapped_column(sa.Numeric(6, 2))
     score_source: Mapped[str | None] = mapped_column(sa.Text)
