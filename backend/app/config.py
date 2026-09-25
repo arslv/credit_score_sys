@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -11,6 +12,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     environment: str = "development"
+
+    # T11: защита от случайных фейковых провайдеров в бою (app/startup_guard.py).
+    # По умолчанию — production, самый строгий режим: забытая переменная не
+    # должна тихо означать самый мягкий. dev/test — permissive.
+    app_env: Literal["dev", "test", "production"] = "production"
 
     # Интеграция с системой заказчика (см. fake_partner на этапе, пока их API неизвестен)
     partner_base_url: str = "http://fake_partner:8000"
@@ -28,6 +34,11 @@ class Settings(BaseSettings):
     # Распознавание фото паспорта (T05)
     anthropic_api_key: str = ""
     ocr_model: str = "claude-sonnet-5"
+    # anthropic (по умолчанию, реальный ключ) | fixture — для scripts/e2e_check.py:
+    # прогон через настоящие Celery-задачи без реального ключа Anthropic,
+    # см. app/ocr/factory.py.
+    ocr_provider_mode: str = "anthropic"
+    ocr_fixture_path: str = ""
     # Технический порог нечёткого сравнения ФИО (допуск на опечатки) — не бизнес-правило
     # вида "возраст/сумма/срок" из правила 2 CLAUDE.md, поэтому не в YAML-конфиге.
     ocr_name_match_min_ratio: float = 0.85
@@ -78,6 +89,16 @@ class Settings(BaseSettings):
     # ФССП) — отдельно от таймаутов конкретных запросов, чтобы сумма ретраев не
     # растягивала стадию А на неопределённое время.
     stage_a_external_checks_deadline_seconds: float = 180.0
+
+    # БКИ (T11): договора с бюро нет и неизвестно, с каким бюро он будет —
+    # отдельная настройка от external_sources_mode (у ФССП/ФНС хотя бы есть
+    # гипотетический URL, у БКИ нет и этого). not_configured — единственный
+    # безопасный дефолт; fake — для дев/тестов с синтетическими отчётами.
+    bki_provider_mode: str = "not_configured"  # not_configured (по умолчанию) | fake
+    # Отчёты для FakeBkiProvider по сценарию — JSON {"Фамилия|Имя|ГГГГ-ММ-ДД": {...}}
+    # в формате app.sources.bki.serialize_report. Пусто -> пустой FakeBkiProvider
+    # (как раньше), см. app/sources/factory.py. Для scripts/e2e_check.py.
+    bki_fixture_path: str = ""
 
 
 @lru_cache

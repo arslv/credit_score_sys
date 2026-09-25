@@ -3,7 +3,6 @@
 active_ruleset) — из test_engine_pipeline.py, чтобы не дублировать."""
 
 import asyncio
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -39,14 +38,25 @@ class _CallTrackingSource:
         return await self._inner.check(subject)
 
 
-class _DelayedSource:
-    def __init__(self, inner, delay_seconds: float) -> None:
+class _BarrierSyncedSource:
+    """Не измеряет длительность (замер времени в тестах флаки под нагрузкой —
+    см. отчёт по прогонам T11) — вместо этого источник перед ответом ждёт
+    общий asyncio.Barrier на двоих. При параллельном вызове (asyncio.gather в
+    run_fns_and_fedresurs) обе стороны доходят до барьера одновременно и сразу
+    проходят; при случайно вернувшемся последовательном вызове первая сторона
+    ждала бы вторую, которую никто не позовёт, пока не дождётся первой, — и
+    падает по таймауту барьера. execute_check (правило 4 CLAUDE.md) ловит это
+    исключение и превращает в CheckResult(status=error) — отличимый от
+    настоящего успеха результат, по которому тест и проверяет параллельность."""
+
+    def __init__(self, inner, barrier: asyncio.Barrier, *, timeout: float = 2.0) -> None:
         self._inner = inner
         self.source_name = inner.source_name
-        self._delay_seconds = delay_seconds
+        self._barrier = barrier
+        self._timeout = timeout
 
     async def check(self, subject):
-        await asyncio.sleep(self._delay_seconds)
+        await asyncio.wait_for(self._barrier.wait(), timeout=self._timeout)
         return await self._inner.check(subject)
 
 
@@ -95,21 +105,28 @@ async def test_fns_and_fedresurs_run_concurrently_not_sequentially(
     external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
     ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
 
-    delay = 0.3
-    fns = _DelayedSource(FakeFnsSource(), delay)
-    fedresurs = _DelayedSource(FakeFedresursSource(), delay)
+    barrier = asyncio.Barrier(2)
+    fns = _BarrierSyncedSource(FakeFnsSource(), barrier)
+    fedresurs = _BarrierSyncedSource(FakeFedresursSource(), barrier)
     fssp = FakeFsspSource(raise_on_submit=True)  # settles немедленно, не ждём опроса в этом тесте
 
-    start = time.monotonic()
     await run_stage_a(
         session_factory, application_id,
         ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
         fns_source=fns, fedresurs_source=fedresurs, fssp_source=fssp,
     )
-    elapsed = time.monotonic() - start
 
-    # Последовательно было бы >= 2*delay; параллельно — около одного delay.
-    assert elapsed < delay * 2 - 0.05
+    async with session_factory() as session:
+        checks = (
+            await session.execute(
+                select(Check).where(Check.application_id == application_id, Check.source.in_(["fns", "fedresurs"]))
+            )
+        ).scalars().all()
+    statuses = {c.source: c.status for c in checks}
+    # "error" здесь — исключительно след таймаута барьера (execute_check ловит
+    # его и подменяет CheckResult), а не обычный исход этих фейков.
+    assert statuses.get("fns") != "error", "fns не дождался fedresurs на барьере — вызваны не параллельно"
+    assert statuses.get("fedresurs") != "error", "fedresurs не дождался fns на барьере — вызваны не параллельно"
 
 
 # --- п.4: ФССП не принял запрос -> сразу source_unavailable и финализация -----
@@ -403,6 +420,7 @@ async def test_repeat_application_of_frozen_passport_is_rejected_without_any_che
 # на оставленном здесь id, значит поле уже появилось и исключение устарело.
 _NOT_YET_IMPLEMENTED_RULE_IDS = {
     "sharia_goods",  # stage_b_pre_bki -> goods.sharia_allowed, T10
+    "declared_pti_too_high",  # stage_b_pre_bki -> declared_pti_exceeds_max, T11 (стадия Б, не А)
     "pti_high",  # soft_rules -> features.pti, T11 (после запроса в БКИ)
 }
 

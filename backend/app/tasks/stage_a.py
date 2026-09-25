@@ -9,7 +9,7 @@ from app.db import new_sessionmaker
 from app.engine.pipeline import run_stage_a
 from app.integrations.fake_partner_client import FakePartnerClient
 from app.models import Application
-from app.ocr.anthropic_provider import AnthropicOcrProvider
+from app.ocr.factory import build_ocr_provider
 from app.storage.local import LocalDirectoryStorage
 
 logger = structlog.get_logger()
@@ -21,7 +21,7 @@ async def _run() -> dict[str, int]:
     # даёт новый event loop, кэшированный процессный движок это не переживает.
     engine, session_factory = new_sessionmaker()
     partner_client = FakePartnerClient(settings.partner_base_url, settings.partner_token)
-    ocr_provider = AnthropicOcrProvider(settings.anthropic_api_key, settings.ocr_model)
+    ocr_provider = build_ocr_provider(settings)
     storage = LocalDirectoryStorage(settings.storage_dir)
 
     summary = {"processed": 0, "errors": 0}

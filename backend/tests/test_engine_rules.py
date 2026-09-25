@@ -39,7 +39,7 @@ def _config(**overrides) -> RulesetConfig:
         },
         "tariffs": {"standard": {"down_payment_min_pct": 0.0}},
         "stage_b_completeness": {"required_sections": ["deal"]},
-        "bki": {"cache_days": 30, "on_unavailable": "manual_review", "consent_max_age_days": 30},
+        "bki": {"cache_days": 30, "on_unavailable": "manual_review", "consent_max_age_days": 30, "in_flight_timeout_minutes": 10},
         "score_thresholds": {"enabled": True, "auto_approve_above": 700, "auto_reject_below": 450},
         "matrix": [],
         "antifraud": {"max_applications_per_phone_30d": 3, "duplicate_window_days": 30},

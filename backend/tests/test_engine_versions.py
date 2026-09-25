@@ -31,7 +31,7 @@ def _config(effective_from: str) -> RulesetConfig:
             },
             "tariffs": {"standard": {"down_payment_min_pct": 0.0}},
             "stage_b_completeness": {"required_sections": ["deal"]},
-            "bki": {"cache_days": 30, "on_unavailable": "manual_review", "consent_max_age_days": 30},
+            "bki": {"cache_days": 30, "on_unavailable": "manual_review", "consent_max_age_days": 30, "in_flight_timeout_minutes": 10},
             "score_thresholds": {"enabled": True, "auto_approve_above": 700, "auto_reject_below": 450},
             "antifraud": {"max_applications_per_phone_30d": 3, "duplicate_window_days": 30},
         }
@@ -84,3 +84,22 @@ async def test_future_version_is_not_active_yet(db_session):
 
     active = await get_active_ruleset_version(db_session, at=now)
     assert active is None or active.version != future_row.version
+
+
+async def test_active_version_tie_break_picks_newest_when_effective_from_matches(db_session):
+    """Несколько версий с ОДИНАКОВЫМ effective_from (например, dev.yaml с
+    фиксированной датой пересинхронизируется при каждом перезапуске api) —
+    без тай-брейка по version ORDER BY effective_from возвращал бы
+    недетерминированную из них, а не обязательно последнюю (найдено при
+    прогоне scripts/e2e_check.py — см. отчёт T11)."""
+    same_day = "2026-01-01"
+    config = _config(same_day)
+    row_1 = await save_ruleset_version(db_session, config)
+    row_2 = await save_ruleset_version(db_session, config)
+    row_3 = await save_ruleset_version(db_session, config)
+    assert row_1.effective_from == row_2.effective_from == row_3.effective_from
+
+    active = await get_active_ruleset_version(
+        db_session, at=datetime(2026, 6, 1, tzinfo=timezone.utc)
+    )
+    assert active.version == row_3.version  # последняя сохранённая, не произвольная

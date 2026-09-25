@@ -11,8 +11,10 @@ from app.engine.versions import compute_config_hash, get_active_ruleset_version,
 from app.logging import configure_logging
 from app.redis import get_redis
 from app.registries.sync import is_registry_stale
+from app.startup_guard import assert_safe_for_environment
 
 configure_logging()
+assert_safe_for_environment(get_settings())
 logger = structlog.get_logger()
 
 _REGISTRIES = ("mvd_invalid_passports", "rosfinmon_sanctions")

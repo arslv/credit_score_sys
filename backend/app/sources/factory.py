@@ -4,7 +4,11 @@ external_sources_mode (app.config.Settings). fake — безопасный де�
 действие оператора окружения, не поведение по умолчанию (тот же принцип, что
 и registries_downloader в T08)."""
 
+import json
+from pathlib import Path
+
 from app.config import Settings
+from app.sources.bki import BkiProvider, FakeBkiProvider, NotConfiguredBkiProvider, deserialize_report
 from app.sources.fedresurs import FakeFedresursSource, FedresursHttpSource
 from app.sources.fns import FakeFnsSource, FnsHttpSource
 from app.sources.fssp import FakeFsspSource, FsspHttpSource, FsspSource
@@ -36,3 +40,13 @@ def build_fssp_source(settings: Settings) -> FsspSource:
             submit_max_attempts=settings.fssp_submit_max_attempts,
         )
     return FakeFsspSource()
+
+
+def build_bki_provider(settings: Settings) -> BkiProvider:
+    if settings.bki_provider_mode == "fake":
+        reports = {}
+        if settings.bki_fixture_path and Path(settings.bki_fixture_path).exists():
+            raw = json.loads(Path(settings.bki_fixture_path).read_text(encoding="utf-8"))
+            reports = {key: deserialize_report(value) for key, value in raw.items()}
+        return FakeBkiProvider(reports=reports)
+    return NotConfiguredBkiProvider()

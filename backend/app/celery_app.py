@@ -1,8 +1,10 @@
 from celery import Celery
 
 from app.config import get_settings
+from app.startup_guard import assert_safe_for_environment
 
 settings = get_settings()
+assert_safe_for_environment(settings)
 
 celery_app = Celery(
     "dialog_scoring",

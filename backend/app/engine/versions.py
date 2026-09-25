@@ -62,7 +62,12 @@ async def get_active_ruleset_version(
     result = await session.execute(
         select(RulesetVersion)
         .where(RulesetVersion.effective_from <= moment)
-        .order_by(RulesetVersion.effective_from.desc())
+        # version как вторичный ключ сортировки: несколько версий с одинаковым
+        # effective_from (например, dev.yaml с фиксированной датой пересинхронизируется
+        # при каждом перезапуске api и без этого тай-брейка ORDER BY по одному
+        # effective_from возвращает произвольную из них, не обязательно последнюю) —
+        # без него "активная" версия становится недетерминированной.
+        .order_by(RulesetVersion.effective_from.desc(), RulesetVersion.version.desc())
         .limit(1)
     )
     return result.scalar_one_or_none()

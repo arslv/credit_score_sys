@@ -29,7 +29,7 @@ from app.engine.state_machine import transition
 from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.adapter import write_decision_status
 from app.integrations.base import PartnerClient
-from app.integrations.status_mapping import get_reason_note, get_status_mapping, render_comment
+from app.integrations.status_mapping import build_operator_comment, get_status_mapping, render_comment
 from app.models import Application, Check, Client, Decision, Document, FeatureSnapshot, OcrResult
 from app.ocr.base import OcrProvider
 from app.ocr.service import run_ocr
@@ -210,12 +210,11 @@ async def _write_back(
     our_status: str,
     *,
     reason_code: str | None,
+    triggered_rules: list[dict[str, Any]] | None = None,
 ) -> None:
     mapping = get_status_mapping(our_status)
-    comment = render_comment(mapping, reason_code=reason_code or "-")
-    note = get_reason_note(reason_code)
-    if note:
-        comment = f"{comment} {note}"
+    reason_text = build_operator_comment(reason_code=reason_code, triggered_rules=triggered_rules)
+    comment = render_comment(mapping, reason_text=reason_text)
     await write_decision_status(
         session_factory,
         partner_client,
@@ -260,7 +259,9 @@ async def _reject_for_active_freeze(
     transition(session, application, "rejected_a", actor_type="system")
     await session.commit()
 
-    await _write_back(session_factory, partner_client, application, "rejected_a", reason_code=reason_code)
+    await _write_back(
+        session_factory, partner_client, application, "rejected_a", reason_code=reason_code,
+    )
     return application.status
 
 
@@ -519,6 +520,10 @@ async def finalize_stage_a(
             new_status=new_status,
         )
         reason_code = stop_outcome.reason_code
+        triggered_rules = _serialize_triggered_rules(stop_outcome.triggered_rules)
 
-    await _write_back(session_factory, partner_client, application, new_status, reason_code=reason_code)
+    await _write_back(
+        session_factory, partner_client, application, new_status,
+        reason_code=reason_code, triggered_rules=triggered_rules,
+    )
     return application.status

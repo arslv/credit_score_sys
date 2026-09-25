@@ -145,6 +145,21 @@ class PartnerStore:
         self._applications[application.id] = application
         return application
 
+    def reset(self, seed_count: int = 10) -> None:
+        """Только для тестов (см. POST /_test/reset) — очищает накопленные за
+        время работы процесса заявки. list_applications ниже — O(N) по ВСЕМ
+        когда-либо созданным заявкам (сканирует self._applications целиком,
+        не только совпадающие по статусу), а store никогда не уменьшается
+        сам по себе: без сброса между тестами N растёт на каждый пересоздание
+        pytest-сессии в рамках одного и того же поднятого docker compose,
+        и sync_applications (вызывается почти в каждом интеграционном тесте)
+        платит за этот скан дважды на тест. Отсюда и деградация полного
+        прогона от ~20 секунд до нескольких минут по мере повторных запусков
+        pytest без перезапуска сервиса."""
+        self._applications.clear()
+        self._counter = 0
+        self.seed(seed_count)
+
     def seed(self, count: int = 10) -> None:
         for i in range(count):
             last, first, middle = _SAMPLE_NAMES[i % len(_SAMPLE_NAMES)]

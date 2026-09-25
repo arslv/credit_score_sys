@@ -1,12 +1,19 @@
-"""T10: стадия Б без БКИ. Хелперы _ingest/_create_partner_application —
-из test_engine_pipeline.py, чтобы не дублировать создание заявки в fake_partner."""
+"""T10/T11: стадия Б, включая БКИ и финансовые правила. Хелперы
+_ingest/_create_partner_application — из test_engine_pipeline.py, чтобы не
+дублировать создание заявки в fake_partner."""
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import select
 
+from app.config import get_settings
+from app.engine.bki_cache import claim_in_flight, release_in_flight
+from app.engine.clients import find_or_create_client
+from app.engine.rules import _MISSING, get_field, parse_matrix_key
+from app.engine.schema import load_ruleset_from_yaml
 from app.engine.stage_b_pipeline import finalize_stage_b, run_stage_b
 from app.models import (
     Application,
@@ -17,6 +24,15 @@ from app.models import (
     Guarantor,
     ManualOverride,
     StatusHistory,
+)
+from app.models import BkiReport as BkiReportRow
+from app.sources.bki import (
+    BkiContract,
+    BkiReport,
+    FakeBkiProvider,
+    NotConfiguredBkiProvider,
+    good_history_report,
+    overdue_history_report,
 )
 from app.sources.fedresurs import FakeFedresursSource
 from app.sources.fns import FakeFnsSource
@@ -31,6 +47,27 @@ _DEFAULT_STAGE_B_PAYLOAD = {
     "income": {"declared_monthly": "100000"},
     "address": {"registration": "г. Тестоград"},
 }
+
+
+async def _link_applicant_to_client(session_factory, application_id, *, series: str, number: str) -> uuid.UUID:
+    """Привязывает заявку к клиенту напрямую (без прогона OCR стадии А — эти
+    тесты фокусируются на стадии Б/БКИ) — тем же find_or_create_client, что
+    использует стадия А (T09), чтобы получить настоящий client_id для
+    кэша/защиты от двойной оплаты (оба — по client_id, не по заявке)."""
+    async with session_factory() as session:
+        application = await session.get(Application, application_id)
+        client, _changed = await find_or_create_client(
+            session, last_name="Заёмщиков", first_name="Заём", middle_name=None,
+            birth_date=date(1990, 6, 15), passport_series=series, passport_number=number,
+            phone="+79990000099",
+        )
+        application.client_id = client.id
+        await session.commit()
+        return client.id
+
+
+def _bki_reports_for_applicant(report: BkiReport) -> dict[str, BkiReport]:
+    return {"Заёмщиков|Заём|1990-06-15": report}
 
 
 async def _prepare_application_at_stage_b(
@@ -70,11 +107,11 @@ async def _prepare_application_at_stage_b(
     return external_id, application_id
 
 
-async def test_all_checks_pass_never_approved(
+async def test_all_checks_pass_bki_not_configured_is_gray_zone(
     partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
-    """T10 п.1: даже когда все проверки стадии Б пройдены, approved недостижим
-    — заявка остаётся в stage_b, готовая к БКИ (T11), Decision не пишется."""
+    """T11 п.1: БКИ не подключено (провайдер по умолчанию — NotConfiguredBkiProvider)
+    -> gray_zone с пометкой оператору, а не approved и не зависание в stage_b."""
     external_id, application_id = await _prepare_application_at_stage_b(
         partner_admin, partner_client, storage, session_factory,
     )
@@ -84,21 +121,21 @@ async def test_all_checks_pass_never_approved(
         fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
-    assert final_status == "stage_b"
+    assert final_status == "gray_zone"
     assert final_status != "approved"
 
     async with session_factory() as session:
-        decisions = (
+        decision = (
             await session.execute(select(Decision).where(Decision.application_id == application_id))
-        ).scalars().all()
-        assert decisions == []  # никакого решения — ждём БКИ
-
-        snapshot = (
-            await session.execute(
-                select(FeatureSnapshot).where(FeatureSnapshot.application_id == application_id, FeatureSnapshot.stage == "B")
-            )
         ).scalar_one()
+        assert decision.outcome == "manual_review"
+        assert decision.reason_code == "BKI_NOT_CONFIGURED"
+
+        snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
         assert snapshot.features["goods"]["sharia_allowed"] is True
+
+    detail = await partner_client.get_application(external_id)
+    assert "БКИ не подключено" in detail.raw["comments"][-1]["text"]
 
 
 async def test_missing_section_returns_to_operator_with_list(
@@ -159,7 +196,7 @@ async def test_unknown_goods_category_code_does_not_auto_reject(
         fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
-    assert final_status == "stage_b"  # прошло дальше, не rejected_b
+    assert final_status == "gray_zone"  # прошло дальше (не rejected_b), БКИ не подключено
 
     async with session_factory() as session:
         snapshot = (
@@ -183,7 +220,7 @@ async def test_limits_exceeded_on_requested_tariff_offers_alternative(
         fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
-    assert final_status == "stage_b"  # предложение, не отказ
+    assert final_status == "gray_zone"  # предложение сохранилось, но БКИ не подключено
 
     async with session_factory() as session:
         snapshot = (
@@ -194,8 +231,8 @@ async def test_limits_exceeded_on_requested_tariff_offers_alternative(
         assert snapshot.features["tariff_offer"]["tariff"] == "advantageous"
 
     detail = await partner_client.get_application(external_id)
-    comment = detail.raw["comments"][-1]["text"]
-    assert "advantageous" in comment
+    comments = " ".join(c["text"] for c in detail.raw["comments"])
+    assert "advantageous" in comments
 
 
 async def test_limits_exceeded_for_every_tariff_rejects(
@@ -256,7 +293,7 @@ async def test_guarantor_local_hard_stop_proceeds_without_guarantor(
         fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
-    assert final_status == "stage_b"  # решение без поручителя, не отказ по заявке
+    assert final_status == "gray_zone"  # решение без поручителя (не отказ по заявке), БКИ не подключено
 
     async with session_factory() as session:
         snapshot = (
@@ -296,7 +333,7 @@ async def test_guarantor_full_check_suite_including_external_and_client_link(
         session_factory, application_id, partner_client=partner_client,
         fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=fssp,
     )
-    assert final_status == "stage_b"
+    assert final_status == "stage_b"  # поручитель ждёт опроса ФССП — БКИ ещё не запрашивалось
 
     async with session_factory() as session:
         guarantor = (
@@ -369,3 +406,508 @@ async def test_manual_override_recorded_when_operator_disagrees(
         assert override.to_outcome == "approved"
         assert override.reason_code == "PARTNER_OPERATOR_OVERRIDE_APPROVE"
         assert "постоянный" in override.comment
+
+
+# --- T11: БКИ, финансовые правила, кэш, защита от двойной оплаты ---------------
+
+
+async def test_declared_pti_too_high_rejects_without_reaching_bki(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Заявленный (не проверенный) ПДН уже выше limits.pti_max -> отказ до
+    какого-либо обращения в бюро — платного вызова быть не должно."""
+    payload = {
+        **_DEFAULT_STAGE_B_PAYLOAD,
+        "income": {"declared_monthly": "100000"},
+        "obligations": {"monthly_payment_total": "70000"},  # ПДН 0.7 > pti_max (0.60)
+    }
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+    )
+
+    final_status = await run_stage_b(session_factory, application_id, partner_client=partner_client)
+
+    assert final_status == "rejected_b"
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.reason_code == "DECLARED_PTI_TOO_HIGH"
+
+
+async def test_bki_approve_with_good_history_and_sufficient_score(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory,
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(good_history_report()))
+
+    final_status = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+
+    assert final_status == "approved"
+    async with session_factory() as session:
+        application = await session.get(Application, application_id)
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.outcome == "approve"
+        assert decision.score == Decimal("780.00")
+        assert decision.score_source == "bki_score"
+        assert decision.approved_amount == application.requested_amount
+        assert decision.offered_tariff == "standard"
+        assert decision.required_down_pay == application.down_payment
+
+    detail = await partner_client.get_application(external_id)
+    assert "Одобрено" in detail.raw["comments"][-1]["text"]
+
+
+async def test_bki_reject_on_low_score_regardless_of_down_payment(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Скор ниже порога автоотказа -> reject независимо от первого взноса."""
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory,
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(overdue_history_report()))
+
+    final_status = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+
+    assert final_status == "rejected_b"
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.outcome == "reject"
+        assert decision.reason_code == "SCORE_BELOW_THRESHOLD"
+        assert decision.required_down_pay is None
+
+
+async def test_bki_reject_even_when_matrix_requires_down_payment(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Матрица подняла бы порог/потребовала взнос, но скор ниже порога
+    автоотказа И ПОСЛЕ этого повышения — отказ, предложение не возникает."""
+    payload = {**_DEFAULT_STAGE_B_PAYLOAD, "deal": {"goods_category_code": "clothing_footwear"}}  # liquidity=low
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(overdue_history_report()))  # score 380
+
+    final_status = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+
+    assert final_status == "rejected_b"
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.outcome == "reject"
+        assert decision.required_down_pay is None
+        assert decision.offered_tariff is None
+
+
+async def test_risk_tariff_down_payment_required_when_actual_payment_insufficient(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Точное условие альтернативного тарифа по риску: решение было бы
+    approve, если бы выполнялось require_down_payment из матрицы, а фактический
+    взнос меньше -> предложение (gray_zone), не отказ."""
+    payload = {**_DEFAULT_STAGE_B_PAYLOAD, "deal": {"goods_category_code": "clothing_footwear"}}  # liquidity=low
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+        goods_price=60000.0, down_payment=6000.0,  # 10% — меньше требуемых 20%
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    high_score_report = BkiReport(contracts=[], inquiries=[], score=800)  # выше 760 (порог для low-ликвидности)
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(high_score_report))
+
+    final_status = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+
+    assert final_status == "gray_zone"
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.outcome == "manual_review"
+        assert decision.reason_code == "RISK_TARIFF_DOWN_PAYMENT_REQUIRED"
+        assert decision.required_down_pay == Decimal("12000.00")  # 20% от 60000
+        assert decision.offered_tariff == "standard"
+
+    detail = await partner_client.get_application(external_id)
+    assert "12000" in detail.raw["comments"][-1]["text"]
+
+
+async def test_risk_tariff_down_payment_sufficient_approves_directly(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    payload = {**_DEFAULT_STAGE_B_PAYLOAD, "deal": {"goods_category_code": "clothing_footwear"}}
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+        goods_price=60000.0, down_payment=15000.0,  # 25% — выше требуемых 20%
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    high_score_report = BkiReport(contracts=[], inquiries=[], score=800)
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(high_score_report))
+
+    final_status = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+
+    assert final_status == "approved"
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.outcome == "approve"
+
+
+async def test_risk_tariff_down_payment_exactly_at_boundary_approves(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Взнос ровно равен требуемому (20% от 60000 = 12000) -> одобрение, не
+    предложение: условие интерсепции строгое "меньше", не "меньше или равно"."""
+    payload = {**_DEFAULT_STAGE_B_PAYLOAD, "deal": {"goods_category_code": "clothing_footwear"}}
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+        goods_price=60000.0, down_payment=12000.0,
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    high_score_report = BkiReport(contracts=[], inquiries=[], score=800)
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(high_score_report))
+
+    final_status = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+
+    assert final_status == "approved"
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.outcome == "approve"
+        assert decision.required_down_pay == Decimal("12000.00")
+
+
+async def test_repeat_review_reuses_cached_report_without_new_bureau_call(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """T11 критерий приёмки: повторная стадия Б берёт отчёт из кэша — второй
+    платный вызов в бюро не совершается."""
+    series = unique_valid_passport_series()
+    number = f"{uuid.uuid4().int % 1000000:06d}"
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(good_history_report()))
+
+    external_id_1, application_id_1 = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory,
+    )
+    await _link_applicant_to_client(session_factory, application_id_1, series=series, number=number)
+    status_1 = await run_stage_b(
+        session_factory, application_id_1, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+    assert status_1 == "approved"
+    assert len(provider.requested_subjects) == 1
+
+    external_id_2, application_id_2 = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory,
+    )
+    await _link_applicant_to_client(session_factory, application_id_2, series=series, number=number)
+    status_2 = await run_stage_b(
+        session_factory, application_id_2, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+
+    assert status_2 == "approved"
+    assert len(provider.requested_subjects) == 1  # не выросло — кэш, не новый вызов
+
+    async with session_factory() as session:
+        decision_2 = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id_2))
+        ).scalar_one()
+        assert decision_2.score == Decimal("780.00")
+
+
+async def test_missing_consent_does_not_use_cached_report(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Отчёт из кэша используется только если у ТЕКУЩЕЙ заявки есть
+    действующее согласие — иначе серая зона, кэш не читается вовсе."""
+    series = unique_valid_passport_series()
+    number = f"{uuid.uuid4().int % 1000000:06d}"
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(good_history_report()))
+
+    external_id_1, application_id_1 = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory,
+    )
+    await _link_applicant_to_client(session_factory, application_id_1, series=series, number=number)
+    status_1 = await run_stage_b(
+        session_factory, application_id_1, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+    assert status_1 == "approved"  # кэш теперь есть для этого клиента
+
+    external_id_2, application_id_2 = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, consent_bki=False,
+    )
+    await _link_applicant_to_client(session_factory, application_id_2, series=series, number=number)
+    status_2 = await run_stage_b(
+        session_factory, application_id_2, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+
+    assert status_2 == "gray_zone"
+    async with session_factory() as session:
+        decision_2 = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id_2))
+        ).scalar_one()
+        assert decision_2.reason_code == "BKI_CONSENT_MISSING_OR_EXPIRED"
+        assert decision_2.outcome == "manual_review"
+    assert len(provider.requested_subjects) == 1  # кэш не читался — вызов бюро не повторился и не потребовался
+
+
+async def test_unknown_client_is_gray_zone_without_bureau_call(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Провайдер настроен, но заявка почему-то не привязана к client_id (не
+    должно случаться в реальном потоке, но данные бывают неполными) — не
+    роняем и не запрашиваем платно без идентификатора для кэша/защиты."""
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory,
+    )
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(good_history_report()))
+
+    final_status = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+
+    assert final_status == "gray_zone"
+    assert provider.requested_subjects == []
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.reason_code == "BKI_CLIENT_UNKNOWN"
+
+
+async def test_not_configured_provider_never_attempts_bureau_call(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory,
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+
+    final_status = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=NotConfiguredBkiProvider(),
+    )
+
+    assert final_status == "gray_zone"
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        assert decision.reason_code == "BKI_NOT_CONFIGURED"
+
+        rows = (await session.execute(select(BkiReportRow))).scalars().all()
+        assert rows == []  # "не настроено" -> вызова не было -> в журнал оплаты не пишется
+
+
+async def test_in_flight_busy_parks_application_and_retry_succeeds(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Повторное «Рассмотреть» из состояния ожидания БКИ должно работать:
+    занятый клейм не отказывает и не роняет заявку — она остаётся в stage_b и
+    следующий подбор (finalize_stage_b, как в app/tasks/stage_b.py) доводит
+    БКИ до конца."""
+    series = unique_valid_passport_series()
+    number = f"{uuid.uuid4().int % 1000000:06d}"
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory,
+    )
+    client_id = await _link_applicant_to_client(session_factory, application_id, series=series, number=number)
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(good_history_report()))
+
+    # "Другая" заявка того же клиента, чей платный запрос сейчас в полёте —
+    # application_id у bki_requests_in_flight ссылается на реальную строку
+    # applications (FK), поэтому нужна вторая настоящая заявка, не случайный
+    # uuid. Вставляем её напрямую (не через _prepare_application_at_stage_b):
+    # тот хелпер зовёт sync_applications, который повторно перечитывает ВСЕ
+    # заявки в fake_partner в статусе "на рассмотрении", включая первую, и
+    # затёр бы её тестовый снимок стадии Б снимком из fake_partner.
+    async with session_factory() as session:
+        other_application = Application(
+            external_id=f"other-{uuid.uuid4().hex[:10]}", status="stage_b",
+            goods_name="Другой товар", goods_price=Decimal("50000"), down_payment=Decimal("0"),
+            term_months=12, tariff="standard", requested_amount=Decimal("50000"),
+            profile={}, consent_pd_at=datetime.now(timezone.utc),
+        )
+        session.add(other_application)
+        await session.flush()
+        other_application_id = other_application.id
+        await session.commit()
+
+    busy_claim_id = await claim_in_flight(
+        session_factory, client_id=client_id, application_id=other_application_id, timeout_minutes=10
+    )
+    assert busy_claim_id is not None
+
+    status_while_busy = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+    assert status_while_busy == "stage_b"
+    assert provider.requested_subjects == []  # платного вызова не было вовсе
+
+    async with session_factory() as session:
+        decisions = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalars().all()
+        assert decisions == []
+
+    await release_in_flight(session_factory, busy_claim_id, failed=False)
+
+    status_after_retry = await finalize_stage_b(
+        session_factory, application_id, partner_client=partner_client, bki_provider=provider,
+    )
+    assert status_after_retry == "approved"
+    assert len(provider.requested_subjects) == 1
+
+
+async def test_dev_ruleset_stage_b_rule_field_paths_all_resolve(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Аналог test_dev_ruleset_rule_field_paths_all_resolve_against_real_snapshot
+    (T09, test_engine_pipeline_t09.py), но для полей, заполняемых только на
+    стадии Б (T10/T11): sharia_goods, declared_pti_too_high, pti_high, а также
+    matrix.amount/goods_liquidity/is_repeat — до T11 их не считал никто, и
+    matrix была фактически мертва (см. отчёт T11). Признаки ФССП заявителя
+    (features.fssp_*) переносятся из стадии А не пересчётом, а переносом
+    готового снапшота — сюда вставляется напрямую, как и остальная стадия А в
+    этих тестах (см. _prepare_application_at_stage_b). prior_defaults
+    остаётся исключением (T15, импорт истории платежей ещё не сделан)."""
+    guarantor_payload = {
+        "last_name": "Гарантов", "first_name": "Гарант", "middle_name": "Гарантович",
+        "birth_date": "1990-01-01", "issue_date": "2015-01-01",
+        "passport_series": unique_valid_passport_series(),
+        "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
+        "phone": "+79990000003",
+    }
+    payload = {
+        **_DEFAULT_STAGE_B_PAYLOAD,
+        "deal": {"goods_category_code": "clothing_footwear"},  # liquidity=low -> matrix.goods_liquidity
+        "guarantor": guarantor_payload,
+    }
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+        goods_price=250000.0, down_payment=60000.0,  # amount > 200000 -> matrix.amount_gt
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    async with session_factory() as session:
+        session.add(
+            FeatureSnapshot(
+                application_id=application_id, stage="A",
+                features={
+                    "is_repeat": True,  # matrix.is_repeat
+                    "features": {"fssp_total_amount": 10000.0, "fssp_credit_debt_amount": 10000.0, "fssp_count": 1},
+                },
+                feature_set_ver="stage_a.v1",
+            )
+        )
+        await session.commit()
+
+    report = BkiReport(
+        contracts=[
+            BkiContract(
+                opened_at=date(2024, 1, 1), closed_at=None, status="active",
+                monthly_payment="5000", balance="10000", overdue_days_max=0, subject="Кредит",
+            ),
+        ],
+        inquiries=[], score=800,
+    )
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(report))
+
+    await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+        bki_provider=provider,
+    )
+
+    async with session_factory() as session:
+        decision = (
+            await session.execute(
+                select(Decision).where(Decision.application_id == application_id)
+                .order_by(Decision.created_at.desc())
+            )
+        ).scalars().first()
+        snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
+    features = snapshot.features
+
+    config = load_ruleset_from_yaml(Path(get_settings().ruleset_path))
+    stage_b_rules = [*config.stage_b_pre_bki, *config.soft_rules]
+    unresolved = [rule.id for rule in stage_b_rules if get_field(features, rule.field) is _MISSING]
+    assert unresolved == [], f"правила стадии Б ссылаются на несуществующие в снапшоте поля: {unresolved}"
+
+    matrix_unresolved = [
+        key
+        for entry in config.matrix
+        for key in entry.when
+        if parse_matrix_key(key)[0] != "prior_defaults"  # T15 — ещё не реализовано
+        and get_field(features, parse_matrix_key(key)[0]) is _MISSING
+    ]
+    assert matrix_unresolved == [], f"matrix.when ссылается на несуществующие в снапшоте поля: {matrix_unresolved}"

@@ -92,7 +92,11 @@ async def test_stage_a_rejects_underage_applicant(
 
     detail = await partner_client.get_application(external_id)
     assert detail.status == "rejected"
-    assert "AGE_BELOW_MIN" in detail.raw["comments"][-1]["text"]
+    comment = detail.raw["comments"][-1]["text"]
+    # T11: комментарий — человеческим языком с фактическим значением и порогом,
+    # без служебного кода (оператор не программист).
+    assert "AGE_BELOW_MIN" not in comment
+    assert "19" in comment and "21" in comment
 
 
 async def test_stage_a_sends_adult_applicant_to_operator(

@@ -37,9 +37,11 @@ docker compose exec api alembic revision --autogenerate -m "..."  # новая �
 
 1. **Ничего не перезаписываем.** Таблицы `decisions`, `feature_snapshots`, `checks`,
    `status_history`, `external_snapshots`, `ocr_results`, `integration_events`,
-   `ruleset_versions`, `audit_log` — только INSERT. Никаких UPDATE/DELETE по ним.
-   `applications.status` — единственный изменяемый указатель; каждое его изменение
-   сопровождается записью в `status_history` в той же транзакции.
+   `ruleset_versions`, `audit_log`, `bki_reports` — только INSERT. Никаких UPDATE/DELETE
+   по ним. `applications.status` — единственный изменяемый указатель; каждое его
+   изменение сопровождается записью в `status_history` в той же транзакции.
+   (`fssp_requests` и `bki_requests_in_flight` — исключение: техническое состояние
+   опроса/блокировки, а не бизнес-факт, обновляются на месте.)
 2. **Бизнес-логика только в YAML-конфиге правил.** Никаких порогов, возрастов, сумм,
    сроков и названий статусов заказчика в коде. Если нужна константа — это ключ конфига.
 3. **Сырые ответы внешних источников сохраняются до разбора** (`response_raw`, `payload_raw`).

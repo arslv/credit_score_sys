@@ -90,6 +90,13 @@ stage_b_pre_bki:
     op: eq
     value: false
     reason: GOODS_NOT_ALLOWED
+  - id: declared_pti_too_high
+    # declared_pti_exceeds_max — булево, посчитанное в коде против limits.pti_max
+    # (T11): порог не дублируется литералом в правиле, единый источник — limits.
+    field: declared_pti_exceeds_max
+    op: eq
+    value: true
+    reason: DECLARED_PTI_TOO_HIGH
 
 # Стадия Б: после получения КИ
 soft_rules:
@@ -134,6 +141,7 @@ bki:
   cache_days: 30
   on_unavailable: manual_review
   consent_max_age_days: 30 # ТЗ, «Согласия»: согласие на КИ ограничено по сроку
+  in_flight_timeout_minutes: 10 # T11: зависший запрос (воркер упал) считается сбойным после этого срока
 
 score_thresholds:
   enabled: true

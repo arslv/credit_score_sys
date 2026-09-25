@@ -1,13 +1,14 @@
-"""Оркестратор стадии Б без БКИ (T10, ТЗ «Конвейер» -> «Стадия Б. После звонка»).
-Запускается по сигналу «Рассмотреть» — снимок анкеты уже лежит в
-external_snapshots(stage="B") благодаря T04 (sync_applications). Дешёвые
-проверки до БКИ: полнота -> шариат -> лимиты/тариф -> согласие на КИ ->
-поручитель (полный набор проверок стадии А, включая внешние — тем же
-submit/poll-механизмом, что и заявитель в T09). БКИ — T11: если все проверки
-пройдены, заявка остаётся в статусе "stage_b" (готова к БКИ), Decision не
-пишется — approved до T11 в принципе недостижим ни при каком исходе здесь."""
+"""Оркестратор стадии Б (T10 без БКИ, T11 — БКИ и финансовые правила, ТЗ
+«Конвейер» -> «Стадия Б. После звонка»). Запускается по сигналу «Рассмотреть»
+— снимок анкеты уже лежит в external_snapshots(stage="B") благодаря T04
+(sync_applications). Дешёвые проверки до БКИ: полнота -> шариат + заявленный
+ПДН -> лимиты/тариф -> согласие на КИ -> поручитель (полный набор проверок
+стадии А, включая внешние — тем же submit/poll-механизмом, что и заявитель в
+T09) -> запрос в БКИ (кэш/защита от двойной оплаты — app/engine/bki_cache.py)
+-> финансовые правила (app/engine/rules.evaluate_financial)."""
 
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -16,29 +17,47 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import get_settings
+from app.engine.bki_cache import claim_in_flight, get_cached_report_row, record_attempt, release_in_flight
+from app.engine.bki_features import (
+    compute_bki_features,
+    compute_declared_pti_features,
+    parse_declared_income_and_obligations,
+)
 from app.engine.clients import find_or_create_client
 from app.engine.external_checks import run_fns_and_fedresurs, submit_fssp
 from app.engine.features import compute_stage_a_features
 from app.engine.freeze import find_active_sanctions_freeze
 from app.engine.goods import compute_goods_features
 from app.engine.limits import evaluate_deal_limits
-from app.engine.rules import TriggeredRule, evaluate_hard_stops, evaluate_stage_b_pre_bki
+from app.engine.rules import (
+    TriggeredRule,
+    evaluate_financial,
+    evaluate_hard_stops,
+    evaluate_stage_b_pre_bki,
+)
 from app.engine.state_machine import transition
 from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.adapter import write_comment, write_decision_status
 from app.integrations.base import PartnerClient
-from app.integrations.status_mapping import get_reason_note, get_status_mapping, render_comment
+from app.integrations.status_mapping import build_operator_comment, get_status_mapping, render_comment
 from app.models import (
     Application,
     Check,
+    Client,
     Decision,
     ExternalSnapshot,
     FeatureSnapshot,
     Guarantor,
 )
-from app.sources.base import Subject
+from app.sources.base import CheckStatus, Subject
+from app.sources.bki import BkiProvider, BkiProviderResult, deserialize_report, serialize_report
 from app.sources.blacklist import BlacklistSource
-from app.sources.factory import build_fedresurs_source, build_fns_source, build_fssp_source
+from app.sources.factory import (
+    build_bki_provider,
+    build_fedresurs_source,
+    build_fns_source,
+    build_fssp_source,
+)
 from app.sources.fssp import FsspSource
 from app.sources.mvd import MvdSource
 from app.sources.rosfinmon import RosfinmonSource
@@ -101,12 +120,14 @@ def _serialize_triggered_rules(rules: list[TriggeredRule]) -> list[dict[str, Any
 async def _write_back(
     session_factory: async_sessionmaker, partner_client: PartnerClient, application: Application,
     our_status: str, *, reason_code: str | None = None, summary: str | None = None,
+    triggered_rules: list[dict[str, Any]] | None = None, comment_context: dict[str, Any] | None = None,
+    **extra_context: Any,
 ) -> None:
     mapping = get_status_mapping(our_status)
-    comment = render_comment(mapping, reason_code=reason_code or "-", summary=summary or "")
-    note = get_reason_note(reason_code)
-    if note:
-        comment = f"{comment} {note}"
+    reason_text = build_operator_comment(
+        reason_code=reason_code, triggered_rules=triggered_rules, context=comment_context,
+    )
+    comment = render_comment(mapping, reason_text=reason_text, summary=summary or "", **extra_context)
     await write_decision_status(
         session_factory, partner_client, application_id=application.id, external_id=application.external_id,
         expected_current_status="on_review", new_status=mapping.partner_status, comment=comment,
@@ -201,18 +222,24 @@ async def _run_guarantor_local_checks(session, config, guarantor: Guarantor, gua
 async def run_stage_b(
     session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerClient,
     fns_source=None, fedresurs_source=None, fssp_source: FsspSource | None = None,
+    bki_provider: BkiProvider | None = None,
 ) -> str:
     settings = get_settings()
     fns_source = fns_source or build_fns_source(settings)
     fedresurs_source = fedresurs_source or build_fedresurs_source(settings)
     fssp_source = fssp_source or build_fssp_source(settings)
+    bki_provider = bki_provider or build_bki_provider(settings)
 
     async with session_factory() as session:
         application = await session.get(Application, application_id)
         if application is None:
             raise ValueError(f"заявка {application_id} не найдена")
 
-        if application.status == "to_operator":
+        # "gray_zone" -> "stage_b": повторное «Рассмотреть» после серой зоны
+        # (например, БКИ было недоступно или согласие истекло, оператор
+        # поправил данные и снова нажал «Рассмотреть») — снимок анкеты уже
+        # обновлён sync_applications, здесь просто заново прогоняем конвейер.
+        if application.status in ("to_operator", "gray_zone"):
             transition(session, application, "stage_b", actor_type="system")
             await session.commit()
 
@@ -240,13 +267,22 @@ async def run_stage_b(
 
         deal = stage_b_payload.get("deal") or {}
 
-        # Шариатский фильтр — до лимитов (ТЗ: порядок по стоимости проверки).
+        # Шариатский фильтр + заявленный ПДН — до лимитов (ТЗ: порядок по
+        # стоимости проверки), одним вызовом evaluate_stage_b_pre_bki, чтобы
+        # reason_code при совпадении обоих брался по порядку списка в dev.yaml.
         goods_features = await compute_goods_features(session, deal.get("goods_category_code"))
-        sharia_outcome = evaluate_stage_b_pre_bki(config, goods_features)
-        if sharia_outcome.matched:
+        declared_income, declared_obligations = parse_declared_income_and_obligations(
+            stage_b_payload.get("income") or {}, stage_b_payload.get("obligations") or {}
+        )
+        declared_pti_features = compute_declared_pti_features(
+            declared_income, declared_obligations, pti_max=config.limits.pti_max
+        )
+        pre_bki_features = {**goods_features, **declared_pti_features}
+        pre_bki_outcome = evaluate_stage_b_pre_bki(config, pre_bki_features)
+        if pre_bki_outcome.matched:
             return await _reject_stage_b(
-                session, session_factory, application, ruleset_row, sharia_outcome.reason_code,
-                _serialize_triggered_rules(sharia_outcome.triggered_rules), goods_features, partner_client,
+                session, session_factory, application, ruleset_row, pre_bki_outcome.reason_code,
+                _serialize_triggered_rules(pre_bki_outcome.triggered_rules), pre_bki_features, partner_client,
             )
 
         # Лимиты сделки + альтернативный тариф (T10, "только по лимитам").
@@ -260,7 +296,7 @@ async def run_stage_b(
         if not limits_outcome.passed:
             return await _reject_stage_b(
                 session, session_factory, application, ruleset_row, limits_outcome.reason_code,
-                [], goods_features, partner_client,
+                [], pre_bki_features, partner_client,
             )
 
         # Согласие на КИ — наличие и срок действия (ТЗ, «Согласия»): серая зона,
@@ -268,7 +304,7 @@ async def run_stage_b(
         if not _consent_bki_valid(application, config.bki.consent_max_age_days):
             return await _gray_zone_stage_b(
                 session, session_factory, application, ruleset_row, "BKI_CONSENT_MISSING_OR_EXPIRED",
-                goods_features, partner_client,
+                pre_bki_features, partner_client,
             )
 
         # Поручитель — опционален; при наличии полный набор проверок, включая
@@ -306,15 +342,25 @@ async def run_stage_b(
 
         await session.commit()
 
-    return await finalize_stage_b(session_factory, application_id, partner_client=partner_client)
+    return await finalize_stage_b(
+        session_factory, application_id, partner_client=partner_client, bki_provider=bki_provider
+    )
 
 
 async def finalize_stage_b(
-    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerClient
+    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerClient,
+    bki_provider: BkiProvider | None = None,
 ) -> str:
     """Хвост стадии Б: пересобирает поручителя (если был) с уже готовыми
-    внешними проверками, пишет решение/остаётся в ожидании БКИ. Идемпотентна
-    так же, как finalize_stage_a — SELECT ... FOR UPDATE на applications."""
+    внешними проверками, запрашивает БКИ (кэш/защита от двойной оплаты —
+    app/engine/bki_cache.py) и пишет решение. Идемпотентна, как
+    finalize_stage_a — SELECT ... FOR UPDATE на applications; при реальном
+    (некэшированном) обращении к бюро транзакция коммитится и лишь ПОТОМ
+    происходит платный вызов (правило 13 CLAUDE.md — снимаем блокировку до
+    обращения к внешнему источнику, не после)."""
+    settings = get_settings()
+    bki_provider = bki_provider or build_bki_provider(settings)
+
     async with session_factory() as session:
         application = (
             await session.execute(select(Application).where(Application.id == application_id).with_for_update())
@@ -331,16 +377,21 @@ async def finalize_stage_b(
         deal = stage_b_payload.get("deal") or {}
         goods_features = await compute_goods_features(session, deal.get("goods_category_code"))
 
-        # Альтернативный тариф (T10): если лимиты прошли не по запрошенному, а по
-        # другому тарифу — это не отказ, а предложение. run_stage_b уже пропустил
-        # эту заявку дальше (limits_outcome.passed), здесь пересчитываем для
-        # финального features-снапшота и комментария оператору — тем же способом,
-        # каким finalize_stage_a пересчитывает признаки заново, самодостаточно.
+        # Признаки заявителя со стадии А (T09/T11) — переносятся вперёд, не
+        # пересчитываются: ФССП по заявителю относится к нему целиком, не к
+        # конкретной заявке (features["features"] неймспейс, см. app/engine/fssp.py).
         client_history = await _client_history_snapshot(session, application)
+        is_repeat = bool(client_history.get("is_repeat", False))
+        carried_features = dict(client_history.get("features") or {})
+
+        # Альтернативный тариф по лимитам (T10): если запрошенный тариф не
+        # проходит, а другой проходит — предложение, не отказ. run_stage_b уже
+        # пропустил заявку дальше (limits_outcome.passed), здесь пересчитываем
+        # самодостаточно для финального снапшота и комментария оператору.
         limits_outcome = evaluate_deal_limits(
             requested_tariff=application.tariff, goods_price=application.goods_price,
             down_payment=application.down_payment, term_months=application.term_months,
-            is_repeat=bool(client_history.get("is_repeat", False)), limits=config.limits, tariffs=config.tariffs,
+            is_repeat=is_repeat, limits=config.limits, tariffs=config.tariffs,
         )
         tariff_offer_comment = None
         if limits_outcome.is_alternative:
@@ -380,35 +431,233 @@ async def finalize_stage_b(
                     guarantor_used = True
                 guarantor.status = "used" if guarantor_used else "rejected"
 
-        features = {**goods_features, "guarantor_used": guarantor_used}
+        # T11: bare top-level признаки для матрицы/evaluate_financial — раньше
+        # matrix.when (amount_gt/goods_liquidity/is_repeat) никогда не резолвился,
+        # потому что их никто не считал (см. отчёт T11).
+        income = stage_b_payload.get("income") or {}
+        obligations = stage_b_payload.get("obligations") or {}
+        declared_income, declared_obligations = parse_declared_income_and_obligations(income, obligations)
+        declared_pti_features = compute_declared_pti_features(
+            declared_income, declared_obligations, pti_max=config.limits.pti_max
+        )
+        base_features = {
+            **goods_features,
+            **declared_pti_features,
+            "guarantor_used": guarantor_used,
+            "amount": float(application.requested_amount),
+            "goods_liquidity": (goods_features.get("goods") or {}).get("liquidity"),
+            "is_repeat": is_repeat,
+        }
         if guarantor_reason_code:
-            features["guarantor_reason_code"] = guarantor_reason_code
+            base_features["guarantor_reason_code"] = guarantor_reason_code
 
-        feature_snapshot = FeatureSnapshot(
-            application_id=application_id, stage="B", features=features,
-            feature_set_ver=STAGE_B_FEATURE_SET_VERSION,
-        )
-        session.add(feature_snapshot)
-        await session.flush()
+        client_id = application.client_id
+        today = datetime.now(timezone.utc).date()
 
-        logger.info(
-            "stage_b_checks_passed_awaiting_bki",
-            application_id=str(application_id), guarantor_used=guarantor_used,
+        if not bki_provider.is_configured:
+            return await _gray_zone_stage_b(
+                session, session_factory, application, ruleset_row, "BKI_NOT_CONFIGURED",
+                {**base_features, "features": carried_features}, partner_client,
+                tariff_offer_comment=tariff_offer_comment,
+            )
+
+        if client_id is None:
+            # Не должно случаться в реальном потоке (клиент привязывается в
+            # OCR стадии А), но данные бывают неполными — не роняем заявку,
+            # не запрашиваем платно без идентификатора для кэша/защиты от
+            # двойной оплаты.
+            return await _gray_zone_stage_b(
+                session, session_factory, application, ruleset_row, "BKI_CLIENT_UNKNOWN",
+                {**base_features, "features": carried_features}, partner_client,
+                tariff_offer_comment=tariff_offer_comment,
+            )
+
+        cached_row = await get_cached_report_row(session, client_id, config.bki.cache_days)
+        if cached_row is not None:
+            report = deserialize_report(cached_row.report_raw)
+            bki_result_features = compute_bki_features(
+                report, monthly_income=declared_income, declared_monthly_obligations=declared_obligations,
+                today=today,
+            )
+            score = float(cached_row.score) if cached_row.score is not None else report.score
+            return await _write_financial_decision(
+                session, session_factory, application, ruleset_row, config, base_features, carried_features,
+                bki_result_features, score, tariff_offer_comment, partner_client,
+            )
+
+        client = await session.get(Client, client_id)
+        subject = Subject(
+            last_name=client.last_name, first_name=client.first_name, middle_name=client.middle_name,
+            birth_date=client.birth_date, passport_series=client.passport_series,
+            passport_number=client.passport_number, phone=client.phone,
         )
-        # Никакого Decision и перехода статуса: approved требует БКИ (T11).
-        # Заявка остаётся в "stage_b" — готова к запросу БКИ.
+        # Нет кэша — нужен настоящий платный вызов. Коммитим и снимаем FOR
+        # UPDATE до обращения к бюро (правило 13 CLAUDE.md): COMMIT завершает
+        # транзакцию и освобождает блокировку на уровне Postgres немедленно,
+        # не дожидаясь закрытия объекта сессии.
         await session.commit()
-        external_id = application.external_id
+        return await _finalize_after_bki_call(
+            session_factory, application_id, client_id=client_id, subject=subject, ruleset_row=ruleset_row,
+            config=config, base_features=base_features, carried_features=carried_features,
+            declared_income=declared_income, declared_obligations=declared_obligations,
+            tariff_offer_comment=tariff_offer_comment, partner_client=partner_client, bki_provider=bki_provider,
+        )
+
+
+async def _finalize_after_bki_call(
+    session_factory: async_sessionmaker, application_id: UUID, *, client_id: UUID, subject: Subject,
+    ruleset_row, config, base_features: dict, carried_features: dict, declared_income: Decimal,
+    declared_obligations: Decimal, tariff_offer_comment: str | None, partner_client: PartnerClient,
+    bki_provider: BkiProvider,
+) -> str:
+    """Вне какой-либо транзакции: клейм in-flight (защита от двойной оплаты,
+    уровень БД) -> платный вызов бюро -> журнал попытки (append-only) ->
+    снятие клейма -> запись решения в новой транзакции."""
+    in_flight_id = await claim_in_flight(
+        session_factory, client_id=client_id, application_id=application_id,
+        timeout_minutes=config.bki.in_flight_timeout_minutes,
+    )
+    if in_flight_id is None:
+        # По клиенту уже идёт другой платный запрос — не наш повод отказывать
+        # или зависать: заявка остаётся в stage_b, следующий подбор
+        # (app/tasks/stage_b.py) повторит попытку.
+        logger.info("stage_b_bki_in_flight_busy", application_id=str(application_id), client_id=str(client_id))
+        return "stage_b"
+
+    try:
+        result = await bki_provider.request_report(subject)
+    except Exception:  # провайдер обязан не бросать (см. app/sources/bki.py) — защита
+        logger.exception("bki_provider_raised", application_id=str(application_id))
+        result = BkiProviderResult(status=CheckStatus.ERROR, error_text="провайдер БКИ выбросил исключение")
+
+    today = datetime.now(timezone.utc).date()
+    report_ok = result.status in (CheckStatus.OK, CheckStatus.NO_DATA) and result.report is not None
+    report_raw = serialize_report(result.report) if report_ok else None
+    bki_result_features = (
+        compute_bki_features(
+            result.report, monthly_income=declared_income, declared_monthly_obligations=declared_obligations,
+            today=today,
+        )
+        if report_ok
+        else {"features": {}}
+    )
+    score = float(result.report.score) if report_ok and result.report.score is not None else None
+
+    await record_attempt(
+        session_factory, client_id=client_id, application_id=application_id, status=result.status.value,
+        report_raw=report_raw, features=bki_result_features.get("features"),
+        score=Decimal(str(score)) if score is not None else None,  # правило 5 CLAUDE.md — Decimal, не float
+        error_text=result.error_text,
+    )
+    await release_in_flight(session_factory, in_flight_id, failed=not report_ok)
+
+    async with session_factory() as session:
+        application = (
+            await session.execute(select(Application).where(Application.id == application_id).with_for_update())
+        ).scalar_one()
+        if application.status != "stage_b":
+            return application.status
+
+        if not report_ok:
+            reason_code = "BKI_SOURCE_UNAVAILABLE" if result.status is CheckStatus.SOURCE_UNAVAILABLE else "BKI_ERROR"
+            return await _gray_zone_stage_b(
+                session, session_factory, application, ruleset_row, reason_code,
+                {**base_features, "features": carried_features}, partner_client,
+                tariff_offer_comment=tariff_offer_comment,
+            )
+
+        return await _write_financial_decision(
+            session, session_factory, application, ruleset_row, config, base_features, carried_features,
+            bki_result_features, score, tariff_offer_comment, partner_client,
+        )
+
+
+async def _write_financial_decision(
+    session, session_factory, application, ruleset_row, config, base_features: dict, carried_features: dict,
+    bki_result_features: dict, score, tariff_offer_comment: str | None, partner_client,
+) -> str:
+    """Финансовые правила (T11, app.engine.rules.evaluate_financial) и точное
+    условие альтернативного тарифа по риску: предложение (а не отказ)
+    возникает ТОЛЬКО когда решение было бы approve, если бы выполнялось
+    require_down_payment из подошедшей строки матрицы, а фактический взнос
+    меньше. Скор ниже порога автоотказа — reject независимо от взноса."""
+    features = {
+        **base_features,
+        "score": score,
+        "features": {**carried_features, **bki_result_features.get("features", {})},
+    }
+
+    financial = evaluate_financial(config, features)
+    outcome = financial.outcome
+    reason_code = financial.reason_code
+    required_down_pay: Decimal | None = None
+
+    if outcome == "approve":
+        require_down_payment_pct = financial.thresholds_used.get("require_down_payment")
+        if require_down_payment_pct is not None:
+            required = (application.goods_price * Decimal(str(require_down_payment_pct))).quantize(Decimal("0.01"))
+            if application.down_payment < required:
+                outcome = "manual_review"
+                reason_code = "RISK_TARIFF_DOWN_PAYMENT_REQUIRED"
+                required_down_pay = required
+
+    feature_snapshot = FeatureSnapshot(
+        application_id=application.id, stage="B", features=features, feature_set_ver=STAGE_B_FEATURE_SET_VERSION,
+    )
+    session.add(feature_snapshot)
+    await session.flush()
+
+    decision = Decision(
+        application_id=application.id, stage="B", outcome=outcome, reason_code=reason_code,
+        triggered_rules=_serialize_triggered_rules(financial.triggered_rules),
+        ruleset_version_id=ruleset_row.id, feature_snapshot_id=feature_snapshot.id,
+        # правило 5 CLAUDE.md: Decimal для numeric(6,2), не float — score выше
+        # (в features) остаётся float для движка правил (op gt/gte с YAML).
+        score=Decimal(str(score)) if score is not None else None,
+        score_source="bki_score" if score is not None else None,
+        approved_amount=application.requested_amount if outcome == "approve" else None,
+        approved_term=application.term_months if outcome == "approve" else None,
+        offered_tariff=(
+            application.tariff if outcome == "approve" or reason_code == "RISK_TARIFF_DOWN_PAYMENT_REQUIRED"
+            else None
+        ),
+        required_down_pay=(
+            application.down_payment if outcome == "approve"
+            else required_down_pay if reason_code == "RISK_TARIFF_DOWN_PAYMENT_REQUIRED" else None
+        ),
+    )
+    session.add(decision)
+    await session.flush()
+
+    our_status = {"approve": "approved", "reject": "rejected_b", "manual_review": "gray_zone"}[outcome]
+    transition(session, application, our_status, actor_type="system")
+    await session.commit()
+    external_id = application.external_id
+
+    write_back_extra: dict[str, Any] = {}
+    if outcome == "approve":
+        write_back_extra = dict(
+            approved_amount=application.requested_amount, approved_term=application.term_months,
+            offered_tariff=application.tariff, required_down_pay=application.down_payment,
+        )
+
+    # Контекст для reason_notes операционных кодов (не из движка правил —
+    # SCORE_BELOW_THRESHOLD/SCORE_GRAY_ZONE/RISK_TARIFF_DOWN_PAYMENT_REQUIRED
+    # и т.п., см. app.integrations.status_mapping.build_operator_comment).
+    comment_context: dict[str, Any] = {**financial.thresholds_used, "score": score}
+    if reason_code == "RISK_TARIFF_DOWN_PAYMENT_REQUIRED":
+        comment_context["required_down_pay"] = required_down_pay
+        comment_context["down_payment"] = application.down_payment
+
+    await _write_back(
+        session_factory, partner_client, application, our_status, reason_code=reason_code,
+        triggered_rules=_serialize_triggered_rules(financial.triggered_rules), comment_context=comment_context,
+        **write_back_extra,
+    )
 
     if tariff_offer_comment:
-        # Вне блока сессии: write_comment сам пишет в integration_events через
-        # НОВУЮ сессию — если делать это, пока строка applications ещё
-        # заблокирована SELECT ... FOR UPDATE выше, INSERT в integration_events
-        # (FK на applications) ждёт снятия блокировки, которая снимется только
-        # после закрытия ЭТОЙ сессии — самоблокировка (поймано вживую при
-        # прогоне тестов, см. отчёт T10).
         await write_comment(
-            session_factory, partner_client, application_id=application_id, external_id=external_id,
+            session_factory, partner_client, application_id=application.id, external_id=external_id,
             text=tariff_offer_comment,
         )
 
@@ -434,12 +683,16 @@ async def _reject_stage_b(
     transition(session, application, "rejected_b", actor_type="system")
     await session.commit()
 
-    await _write_back(session_factory, partner_client, application, "rejected_b", reason_code=reason_code)
+    await _write_back(
+        session_factory, partner_client, application, "rejected_b",
+        reason_code=reason_code, triggered_rules=triggered_rules,
+    )
     return application.status
 
 
 async def _gray_zone_stage_b(
     session, session_factory, application, ruleset_row, reason_code, goods_features, partner_client,
+    *, tariff_offer_comment: str | None = None,
 ) -> str:
     feature_snapshot = FeatureSnapshot(
         application_id=application.id, stage="B", features=goods_features, feature_set_ver=STAGE_B_FEATURE_SET_VERSION,
@@ -456,8 +709,16 @@ async def _gray_zone_stage_b(
 
     transition(session, application, "gray_zone", actor_type="system")
     await session.commit()
+    external_id = application.external_id
 
-    await _write_back(session_factory, partner_client, application, "gray_zone", reason_code=reason_code)
+    await _write_back(
+        session_factory, partner_client, application, "gray_zone", reason_code=reason_code,
+    )
+    if tariff_offer_comment:
+        await write_comment(
+            session_factory, partner_client, application_id=application.id, external_id=external_id,
+            text=tariff_offer_comment,
+        )
     return application.status
 
 

@@ -23,6 +23,13 @@ os.environ.setdefault("INTEGRATION_RETRY_MAX_ATTEMPTS", "3")
 os.environ.setdefault("INTEGRATION_RETRY_BASE_DELAY_SECONDS", "0.05")
 os.environ.setdefault("INTEGRATION_RETRY_MAX_DELAY_SECONDS", "0.2")
 
+# APP_ENV по умолчанию — production (app/config.py, T11) — самый строгий режим,
+# который отказывается стартовать с фейковыми провайдерами (app/startup_guard.py).
+# Тесты сами используют FakeFnsSource/FakeBkiProvider/и т.п. повсеместно, поэтому
+# без этого импорт app.main/app.celery_app (через app.tasks.*) падал бы уже на
+# сборе тестов — до первого импорта app.config, как и остальные переменные выше.
+os.environ.setdefault("APP_ENV", "test")
+
 import asyncpg
 import pytest
 import pytest_asyncio
@@ -169,7 +176,17 @@ async def session_factory():
 @pytest_asyncio.fixture
 async def partner_admin():
     """Прямой httpx-клиент к fake_partner для служебных /_test/ эндпоинтов —
-    не часть PartnerClient, только для подготовки данных в тестах."""
+    не часть PartnerClient, только для подготовки данных в тестах.
+
+    Сбрасывает store fake_partner перед каждым тестом (POST /_test/reset):
+    сервис живёт весь docker compose, заявки в нём никогда не удаляются сами
+    по себе, а list_applications там — O(N) по ВСЕМ когда-либо созданным
+    заявкам (не только текущего теста). Без сброса N растёт с каждым
+    прогоном pytest в рамках одного поднятого стека, и sync_applications
+    (используется почти в каждом интеграционном тесте, дважды на вызов)
+    заметно замедляется — это и есть причина деградации полного прогона с
+    ~20 секунд до нескольких минут при повторных запусках без пересоздания
+    контейнера (см. отчёт T11)."""
     import httpx
 
     from app.config import get_settings
@@ -181,6 +198,7 @@ async def partner_admin():
         timeout=10.0,
     )
     try:
+        (await client.post("/_test/reset")).raise_for_status()
         yield client
     finally:
         await client.aclose()

@@ -28,6 +28,11 @@ services:
   api:
     build: ./backend
     environment:
+      # Явно "dev" — это compose для локальной разработки (T11: APP_ENV
+      # по умолчанию в коде — production, самый строгий режим, и не должен
+      # тихо унаследоваться из окружения хоста, где он мог быть выставлен
+      # для чего-то другого).
+      APP_ENV: dev
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
@@ -53,6 +58,7 @@ services:
   worker:
     build: ./backend
     environment:
+      APP_ENV: dev
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
@@ -83,6 +89,7 @@ services:
   beat:
     build: ./backend
     environment:
+      APP_ENV: dev
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}

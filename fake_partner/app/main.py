@@ -155,6 +155,19 @@ def test_fill_stage_b_fields(application_id: str, payload: StageBFields):
 
 
 @app.post(
+    "/_test/reset",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_service_account)],
+)
+def test_reset():
+    """Очищает накопленные заявки между тестами (см. store.reset) — без
+    этого store растёт неограниченно на весь срок жизни контейнера и
+    list_applications (O(N) по всем когда-либо созданным заявкам) заметно
+    замедляет sync_applications по мере повторных прогонов pytest."""
+    store.reset()
+
+
+@app.post(
     "/_test/applications/{application_id}/manual-status",
     response_model=ApplicationDetail,
     dependencies=[Depends(require_service_account)],
