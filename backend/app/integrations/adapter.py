@@ -14,7 +14,15 @@ from app.integrations.base import (
     PartnerConflictError,
     PartnerUnavailableError,
 )
-from app.models import Application, Document, ExternalSnapshot, IntegrationEvent, StatusHistory
+from app.models import (
+    Application,
+    Decision,
+    Document,
+    ExternalSnapshot,
+    IntegrationEvent,
+    ManualOverride,
+    StatusHistory,
+)
 from app.storage.base import Storage
 
 logger = structlog.get_logger()
@@ -313,8 +321,66 @@ async def write_decision_status(
             attempt=1,
             response={"expected": exc.expected, "actual": exc.actual},
         )
+        await _record_manual_override(
+            session_factory, client, application_id=application_id, external_id=external_id,
+            our_status=new_status, actual_status=exc.actual,
+        )
         return "conflict"
     return "ok"
+
+
+async def _record_manual_override(
+    session_factory: async_sessionmaker, client: PartnerClient, *, application_id, external_id: str,
+    our_status: str, actual_status: str,
+) -> None:
+    """T10: оператор сменил статус вручную до нашей записи (правило 12
+    CLAUDE.md, PartnerConflictError выше) — это и есть его решение. Пишем
+    расхождение в manual_overrides отдельной строкой, БЕЗ сотрудника-актора с
+    нашей стороны (employee_id=NULL — см. app/models/override.py). reason_code —
+    один из двух заведённых в T10 (migration 0009); comment — причина оператора
+    из системы заказчика, если она там появилась (новое поле, T10)."""
+    try:
+        detail = await client.get_application(external_id)
+    except Exception:
+        logger.exception("manual_override_detail_fetch_failed", application_id=str(application_id))
+        return
+
+    operator_reason = None
+    for entry in reversed(detail.raw.get("status_history", [])):
+        if entry.get("changed_by") == "operator":
+            operator_reason = entry.get("reason")
+            break
+
+    reason_code = (
+        "PARTNER_OPERATOR_OVERRIDE_APPROVE" if actual_status == "approved" else "PARTNER_OPERATOR_OVERRIDE_REJECT"
+    )
+
+    async with session_factory() as session:
+        decision_id = (
+            await session.execute(
+                select(Decision.id)
+                .where(Decision.application_id == application_id)
+                .order_by(Decision.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        session.add(
+            ManualOverride(
+                application_id=application_id,
+                decision_id=decision_id,
+                employee_id=None,
+                from_outcome=our_status,
+                to_outcome=actual_status,
+                reason_code=reason_code,
+                comment=operator_reason,
+            )
+        )
+        await session.commit()
+
+    logger.info(
+        "manual_override_recorded", application_id=str(application_id),
+        from_outcome=our_status, to_outcome=actual_status,
+    )
 
 
 async def write_comment(

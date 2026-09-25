@@ -1,7 +1,8 @@
-"""Периодический опрос ФССП по строкам fssp_requests (T09). Отдельная задача,
-не цикл со sleep внутри стадии А — воркер между тиками свободен для другой
-работы. SELECT ... FOR UPDATE SKIP LOCKED защищает от двойной обработки одной
-строки, если тики/воркеры пересекаются по времени."""
+"""Периодический опрос ФССП по строкам fssp_requests (T09, обобщено на стадию
+Б/поручителя в T10). Отдельная задача, не цикл со sleep внутри стадии А/Б —
+воркер между тиками свободен для другой работы. SELECT ... FOR UPDATE SKIP
+LOCKED защищает от двойной обработки одной строки, если тики/воркеры
+пересекаются по времени."""
 
 import asyncio
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ from app.celery_app import celery_app
 from app.config import get_settings
 from app.db import new_sessionmaker
 from app.engine.pipeline import finalize_stage_a
+from app.engine.stage_b_pipeline import finalize_stage_b
 from app.integrations.fake_partner_client import FakePartnerClient
 from app.models import FsspRequest
 from app.sources.base import CheckResult, CheckStatus
@@ -20,6 +22,8 @@ from app.sources.factory import build_fssp_source
 from app.sources.runner import record_check
 
 logger = structlog.get_logger()
+
+_FINALIZERS = {"A": finalize_stage_a, "B": finalize_stage_b}
 
 
 async def _poll_one(session_factory, fssp_source, partner_client, request_id) -> str:
@@ -36,6 +40,9 @@ async def _poll_one(session_factory, fssp_source, partner_client, request_id) ->
             return "skipped"
 
         application_id = row.application_id
+        stage = row.stage
+        subject_type = row.subject_type
+        subject_id = row.subject_id
         now = datetime.now(timezone.utc)
 
         if now >= row.deadline:
@@ -43,8 +50,8 @@ async def _poll_one(session_factory, fssp_source, partner_client, request_id) ->
             await record_check(
                 session,
                 application_id=application_id,
-                subject_type="applicant",
-                subject_id=None,
+                subject_type=subject_type,
+                subject_id=subject_id,
                 source_name="fssp",
                 result=CheckResult(status=CheckStatus.SOURCE_UNAVAILABLE, error_text="дедлайн опроса истёк"),
                 started_at=now,
@@ -64,8 +71,8 @@ async def _poll_one(session_factory, fssp_source, partner_client, request_id) ->
             await record_check(
                 session,
                 application_id=application_id,
-                subject_type="applicant",
-                subject_id=None,
+                subject_type=subject_type,
+                subject_id=subject_id,
                 source_name="fssp",
                 result=result,
                 started_at=now,
@@ -74,7 +81,8 @@ async def _poll_one(session_factory, fssp_source, partner_client, request_id) ->
             )
             await session.commit()
 
-    await finalize_stage_a(session_factory, application_id, partner_client=partner_client)
+    finalize = _FINALIZERS[stage]
+    await finalize(session_factory, application_id, partner_client=partner_client)
     return "finalized"
 
 

@@ -21,6 +21,10 @@ class GoodsCategory(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
+    # Код — то, что реально приходит из системы заказчика (T10): категории
+    # идентифицируются им, не названием. Код без совпадения в справочнике —
+    # флаг оператору, не отказ (см. app/engine/goods.py).
+    code: Mapped[str] = mapped_column(sa.Text, nullable=False, unique=True)
     name: Mapped[str] = mapped_column(sa.Text, nullable=False, unique=True)
     sharia_allowed: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.true())
     liquidity: Mapped[str] = mapped_column(sa.Text, nullable=False)

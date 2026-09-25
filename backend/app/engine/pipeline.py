@@ -7,8 +7,7 @@ T09: внешние источники шага 3 (ФНС, Федресурс, �
 опроса ФССП (app/tasks/fssp_poll.py, отложенный путь). Идемпотентность и защита
 от двойной финализации — через SELECT ... FOR UPDATE на строке applications."""
 
-import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -16,10 +15,11 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.engine.clients import compute_client_history_features, find_or_create_client
 from app.engine.department_codes import load_department_codes
 from app.engine.duplicates import is_passport_reused_with_different_identity
+from app.engine.external_checks import run_fns_and_fedresurs, submit_fssp
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_stage_a_features
 from app.engine.freeze import find_active_sanctions_freeze
 from app.engine.fssp import summarize_productions
@@ -30,25 +30,16 @@ from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.adapter import write_decision_status
 from app.integrations.base import PartnerClient
 from app.integrations.status_mapping import get_reason_note, get_status_mapping, render_comment
-from app.models import (
-    Application,
-    Check,
-    Client,
-    Decision,
-    Document,
-    FeatureSnapshot,
-    FsspRequest,
-    OcrResult,
-)
+from app.models import Application, Check, Client, Decision, Document, FeatureSnapshot, OcrResult
 from app.ocr.base import OcrProvider
 from app.ocr.service import run_ocr
-from app.sources.base import CheckResult, CheckStatus, Subject
+from app.sources.base import Subject
 from app.sources.blacklist import BlacklistSource
 from app.sources.factory import build_fedresurs_source, build_fns_source, build_fssp_source
-from app.sources.fssp import FsspSource, FsspSubmitError
+from app.sources.fssp import FsspSource
 from app.sources.mvd import MvdSource
 from app.sources.rosfinmon import RosfinmonSource
-from app.sources.runner import execute_check, record_check, run_and_record_check
+from app.sources.runner import run_and_record_check
 from app.storage.base import Storage
 
 logger = structlog.get_logger()
@@ -364,16 +355,26 @@ async def run_stage_a(
         if local_stop_outcome.matched:
             return await finalize_stage_a(session_factory, application_id, partner_client=partner_client)
 
-        await _run_external_checks(
+        await run_fns_and_fedresurs(
             session,
             settings=settings,
-            application=application,
+            application_id=application.id,
+            subject_type="applicant",
+            subject_id=None,
             subject=subject,
             fns_source=fns_source,
             fedresurs_source=fedresurs_source,
+        )
+        fssp_settled = await submit_fssp(
+            session,
+            settings,
+            application_id=application.id,
+            subject_type="applicant",
+            subject_id=None,
+            stage="A",
+            subject=subject,
             fssp_source=fssp_source,
         )
-        fssp_settled = await _submit_fssp(session, settings, application, subject, fssp_source)
         await session.commit()
 
     if fssp_settled:
@@ -381,117 +382,6 @@ async def run_stage_a(
 
     logger.info("stage_a_awaiting_fssp", application_id=str(application_id))
     return application.status
-
-
-async def _run_external_checks(
-    session,
-    *,
-    settings: Settings,
-    application: Application,
-    subject: Subject,
-    fns_source,
-    fedresurs_source,
-    fssp_source: FsspSource,
-) -> None:
-    """ФНС и Федресурс — параллельно (asyncio.gather), в рамках общего дедлайна
-    на весь синхронный внешний блок (T09, п.2 и п. про общий дедлайн). I/O —
-    конкурентно; запись в общую AsyncSession — последовательно после."""
-    try:
-        (fns_result, fns_started, fns_finished, fns_duration), (
-            fedresurs_result,
-            fedresurs_started,
-            fedresurs_finished,
-            fedresurs_duration,
-        ) = await asyncio.wait_for(
-            asyncio.gather(execute_check(fns_source, subject), execute_check(fedresurs_source, subject)),
-            timeout=settings.stage_a_external_checks_deadline_seconds,
-        )
-    except asyncio.TimeoutError:
-        now = datetime.now(timezone.utc)
-        timeout_result = CheckResult(
-            status=CheckStatus.SOURCE_UNAVAILABLE, error_text="общий дедлайн внешнего блока стадии А истёк"
-        )
-        fns_result = fedresurs_result = timeout_result
-        fns_started = fedresurs_started = now
-        fns_finished = fedresurs_finished = now
-        fns_duration = fedresurs_duration = 0
-
-    await record_check(
-        session,
-        application_id=application.id,
-        subject_type="applicant",
-        subject_id=None,
-        source_name=fns_source.source_name,
-        result=fns_result,
-        started_at=fns_started,
-        finished_at=fns_finished,
-        duration_ms=fns_duration,
-    )
-    await record_check(
-        session,
-        application_id=application.id,
-        subject_type="applicant",
-        subject_id=None,
-        source_name=fedresurs_source.source_name,
-        result=fedresurs_result,
-        started_at=fedresurs_started,
-        finished_at=fedresurs_finished,
-        duration_ms=fedresurs_duration,
-    )
-
-
-async def _submit_fssp(session, settings: Settings, application: Application, subject: Subject, fssp_source: FsspSource) -> bool:
-    """Возвращает True, если ФССП уже "settled" (отказался принять запрос) и
-    финализировать можно сразу; False — запрос поставлен в очередь на опрос,
-    финализация откладывается до fssp.poll_pending (T09, п.4 поправок).
-
-    После успешного submit() пробуем ОДИН немедленный poll() — не цикл и не
-    sleep (запрещено п.2 исходной постановки T09), просто использование того,
-    что уже есть под рукой: если источник ответил мгновенно (в т.ч. фейковый
-    источник без сконфигурированной задержки в тестах и в безопасном режиме
-    "нет доступа" по умолчанию), не заставляем стадию А ждать следующего тика
-    отдельной задачи опроса ради результата, который уже готов."""
-    now = datetime.now(timezone.utc)
-    try:
-        request_id = await fssp_source.submit(subject)
-    except FsspSubmitError as exc:
-        await record_check(
-            session,
-            application_id=application.id,
-            subject_type="applicant",
-            subject_id=None,
-            source_name="fssp",
-            result=CheckResult(status=CheckStatus.SOURCE_UNAVAILABLE, error_text=str(exc)),
-            started_at=now,
-            finished_at=datetime.now(timezone.utc),
-            duration_ms=0,
-        )
-        return True
-
-    immediate_result = await fssp_source.poll(request_id)
-    if immediate_result is not None:
-        await record_check(
-            session,
-            application_id=application.id,
-            subject_type="applicant",
-            subject_id=None,
-            source_name="fssp",
-            result=immediate_result,
-            started_at=now,
-            finished_at=datetime.now(timezone.utc),
-            duration_ms=0,
-        )
-        return True
-
-    session.add(
-        FsspRequest(
-            application_id=application.id,
-            external_request_id=request_id,
-            status="pending",
-            deadline=now + timedelta(seconds=settings.fssp_poll_deadline_seconds),
-        )
-    )
-    return False
 
 
 async def finalize_stage_a(

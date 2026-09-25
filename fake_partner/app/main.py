@@ -166,5 +166,7 @@ def test_manual_status_change(application_id: str, payload: StatusChangeRequest)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="application not found")
 
     new_status = _parse_status(payload.status)
-    application = store.force_set_status(application_id, new_status, changed_by="operator")
+    application = store.force_set_status(
+        application_id, new_status, changed_by="operator", reason=payload.reason
+    )
     return store.to_detail(application)

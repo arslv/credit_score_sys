@@ -29,7 +29,9 @@ def _config(effective_from: str) -> RulesetConfig:
                 "pti_max": 0.60,
                 "declared_income_cap": 80000,
             },
-            "bki": {"cache_days": 30, "on_unavailable": "manual_review"},
+            "tariffs": {"standard": {"down_payment_min_pct": 0.0}},
+            "stage_b_completeness": {"required_sections": ["deal"]},
+            "bki": {"cache_days": 30, "on_unavailable": "manual_review", "consent_max_age_days": 30},
             "score_thresholds": {"enabled": True, "auto_approve_above": 700, "auto_reject_below": 450},
             "antifraud": {"max_applications_per_phone_30d": 3, "duplicate_window_days": 30},
         }

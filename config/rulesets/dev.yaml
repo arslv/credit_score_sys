@@ -113,9 +113,27 @@ limits:
   pti_max: 0.60
   declared_income_cap: 80000 # потолок неподтверждённого дохода
 
+tariffs:
+  # ТЗ, «Тарифы». Наценка сюда не входит — это ценообразование (T11), не
+  # проверка стадии Б. "Постоянному клиенту": взнос "уточняется" в самом ТЗ —
+  # до уточнения используем 0, как у "Базового", и требуем is_repeat.
+  standard: # Базовый
+    down_payment_min_pct: 0.0
+  advantageous: # Выгодный
+    down_payment_min_pct: 0.20
+  repeat_client: # Постоянному клиенту — взнос "уточняется" (ТЗ), см. docs/spec.md
+    down_payment_min_pct: 0.0
+    requires_repeat_client: true
+
+stage_b_completeness:
+  # Верхнеуровневые секции анкеты (ТЗ, «Анкета»), без которых дешёвые проверки
+  # стадии Б не запускаются. "guarantor"/"family"/"contact" не обязательны.
+  required_sections: [deal, employment, income, address]
+
 bki:
   cache_days: 30
   on_unavailable: manual_review
+  consent_max_age_days: 30 # ТЗ, «Согласия»: согласие на КИ ограничено по сроку
 
 score_thresholds:
   enabled: true

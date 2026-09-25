@@ -90,6 +90,20 @@ class BkiConfig(BaseModel):
 
     cache_days: int = Field(ge=0)
     on_unavailable: str
+    # Согласие на КИ действует ограниченный срок (ТЗ, «Согласия») — старше
+    # этого возраста нельзя использовать для запроса, даже если поле заполнено.
+    consent_max_age_days: int = Field(ge=1)
+
+
+class TariffConfig(BaseModel):
+    """Один тариф из ТЗ («Тарифы»): требование по первому взносу и, для
+    «Постоянному клиенту», обязательность is_repeat. Наценка сюда не входит —
+    это ценообразование, не проверка стадии Б."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    down_payment_min_pct: float = Field(ge=0, le=1)
+    requires_repeat_client: bool = False
 
 
 class ScoreThresholdsConfig(BaseModel):
@@ -114,6 +128,20 @@ class MatrixEntry(BaseModel):
 
     when: dict[str, Any]
     override: dict[str, Any]
+
+
+class StageBCompletenessConfig(BaseModel):
+    """Какие верхнеуровневые секции анкеты (ТЗ, «Анкета»: deal/employment/
+    income/obligations/family/address/contact/guarantor) обязательны для
+    запуска дешёвых проверок стадии Б. Поручитель сюда не входит — он
+    опционален по своей природе. Проверка на уровне секций, не отдельных
+    полей внутри них: формат анкеты у заказчика не описан на уровне полей
+    (StageBFields.* — произвольные dict в fake_partner), детальная проверка
+    была бы гаданием."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    required_sections: list[str] = Field(min_length=1)
 
 
 class AntifraudConfig(BaseModel):
@@ -202,6 +230,8 @@ class RulesetConfig(BaseModel):
     stage_b_pre_bki: list[RuleDef] = Field(default_factory=list)
     soft_rules: list[RuleDef] = Field(default_factory=list)
     limits: LimitsConfig
+    tariffs: dict[str, TariffConfig]
+    stage_b_completeness: StageBCompletenessConfig
     bki: BkiConfig
     score_thresholds: ScoreThresholdsConfig
     matrix: list[MatrixEntry] = Field(default_factory=list)

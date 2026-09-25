@@ -1,9 +1,12 @@
 from app.engine.clients import compute_client_history_features, find_or_create_client
 from app.engine.department_codes import load_department_codes
 from app.engine.duplicates import is_passport_reused_with_different_identity
+from app.engine.external_checks import run_fns_and_fedresurs, submit_fssp
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_age, compute_stage_a_features
 from app.engine.freeze import find_active_sanctions_freeze
 from app.engine.fssp import classify_production, summarize_productions
+from app.engine.goods import compute_goods_features, find_goods_category
+from app.engine.limits import DealLimitsOutcome, evaluate_deal_limits
 from app.engine.passport import (
     check_department_code_region,
     compute_blank_year,
@@ -14,6 +17,7 @@ from app.engine.passport import (
     validate_passport_format,
 )
 from app.engine.pipeline import NoActiveRulesetError, finalize_stage_a, run_stage_a
+from app.engine.stage_b_pipeline import NoStageBSnapshotError, finalize_stage_b, run_stage_b
 from app.engine.rules import (
     FinancialOutcome,
     RuleEvaluationError,
@@ -88,4 +92,13 @@ __all__ = [
     "load_department_codes",
     "find_or_create_client",
     "compute_client_history_features",
+    "run_fns_and_fedresurs",
+    "submit_fssp",
+    "compute_goods_features",
+    "find_goods_category",
+    "DealLimitsOutcome",
+    "evaluate_deal_limits",
+    "run_stage_b",
+    "finalize_stage_b",
+    "NoStageBSnapshotError",
 ]

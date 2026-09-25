@@ -21,8 +21,14 @@ class ManualOverride(Base):
     decision_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("decisions.id")
     )
-    employee_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), sa.ForeignKey("employees.id"), nullable=False
+    # Nullable (T10): изначально это была ручная правка сотрудника через нашу
+    # админку (T12, ещё не реализована). T10 добавляет второй источник —
+    # автоматическое обнаружение расхождения между нашим решением и статусом,
+    # который оператор выставил вручную в системе заказчика (см.
+    # write_decision_status/PartnerConflictError) — там нет сотрудника-актора
+    # с нашей стороны, поэтому employee_id=NULL для таких строк.
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("employees.id")
     )
     from_outcome: Mapped[str] = mapped_column(sa.Text, nullable=False)
     to_outcome: Mapped[str] = mapped_column(sa.Text, nullable=False)

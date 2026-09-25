@@ -15,6 +15,10 @@ to_operator:
   partner_status: on_call
   comment_template: "Передано оператору на звонок. {summary}"
 
+stage_b_incomplete:
+  partner_status: on_call
+  comment_template: "Не хватает данных для стадии Б. Недостающие разделы анкеты: {summary}"
+
 rejected_b:
   partner_status: rejected
   comment_template: "Отказ на стадии Б. Причина: {reason_code}."

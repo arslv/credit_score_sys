@@ -66,6 +66,11 @@ class StatusHistoryEntry(BaseModel):
     to_status: PartnerStatus
     changed_by: str  # system | operator
     changed_at: datetime
+    # Причина решения оператора (T10) — отдельно от comment: comment может
+    # содержать наш собственный текст (когда changed_by="system"), а reason —
+    # именно то, что вводит оператор, меняя статус вручную в их системе.
+    # См. docs/spec.md, «Что нам нужно от их API».
+    reason: str | None = None
 
 
 class ApplicationSummary(BaseModel):
@@ -90,6 +95,10 @@ class ApplicationDetail(ApplicationSummary):
 class StatusChangeRequest(BaseModel):
     status: str
     comment: str | None = Field(default=None, max_length=2000)
+    # T10: причина решения оператора — используется только при ручной смене
+    # статуса (см. /_test/applications/{id}/manual-status), для сверки с нашим
+    # решением и записи в manual_overrides при расхождении.
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class CommentRequest(BaseModel):

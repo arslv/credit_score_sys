@@ -216,7 +216,7 @@ class PartnerStore:
         return application
 
     def force_set_status(
-        self, application_id: str, new_status: PartnerStatus, changed_by: str
+        self, application_id: str, new_status: PartnerStatus, changed_by: str, reason: str | None = None
     ) -> _StoredApplication | None:
         """Меняет статус без проверки допустимости перехода — имитирует ручное
         изменение статуса оператором в интерфейсе заказчика (см. правило 12 CLAUDE.md)."""
@@ -231,6 +231,7 @@ class PartnerStore:
                 to_status=new_status,
                 changed_by=changed_by,
                 changed_at=now,
+                reason=reason,
             )
         )
         application.status = new_status
