@@ -22,6 +22,8 @@ dependencies = [
     "anthropic>=0.40",
     "rapidfuzz>=3.10",
     "PyYAML>=6.0",
+    "argon2-cffi>=23.1",
+    "pydantic[email]>=2.9",
 ]
 
 [project.optional-dependencies]

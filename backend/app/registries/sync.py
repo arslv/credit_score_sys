@@ -58,7 +58,7 @@ async def atomic_registry_reload(
 
             async with session_factory() as log_session:
                 log_row = RegistrySyncLog(
-                    registry=registry,
+                    registry_name=registry,
                     status="error",
                     rows_loaded=None,
                     started_at=started_at,
@@ -73,7 +73,7 @@ async def atomic_registry_reload(
 
         finished_at = datetime.now(timezone.utc)
         log_row = RegistrySyncLog(
-            registry=registry,
+            registry_name=registry,
             status="ok",
             rows_loaded=len(rows),
             started_at=started_at,
@@ -95,7 +95,7 @@ async def is_registry_stale(session_factory: async_sessionmaker, *, registry: st
         last_ok = (
             await session.execute(
                 select(RegistrySyncLog)
-                .where(RegistrySyncLog.registry == registry, RegistrySyncLog.status == "ok")
+                .where(RegistrySyncLog.registry_name == registry, RegistrySyncLog.status == "ok")
                 .order_by(RegistrySyncLog.finished_at.desc())
                 .limit(1)
             )

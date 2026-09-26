@@ -48,7 +48,10 @@ class RegistrySyncLog(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    registry: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    # Атрибут переименован в Python (registry -> registry_name) — "registry" в
+    # Declarative зарезервировано под реестр классов SQLAlchemy (SAWarning),
+    # имя колонки в БД оставлено прежним, миграция не трогается.
+    registry_name: Mapped[str] = mapped_column("registry", sa.Text, nullable=False)
     status: Mapped[str] = mapped_column(sa.Text, nullable=False)
     rows_loaded: Mapped[int | None] = mapped_column(sa.Integer)
     started_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)

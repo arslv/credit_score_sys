@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import SanctionsList
 from app.sources.base import CheckResult, CheckStatus, Subject
-from app.sources.name_normalize import full_name, normalize_name
+from app.sources.name_normalize import full_name, normalize_name, sanctions_entry_key
 
 
 class RosfinmonSource:
@@ -51,6 +51,18 @@ class RosfinmonSource:
             status=CheckStatus.HIT,
             request=request,
             parsed={
+                # sanctions_list_id — id СТРОКИ на момент ЭТОЙ проверки, только
+                # для отладки/трассировки: реестр перезаливается целиком, при
+                # следующей синхронизации даже неизменная запись получит новый id.
+                "sanctions_list_id": str(best_entry.id),
+                # sanctions_entry_key — устойчивый признак записи, переживающий
+                # перезаливку реестра; ключ подавления ложных срабатываний
+                # (T12, app/engine/compliance_overrides.py) — пара клиент+запись.
+                "sanctions_entry_key": sanctions_entry_key(
+                    official_id=(best_entry.extra or {}).get("official_id") if best_entry.extra else None,
+                    name_normalized=best_entry.name_normalized,
+                    birth_date=best_entry.birth_date,
+                ),
                 "list_type": best_entry.list_type,
                 "full_name": best_entry.full_name,
                 "similarity": round(float(best_sim), 3),

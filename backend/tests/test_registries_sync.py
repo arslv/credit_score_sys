@@ -108,7 +108,7 @@ async def test_sync_failure_does_not_clobber_previous_version(session_factory):
             await session.execute(
                 select(RegistrySyncLog)
                 .where(
-                    RegistrySyncLog.registry == "mvd_invalid_passports",
+                    RegistrySyncLog.registry_name == "mvd_invalid_passports",
                     RegistrySyncLog.status == "error",
                 )
                 .order_by(RegistrySyncLog.started_at.desc())

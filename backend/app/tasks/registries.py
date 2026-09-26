@@ -32,7 +32,7 @@ async def _sync_one(session_factory, downloader, registry: str) -> str:
         async with session_factory() as session:
             session.add(
                 RegistrySyncLog(
-                    registry=registry,
+                    registry_name=registry,
                     status="error",
                     rows_loaded=None,
                     started_at=datetime.now(timezone.utc),

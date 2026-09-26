@@ -8,9 +8,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
-EMPLOYEE_ROLES = ("risk_manager", "admin", "viewer")
+# compliance — T12: не было в ролях ТЗ, заведена по вашему указанию (единственная
+# роль, которая снимает заморозку по санкциям и помечает совпадения ложными).
+EMPLOYEE_ROLES = ("risk_manager", "admin", "viewer", "compliance")
 DOCUMENT_KINDS = ("selfie_passport", "passport_main", "passport_reg")
-AUDIT_LOG_ACTIONS = ("view_application", "view_document", "change_ruleset", "export")
+AUDIT_LOG_ACTIONS = (
+    "view_application", "view_document", "view_credit_report", "change_ruleset", "export",
+    "login", "login_failed", "logout", "lift_freeze", "mark_false_positive",
+    "manage_employee", "manage_reference",
+)
 STATUS_HISTORY_ACTOR_TYPES = ("system", "employee", "client")
 
 
@@ -26,6 +32,11 @@ class Employee(Base):
     password_hash: Mapped[str] = mapped_column(sa.Text, nullable=False)
     role: Mapped[str] = mapped_column(sa.Text, nullable=False)
     active: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.true())
+    # Блокировка по учётной записи (T12, ТЗ «Аутентификация»: "блокировка после
+    # серии неудачных попыток") — короткая, дополняется блокировкой по IP
+    # (app/security/rate_limit.py), которая не завязана на конкретный email.
+    failed_login_count: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )

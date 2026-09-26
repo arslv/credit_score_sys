@@ -86,10 +86,19 @@ class PartnerStore:
     def __init__(self) -> None:
         self._applications: dict[str, _StoredApplication] = {}
         self._counter = 0
+        # Случайный префикс на запуск процесса: store — только в памяти, без
+        # volume, и при любом перезапуске (docker compose build/up, падение
+        # контейнера) счётчик обнуляется. Заказчик (app/db, том db_data)
+        # переживает перезапуск заглушки — без префикса новые заявки после
+        # рестарта получали бы те же external_id, что уже заняты вчерашними
+        # обработанными заявками в БД заказчика, и sync принимал бы это за
+        # попытку переписать статус, который "оператор уже изменил вручную"
+        # (правило 12 CLAUDE.md) — ложный conflict вместо обработки новой заявки.
+        self._run_prefix = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
 
     def _next_id(self) -> str:
         self._counter += 1
-        return f"APP-{self._counter:06d}"
+        return f"APP-{self._run_prefix}-{self._counter:06d}"
 
     def create_application(self, payload: CreateApplicationRequest) -> _StoredApplication:
         now = _now()

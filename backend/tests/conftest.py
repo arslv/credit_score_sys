@@ -38,6 +38,56 @@ from httpx import ASGITransport, AsyncClient
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_redis_singleton():
+    """app.redis.get_redis() кэширует клиент на весь процесс (как get_engine()
+    в app.db) — но pytest-asyncio даёт каждому тесту свой event loop, и клиент,
+    созданный в одном тесте, ловит "Event loop is closed" в следующем (T12,
+    первый тест, реально использующий Redis из HTTP-эндпоинта, а не из
+    Celery-задачи с одним asyncio.run() на процесс). Тот же фикс, что и для
+    движка БД в app.db.new_sessionmaker — просто пересоздаём клиент на тест."""
+    import app.redis as app_redis
+
+    async def _drop():
+        if app_redis._redis is not None:
+            try:
+                await app_redis._redis.aclose()
+            except Exception:
+                pass
+            app_redis._redis = None
+
+    await _drop()
+    yield
+    await _drop()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_db_singleton():
+    """app.db.get_engine()/get_sessionmaker() кэшируют движок на весь процесс —
+    это специально сделано для Celery-задач (app.db.new_sessionmaker() как раз
+    создаёт СВОЙ движок в обход этого кэша, см. его docstring). Но HTTP-эндпоинты
+    (T12, Depends(get_session)) используют именно закэшированный get_engine(), а
+    pytest-asyncio даёт каждому тесту свой event loop: соединение из пула,
+    открытое в одном тесте, ловит "attached to a different loop" в следующем,
+    который через client/admin_client дойдёт до реальной БД (до T12 этого не
+    происходило: единственный такой тест — test_health.py — был один на всю
+    сессию). Тот же фикс, что и для Redis выше: пересоздаём движок на тест."""
+    import app.db as app_db
+
+    async def _drop():
+        if app_db._engine is not None:
+            try:
+                await app_db._engine.dispose()
+            except Exception:
+                pass
+            app_db._engine = None
+            app_db._sessionmaker = None
+
+    await _drop()
+    yield
+    await _drop()
+
+
 def unique_valid_passport_series() -> str:
     """Случайная серия паспорта для тестов, где регион не важен, но должен
     получаться ВАЛИДНЫЙ год бланка (T08, app.engine.passport.compute_blank_year):
@@ -95,6 +145,18 @@ async def client():
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture
+async def admin_client():
+    """Как client, но https — сессионная кука ставится с Secure (T12), а httpx
+    (как и настоящий браузер) не отправляет Secure-куку обратно на http-запрос,
+    даже через ASGITransport без реальной сети."""
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="https://test") as ac:
         yield ac
 
 

@@ -1,4 +1,5 @@
 from app.models.application import Application, Guarantor
+from app.models.auth import ComplianceReview, FreezeLift, Session
 from app.models.base import Base
 from app.models.bki import BkiReport, BkiRequestInFlight
 from app.models.check import Check
@@ -29,6 +30,9 @@ __all__ = [
     "Document",
     "Employee",
     "StatusHistory",
+    "Session",
+    "FreezeLift",
+    "ComplianceReview",
     "Decision",
     "FeatureSnapshot",
     "ExternalSnapshot",

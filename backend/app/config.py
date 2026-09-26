@@ -100,6 +100,26 @@ class Settings(BaseSettings):
     # (как раньше), см. app/sources/factory.py. Для scripts/e2e_check.py.
     bki_fixture_path: str = ""
 
+    # Админка (T12) — технические параметры аутентификации/сессий, не бизнес-
+    # правила (правило 2 CLAUDE.md касается порогов заявки, не защиты входа).
+    # Другой origin — отдельное React-приложение (ТЗ, «Стек»); без явного списка
+    # cookie-сессия не дойдёт через CORS ни при каком credentials: include.
+    admin_frontend_origin: str = "http://localhost:5173"
+    session_ttl_hours: int = 12
+    session_idle_timeout_minutes: int = 30
+    # Блокировка по учётной записи — короткая (email уже известен, это не защита
+    # от подбора самого email); по IP — отдельно и независимо от конкретного
+    # email, иначе кто угодно, зная чужой email, держит его заблокированным
+    # бесконечно, просто продолжая слать неверные пароли.
+    login_account_max_failed_attempts: int = 5
+    login_account_lockout_minutes: int = 5
+    login_ip_max_failed_attempts: int = 20
+    login_ip_lockout_window_minutes: int = 15
+    # CSRF: все изменяющие запросы (не GET/HEAD/OPTIONS) обязаны нести этот
+    # заголовок — простая форма/кросс-сайтовая отправка не может его выставить,
+    # а CORS не пускает произвольный JS-код с чужого origin ставить его тоже.
+    csrf_header_name: str = "X-Requested-With"
+
 
 @lru_cache
 def get_settings() -> Settings:

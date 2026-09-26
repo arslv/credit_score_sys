@@ -29,3 +29,23 @@ def normalize_name(raw: str) -> str:
 
 def full_name(last_name: str, first_name: str, middle_name: str | None = None) -> str:
     return " ".join(part for part in (last_name, first_name, middle_name) if part)
+
+
+def sanctions_entry_key(*, official_id: str | None, name_normalized: str, birth_date) -> str:
+    """Устойчивый признак записи перечня (T12, ваше уточнение) — НЕ sanctions_list.id:
+    реестр перезаливается целиком (app/registries/sync.py: rename+DROP), каждая
+    строка при этом получает новый id, даже если содержимое записи не изменилось.
+    Пометка комплаенса «ложное совпадение» должна пережить такую перезаливку —
+    иначе она слетает при каждом обновлении реестра, и однофамилец снова получает
+    отказ и заморозку на следующий день.
+
+    Официальный идентификатор из самого перечня — если он появится в файле
+    (сейчас парсер его не читает, реальный формат ещё не подключён, см.
+    app/registries/parsers.py) — переживает и переименование, и правки ФИО в
+    записи, поэтому в приоритете. Без него — нормализованное ФИО + дата
+    рождения записи: тоже переживает перезаливку с тем же содержимым, а при
+    ИЗМЕНЕНИИ записи (другое ФИО/ДР) или совпадении с ДРУГОЙ записью даёт
+    другой ключ — подавление обоснованно перестаёт действовать (ваше уточнение)."""
+    if official_id:
+        return f"official:{official_id}"
+    return f"name_dob:{name_normalized}|{birth_date.isoformat() if birth_date else ''}"

@@ -2,8 +2,18 @@ from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app.api.applications import router as applications_router
+from app.api.audit import router as audit_router
+from app.api.auth import router as auth_router
+from app.api.clients import router as clients_router
+from app.api.compliance import router as compliance_router
+from app.api.contracts import router as contracts_router
+from app.api.employees import router as employees_router
+from app.api.references import router as references_router
+from app.api.system import router as system_router
 from app.config import get_settings
 from app.db import get_engine, get_sessionmaker
 from app.engine.schema import load_ruleset_from_yaml
@@ -11,7 +21,9 @@ from app.engine.versions import compute_config_hash, get_active_ruleset_version,
 from app.logging import configure_logging
 from app.redis import get_redis
 from app.registries.sync import is_registry_stale
+from app.security.csrf import CsrfHeaderMiddleware
 from app.startup_guard import assert_safe_for_environment
+from app.storage.local import LocalDirectoryStorage
 
 configure_logging()
 assert_safe_for_environment(get_settings())
@@ -35,6 +47,32 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="DIALOG Scoring", lifespan=lifespan)
+# На уровне модуля, не в lifespan: ASGI-транспорт в тестах (httpx.ASGITransport)
+# не шлёт lifespan-события вовсе, а само хранилище — дешёвый объект без I/O
+# при создании (само чтение/запись — уже с диском, при вызове save/read).
+app.state.storage = LocalDirectoryStorage(get_settings().storage_dir)
+
+# Админка — отдельное React-приложение на другом origin (ТЗ, «Стек»): без
+# явного allow_origins + allow_credentials браузер не пошлёт cookie сессии ни
+# при каком fetch(..., {credentials: "include"}) с этого origin.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[get_settings().admin_frontend_origin],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(CsrfHeaderMiddleware)
+
+app.include_router(auth_router)
+app.include_router(applications_router)
+app.include_router(clients_router)
+app.include_router(contracts_router)
+app.include_router(references_router)
+app.include_router(employees_router)
+app.include_router(audit_router)
+app.include_router(system_router)
+app.include_router(compliance_router)
 
 
 @app.get("/health")

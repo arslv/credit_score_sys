@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import get_settings
 from app.engine.clients import compute_client_history_features, find_or_create_client
+from app.engine.compliance_overrides import suppress_reviewed_false_positive
 from app.engine.department_codes import load_department_codes
 from app.engine.duplicates import is_passport_reused_with_different_identity
 from app.engine.external_checks import run_fns_and_fedresurs, submit_fssp
@@ -203,6 +204,21 @@ async def _latest_checks(session, application_id: UUID) -> dict[str, dict[str, A
     return {c.source: {"status": c.status, "parsed": c.parsed} for c in rows}
 
 
+async def _build_checks_features(session, client_id, checks: dict[str, dict[str, Any]]) -> dict[str, dict[str, str]]:
+    """features["checks"] из сырых Check-строк — с подавлением ранее
+    признанных ложными совпадений по перечню (T12, app.engine.compliance_overrides):
+    сам Check не переписывается, только то, что видит движок правил."""
+    result: dict[str, dict[str, str]] = {}
+    for source, c in checks.items():
+        status = c["status"]
+        if source == "rosfinmon":
+            status, _parsed = await suppress_reviewed_false_positive(
+                session, client_id=client_id, check_status=status, check_parsed=c.get("parsed"),
+            )
+        result[source] = {"status": status}
+    return result
+
+
 async def _write_back(
     session_factory: async_sessionmaker,
     partner_client: PartnerClient,
@@ -345,9 +361,9 @@ async def run_stage_a(
                 )
 
         features, subject = await _compute_local_features(session, config, application, ocr_outcome.fields)
-        features["checks"] = {
-            source: {"status": status["status"]} for source, status in (await _latest_checks(session, application.id)).items()
-        }
+        features["checks"] = await _build_checks_features(
+            session, client_id, await _latest_checks(session, application.id)
+        )
         await session.commit()
 
         # T09, п.1: локальный hard_stop уже решает всё — внешние источники шага 3
@@ -465,7 +481,7 @@ async def finalize_stage_a(
             )
 
         checks = await _latest_checks(session, application_id)
-        features["checks"] = {source: {"status": c["status"]} for source, c in checks.items()}
+        features["checks"] = await _build_checks_features(session, application.client_id, checks)
 
         # Вложенный неймспейс "features" (не опечатка) — так же, как features.pti,
         # уже задумано в ТЗ/dev.yaml с T06: hard_stop fssp_credit_debt и soft_rule

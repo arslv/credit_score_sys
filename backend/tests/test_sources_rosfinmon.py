@@ -53,6 +53,8 @@ async def test_rosfinmon_finds_spelling_variants(db_session, query_last, query_f
 
     assert result.status == CheckStatus.HIT
     assert result.parsed["birth_date_matched"] is True
+    assert result.parsed["sanctions_list_id"]  # только для отладки/трассировки (id строки на момент проверки)
+    assert result.parsed["sanctions_entry_key"]  # T12: устойчивый ключ для подавления ложных срабатываний
 
 
 # --- разные однофамильцы с разными датами рождения — не должны давать hit --------

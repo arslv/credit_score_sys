@@ -24,6 +24,7 @@ from app.engine.bki_features import (
     parse_declared_income_and_obligations,
 )
 from app.engine.clients import find_or_create_client
+from app.engine.compliance_overrides import suppress_reviewed_false_positive
 from app.engine.external_checks import run_fns_and_fedresurs, submit_fssp
 from app.engine.features import compute_stage_a_features
 from app.engine.freeze import find_active_sanctions_freeze
@@ -105,6 +106,21 @@ async def _latest_checks_for_subject(session, application_id: UUID, subject_type
     )
     rows = (await session.execute(stmt)).scalars().all()
     return {c.source: {"status": c.status, "parsed": c.parsed} for c in rows}
+
+
+async def _build_checks_features(session, client_id, checks: dict) -> dict[str, dict[str, str]]:
+    """features["checks"] из сырых Check-строк — с подавлением ранее признанных
+    ложными совпадений по перечню (T12, app.engine.compliance_overrides), для
+    поручителя тем же способом, что и для заявителя (app/engine/pipeline.py)."""
+    result: dict[str, dict[str, str]] = {}
+    for source, c in checks.items():
+        status = c["status"]
+        if source == "rosfinmon":
+            status, _parsed = await suppress_reviewed_false_positive(
+                session, client_id=client_id, check_status=status, check_parsed=c.get("parsed"),
+            )
+        result[source] = {"status": status}
+    return result
 
 
 def _serialize_triggered_rules(rules: list[TriggeredRule]) -> list[dict[str, Any]]:
@@ -214,7 +230,7 @@ async def _run_guarantor_local_checks(session, config, guarantor: Guarantor, gua
         )
 
     checks = await _latest_checks_for_subject(session, guarantor.application_id, "guarantor", guarantor.id)
-    features["checks"] = {name: {"status": c["status"]} for name, c in checks.items()}
+    features["checks"] = await _build_checks_features(session, guarantor.client_id, checks)
 
     return features, subject
 
@@ -419,7 +435,7 @@ async def finalize_stage_b(
                 )
                 guarantor_features, _subj = _compute_guarantor_passport_features(config, guarantor_payload)
                 checks = await _latest_checks_for_subject(session, application_id, "guarantor", guarantor.id)
-                guarantor_features["checks"] = {n: {"status": c["status"]} for n, c in checks.items()}
+                guarantor_features["checks"] = await _build_checks_features(session, guarantor.client_id, checks)
                 guarantor_stop = evaluate_hard_stops(config, guarantor_features)
                 if guarantor_freeze:
                     guarantor_used = False
