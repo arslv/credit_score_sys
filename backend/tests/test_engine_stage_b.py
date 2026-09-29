@@ -205,6 +205,97 @@ async def test_stage_b_run_ten_times_without_new_snapshot_makes_exactly_one_deci
     assert decisions_after == baseline[0] + 1
 
 
+async def test_write_back_status_and_comment_does_not_create_new_stage_b_snapshot(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Найденный баг, продолжение (T13c, ваше уточнение №2): клейм по
+    snapshot_id (тест выше) гарантирует одно решение на снимок — но плодиться
+    может сам СНИМОК. content_hash раньше считался по ВСЕМУ ответу fake_partner
+    (detail.raw), включая status/comments/status_history — поля, которые
+    меняем МЫ САМИ, записывая решение обратно (write_decision_status/
+    write_comment, app/integrations/adapter.py::_write_back). Наша же запись
+    делала хеш "новым", следующий sync_applications видел "новый снимок
+    анкеты" и стадия Б запускалась заново на тех же (не изменённых
+    оператором) данных.
+
+    В отличие от остальных тестов этого файла, НЕ использует
+    _prepare_application_at_stage_b — тот хелпер вставляет ExternalSnapshot
+    напрямую с синтетическим payload_raw={"stage_b": ...}, без status/
+    comments/history вовсе, и потому не мог поймать этот баг ни разу (ваш
+    вопрос "почему тест 10 запусков это не поймал" — вот почему: там не было
+    ни настоящего sync_applications между запусками, ни нашей же записи
+    комментария в заглушку). Здесь — реальный цикл: заполнили анкету ->
+    «Рассмотреть» -> sync_applications (настоящий ответ fake_partner) ->
+    решение (пишет статус+комментарий в fake_partner) -> ещё один
+    sync_applications, как сделал бы celery beat тиком позже."""
+    from app.integrations.adapter import sync_applications
+
+    external_id = await _create_partner_application(partner_admin)
+    (await partner_admin.post(f"/applications/{external_id}/status", json={"status": "on_call"})).raise_for_status()
+    (
+        await partner_admin.post(
+            f"/_test/applications/{external_id}/stage-b-fields", json=_DEFAULT_STAGE_B_PAYLOAD
+        )
+    ).raise_for_status()
+    (await partner_admin.post(f"/_test/applications/{external_id}/review")).raise_for_status()
+
+    await sync_applications(session_factory, partner_client, storage)
+
+    async with session_factory() as session:
+        application = (
+            await session.execute(select(Application).where(Application.external_id == external_id))
+        ).scalar_one()
+        application_id = application.id
+        # sync_applications сама только складывает снимок — переход в
+        # "стадию Б, ждёт обработки" в реальной системе делает run_stage_a
+        # (не гоняем его здесь — тест про хеш снимка, не про стадию А), так
+        # что имитируем ровно этот один переход, как _prepare_application_at_stage_b.
+        application.status = "to_operator"
+        session.add(
+            StatusHistory(
+                application_id=application_id, from_status="received", to_status="to_operator", actor_type="system",
+            )
+        )
+        await session.commit()
+
+    async def _stage_b_snapshot_count() -> int:
+        async with session_factory() as session:
+            return len(
+                (
+                    await session.execute(
+                        select(ExternalSnapshot).where(
+                            ExternalSnapshot.application_id == application_id, ExternalSnapshot.stage == "B"
+                        )
+                    )
+                ).scalars().all()
+            )
+
+    async def _decision_count() -> int:
+        async with session_factory() as session:
+            return len(
+                (
+                    await session.execute(
+                        select(Decision).where(Decision.application_id == application_id, Decision.stage == "B")
+                    )
+                ).scalars().all()
+            )
+
+    assert await _stage_b_snapshot_count() == 1
+
+    status = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client,
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+    )
+    assert status == "gray_zone"  # БКИ не подключено в тестовом окружении — пишет статус+комментарий в fake_partner
+    assert await _decision_count() == 1
+
+    # Тик beat спустя: ещё один цикл синхронизации, анкета не менялась.
+    await sync_applications(session_factory, partner_client, storage)
+
+    assert await _stage_b_snapshot_count() == 1  # не выросло — наша же запись статуса/комментария хеш не меняет
+    assert await _decision_count() == 1  # стадия Б не запустилась заново
+
+
 async def test_missing_section_returns_to_operator_with_list(
     partner_admin, partner_client, storage, session_factory, active_ruleset
 ):

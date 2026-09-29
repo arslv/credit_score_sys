@@ -33,6 +33,26 @@ def _content_hash(raw: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _snapshot_hash_source(raw: dict[str, Any], stage: str) -> dict[str, Any]:
+    """Что попадает в хеш идемпотентности снимка — найденный баг (T13c,
+    ваше уточнение №2): раньше хешировался ВЕСЬ ответ их API, включая status/
+    comments/status_history/updated_at — поля, которые меняем МЫ САМИ при
+    каждой записи решения обратно (write_decision_status/write_comment).
+    Наша же запись делала хеш "новым", конвейер видел "новый снимок анкеты",
+    запускал стадию заново, писал новый комментарий — по кругу, без единого
+    изменения самой анкеты.
+
+    Хеш считаем только по полям, которые вводит заявитель/оператор:
+    стадия А — "form" (ФИО, сумма, срок и т.п., до звонка); стадия Б —
+    "stage_b" (сделка/занятость/доход/обязательства/поручитель/контакты/
+    семья/адрес, вводит оператор после звонка, /stage-b-fields в fake_partner
+    — единственный путь, который эти поля меняет). payload_raw в
+    external_snapshots всё равно хранится целиком (правило 3 CLAUDE.md) —
+    сокращаем только то, что участвует в сравнении "новый снимок или нет"."""
+    key = "stage_b" if stage == "B" else "form"
+    return raw.get(key) or {}
+
+
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -215,7 +235,7 @@ async def _sync_one_application(
             # (закоммиченная) строка applications для FK.
             await session.commit()
 
-        content_hash = _content_hash(detail.raw)
+        content_hash = _content_hash(_snapshot_hash_source(detail.raw, stage))
         latest_snapshot = (
             await session.execute(
                 select(ExternalSnapshot)
