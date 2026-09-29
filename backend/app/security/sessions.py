@@ -24,7 +24,8 @@ def _hash_token(token: str) -> str:
 
 def set_session_cookie(response: Response, token: str, *, max_age_seconds: int) -> None:
     response.set_cookie(
-        COOKIE_NAME, token, max_age=max_age_seconds, httponly=True, secure=True, samesite="strict", path="/",
+        COOKIE_NAME, token, max_age=max_age_seconds, httponly=True,
+        secure=get_settings().cookie_secure, samesite="strict", path="/",
     )
 
 

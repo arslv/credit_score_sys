@@ -32,6 +32,12 @@ def assert_safe_for_environment(settings: Settings) -> None:
             "ФССП/ФНС/Федресурс настроены на заглушки — поправьте переменную окружения "
             "EXTERNAL_SOURCES_MODE (в production — http)"
         )
+    if not settings.cookie_secure:
+        violations.append(
+            "кука сессии администратора настроена БЕЗ Secure — поправьте переменную окружения "
+            "COOKIE_SECURE (в production обязательно true; false допустимо только в dev — "
+            "см. docs/deployment.md про Secure-куку на http://localhost)"
+        )
 
     if violations:
         raise UnsafeProviderConfigurationError(

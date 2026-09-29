@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Response, status
-from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.api.applications import router as applications_router
@@ -52,16 +51,10 @@ app = FastAPI(title="DIALOG Scoring", lifespan=lifespan)
 # при создании (само чтение/запись — уже с диском, при вызове save/read).
 app.state.storage = LocalDirectoryStorage(get_settings().storage_dir)
 
-# Админка — отдельное React-приложение на другом origin (ТЗ, «Стек»): без
-# явного allow_origins + allow_credentials браузер не пошлёт cookie сессии ни
-# при каком fetch(..., {credentials: "include"}) с этого origin.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[get_settings().admin_frontend_origin],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Админка и API — один origin (T13, ваше уточнение): в dev Vite проксирует
+# /api на этот сервис (frontend/vite.config.ts), в бою nginx отдаёт статику
+# фронтенда и проксирует /api сюда же. Браузер никогда не видит два origin'а
+# одновременно — CORS не нужен и намеренно не настроен (см. docs/deployment.md).
 app.add_middleware(CsrfHeaderMiddleware)
 
 app.include_router(auth_router)

@@ -33,6 +33,11 @@ services:
       # тихо унаследоваться из окружения хоста, где он мог быть выставлен
       # для чего-то другого).
       APP_ENV: dev
+      # Secure-кука на http://localhost ведёт себя по-разному в браузерах
+      # (Safari может не сохранить её вовсе) — в dev выключаем явно, как и
+      # APP_ENV; в production сервис откажется стартовать со значением false
+      # (app/startup_guard.py).
+      COOKIE_SECURE: "false"
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
@@ -59,6 +64,7 @@ services:
     build: ./backend
     environment:
       APP_ENV: dev
+      COOKIE_SECURE: "false"
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
@@ -90,6 +96,7 @@ services:
     build: ./backend
     environment:
       APP_ENV: dev
+      COOKIE_SECURE: "false"
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
@@ -100,6 +107,22 @@ services:
       redis:
         condition: service_healthy
     command: celery -A app.celery_app beat --loglevel=info
+
+  # Админка (T13) — Vite dev-server сам проксирует /api на api:8000 (см.
+  # frontend/vite.config.ts) — браузер видит только этот один адрес,
+  # межсайтовых запросов нет, кука работает без какой-либо настройки CORS.
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_PROXY_TARGET: http://api:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
+    command: npm run dev -- --host 0.0.0.0
 
   # Заглушка системы заказчика для локальной разработки — их реальный API пока неизвестен.
   fake_partner:

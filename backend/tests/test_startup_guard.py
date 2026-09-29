@@ -10,13 +10,15 @@ from app.startup_guard import UnsafeProviderConfigurationError, assert_safe_for_
 
 def _settings(
     *, app_env: str, ocr_provider_mode: str = "anthropic", bki_provider_mode: str = "not_configured",
-    external_sources_mode: str = "http",
+    external_sources_mode: str = "http", cookie_secure: bool = True,
 ) -> Settings:
-    """Всегда передаёт все три режима явно — иначе тест зависел бы от того,
-    что уже выставлено в окружении процесса (docker compose exec и т.п.)."""
+    """Всегда передаёт все режимы явно — иначе тест зависел бы от того, что
+    уже выставлено в окружении процесса (docker compose exec и т.п. — dev-
+    compose, например, держит COOKIE_SECURE=false для всех контейнеров)."""
     return Settings(
         app_env=app_env, ocr_provider_mode=ocr_provider_mode,
         bki_provider_mode=bki_provider_mode, external_sources_mode=external_sources_mode,
+        cookie_secure=cookie_secure,
     )
 
 
@@ -41,10 +43,17 @@ def test_production_with_fake_external_sources_refuses_to_start():
     assert "EXTERNAL_SOURCES_MODE" in str(exc_info.value)
 
 
+def test_production_with_insecure_cookie_refuses_to_start():
+    settings = _settings(app_env="production", cookie_secure=False)
+    with pytest.raises(UnsafeProviderConfigurationError) as exc_info:
+        assert_safe_for_environment(settings)
+    assert "COOKIE_SECURE" in str(exc_info.value)
+
+
 def test_production_lists_every_violation_at_once():
     settings = _settings(
         app_env="production", bki_provider_mode="fake", ocr_provider_mode="fixture",
-        external_sources_mode="fake",
+        external_sources_mode="fake", cookie_secure=False,
     )
     with pytest.raises(UnsafeProviderConfigurationError) as exc_info:
         assert_safe_for_environment(settings)
@@ -52,6 +61,7 @@ def test_production_lists_every_violation_at_once():
     assert "BKI_PROVIDER_MODE" in message
     assert "OCR_PROVIDER_MODE" in message
     assert "EXTERNAL_SOURCES_MODE" in message
+    assert "COOKIE_SECURE" in message
 
 
 def test_production_with_real_providers_starts_fine():

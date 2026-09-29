@@ -102,9 +102,19 @@ class Settings(BaseSettings):
 
     # Админка (T12) — технические параметры аутентификации/сессий, не бизнес-
     # правила (правило 2 CLAUDE.md касается порогов заявки, не защиты входа).
-    # Другой origin — отдельное React-приложение (ТЗ, «Стек»); без явного списка
-    # cookie-сессия не дойдёт через CORS ни при каком credentials: include.
-    admin_frontend_origin: str = "http://localhost:5173"
+    # T13: фронтенд и API — один origin (Vite proxy в dev, nginx в бою отдаёт
+    # статику и проксирует /api) — CORS не нужен, браузер всегда обращается к
+    # тому же адресу, кука работает без каких-либо межсайтовых настроек.
+    #
+    # cookie_secure — дефолт строгий (True), как и APP_ENV: забытая настройка
+    # не должна тихо снять Secure с продовой куки. В dev его выставляют явно в
+    # false (docker-compose.yml) — Secure-кука на http://localhost ведёт себя
+    # по-разному в разных браузерах (Safari может не сохранить её вовсе, а
+    # Chrome/Firefox считают localhost доверенным источником и сохраняют) —
+    # без этого вход в Safari при локальной разработке тихо не срабатывает.
+    # В production сервис отказывается стартовать с cookie_secure=false
+    # (app/startup_guard.py) — тем же способом, что и с фейковыми провайдерами.
+    cookie_secure: bool = True
     session_ttl_hours: int = 12
     session_idle_timeout_minutes: int = 30
     # Блокировка по учётной записи — короткая (email уже известен, это не защита

@@ -15,7 +15,7 @@ DOCUMENT_KINDS = ("selfie_passport", "passport_main", "passport_reg")
 AUDIT_LOG_ACTIONS = (
     "view_application", "view_document", "view_credit_report", "change_ruleset", "export",
     "login", "login_failed", "logout", "lift_freeze", "mark_false_positive",
-    "manage_employee", "manage_reference",
+    "manage_employee", "manage_reference", "retry_check",
 )
 STATUS_HISTORY_ACTOR_TYPES = ("system", "employee", "client")
 

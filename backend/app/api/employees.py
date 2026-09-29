@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/employees", tags=["employees"])
 _ADMIN_ONLY = ("admin",)
 
 
-class EmployeeOut(BaseModel):
+class EmployeeAccountOut(BaseModel):
     id: UUID
     full_name: str
     email: str
@@ -55,28 +55,28 @@ async def _count_other_active_admins(session: AsyncSession, exclude_id: UUID) ->
     ).scalar_one()
 
 
-@router.get("", response_model=Page[EmployeeOut])
+@router.get("", response_model=Page[EmployeeAccountOut])
 async def list_employees(
     params: PageParams = Depends(),
     employee: Employee = Depends(require_roles(*_ADMIN_ONLY)),
     session: AsyncSession = Depends(get_session),
-) -> Page[EmployeeOut]:
+) -> Page[EmployeeAccountOut]:
     total = (await session.execute(select(func.count()).select_from(Employee))).scalar_one()
     rows = (
         await session.execute(select(Employee).order_by(Employee.full_name).offset(params.offset).limit(params.page_size))
     ).scalars().all()
     return Page(
-        items=[EmployeeOut(id=r.id, full_name=r.full_name, email=r.email, role=r.role, active=r.active) for r in rows],
+        items=[EmployeeAccountOut(id=r.id, full_name=r.full_name, email=r.email, role=r.role, active=r.active) for r in rows],
         total=total, page=params.page, page_size=params.page_size,
     )
 
 
-@router.post("", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=EmployeeAccountOut, status_code=status.HTTP_201_CREATED)
 async def create_employee(
     payload: EmployeeCreate, request: Request,
     employee: Employee = Depends(require_roles(*_ADMIN_ONLY)),
     session: AsyncSession = Depends(get_session),
-) -> EmployeeOut:
+) -> EmployeeAccountOut:
     if payload.role not in EMPLOYEE_ROLES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"неизвестная роль: {payload.role!r}")
 
@@ -91,15 +91,15 @@ async def create_employee(
         object_type="employee", object_id=row.id, request=request,
     )
     await session.commit()
-    return EmployeeOut(id=row.id, full_name=row.full_name, email=row.email, role=row.role, active=row.active)
+    return EmployeeAccountOut(id=row.id, full_name=row.full_name, email=row.email, role=row.role, active=row.active)
 
 
-@router.patch("/{employee_id}", response_model=EmployeeOut)
+@router.patch("/{employee_id}", response_model=EmployeeAccountOut)
 async def update_employee(
     employee_id: UUID, payload: EmployeeUpdate, request: Request,
     employee: Employee = Depends(require_roles(*_ADMIN_ONLY)),
     session: AsyncSession = Depends(get_session),
-) -> EmployeeOut:
+) -> EmployeeAccountOut:
     row = await session.get(Employee, employee_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="сотрудник не найден")
@@ -141,4 +141,4 @@ async def update_employee(
         object_type="employee", object_id=row.id, request=request,
     )
     await session.commit()
-    return EmployeeOut(id=row.id, full_name=row.full_name, email=row.email, role=row.role, active=row.active)
+    return EmployeeAccountOut(id=row.id, full_name=row.full_name, email=row.email, role=row.role, active=row.active)
