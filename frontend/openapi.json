@@ -1427,6 +1427,73 @@
         }
       }
     },
+    "/api/dashboard/summary": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get Dashboard Summary",
+        "operationId": "get_dashboard_summary_api_dashboard_summary_get",
+        "parameters": [
+          {
+            "name": "period_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Period From"
+            }
+          },
+          {
+            "name": "period_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Period To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -1793,6 +1860,29 @@
           "created_at"
         ],
         "title": "AuditLogOut"
+      },
+      "BkiMonthlyItem": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "title": "Month"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts"
+          },
+          "successful": {
+            "type": "integer",
+            "title": "Successful"
+          }
+        },
+        "type": "object",
+        "required": [
+          "month",
+          "attempts",
+          "successful"
+        ],
+        "title": "BkiMonthlyItem"
       },
       "BlacklistIn": {
         "properties": {
@@ -2373,6 +2463,84 @@
         ],
         "title": "CreditReportOut"
       },
+      "DashboardSummary": {
+        "properties": {
+          "period_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period From"
+          },
+          "period_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period To"
+          },
+          "funnel": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelItem"
+            },
+            "type": "array",
+            "title": "Funnel"
+          },
+          "weekly_approval": {
+            "items": {
+              "$ref": "#/components/schemas/WeeklyApprovalItem"
+            },
+            "type": "array",
+            "title": "Weekly Approval"
+          },
+          "rejection_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/RejectionReasonItem"
+            },
+            "type": "array",
+            "title": "Rejection Reasons"
+          },
+          "overrides": {
+            "$ref": "#/components/schemas/OverridesSummary"
+          },
+          "bki_monthly": {
+            "items": {
+              "$ref": "#/components/schemas/BkiMonthlyItem"
+            },
+            "type": "array",
+            "title": "Bki Monthly"
+          },
+          "source_availability": {
+            "items": {
+              "$ref": "#/components/schemas/SourceAvailabilityItem"
+            },
+            "type": "array",
+            "title": "Source Availability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "period_from",
+          "period_to",
+          "funnel",
+          "weekly_approval",
+          "rejection_reasons",
+          "overrides",
+          "bki_monthly",
+          "source_availability"
+        ],
+        "title": "DashboardSummary"
+      },
       "DecisionOut": {
         "properties": {
           "id": {
@@ -2725,6 +2893,24 @@
         ],
         "title": "ExternalSnapshotOut"
       },
+      "FunnelItem": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "count"
+        ],
+        "title": "FunnelItem"
+      },
       "GoodsCategoryIn": {
         "properties": {
           "code": {
@@ -3043,6 +3229,29 @@
           "created_at"
         ],
         "title": "OcrResultOut"
+      },
+      "OverridesSummary": {
+        "properties": {
+          "applications_total": {
+            "type": "integer",
+            "title": "Applications Total"
+          },
+          "overridden": {
+            "type": "integer",
+            "title": "Overridden"
+          },
+          "discrepancies": {
+            "type": "integer",
+            "title": "Discrepancies"
+          }
+        },
+        "type": "object",
+        "required": [
+          "applications_total",
+          "overridden",
+          "discrepancies"
+        ],
+        "title": "OverridesSummary"
       },
       "Page_ApplicationListItem_": {
         "properties": {
@@ -3400,6 +3609,24 @@
         ],
         "title": "RegistryStatus"
       },
+      "RejectionReasonItem": {
+        "properties": {
+          "reason_code": {
+            "type": "string",
+            "title": "Reason Code"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason_code",
+          "count"
+        ],
+        "title": "RejectionReasonItem"
+      },
       "RetryCheckResult": {
         "properties": {
           "check": {
@@ -3436,6 +3663,29 @@
           "due_amount"
         ],
         "title": "ScheduleItemOut"
+      },
+      "SourceAvailabilityItem": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "unavailable": {
+            "type": "integer",
+            "title": "Unavailable"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "unavailable",
+          "total"
+        ],
+        "title": "SourceAvailabilityItem"
       },
       "StatusHistoryOut": {
         "properties": {
@@ -3595,6 +3845,30 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WeeklyApprovalItem": {
+        "properties": {
+          "week_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Week Start"
+          },
+          "approved": {
+            "type": "integer",
+            "title": "Approved"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "week_start",
+          "approved",
+          "total"
+        ],
+        "title": "WeeklyApprovalItem"
       }
     }
   }

@@ -13,6 +13,7 @@ import { EmployeesPage } from "./pages/Employees";
 import { AuditLogPage } from "./pages/AuditLog";
 import { SystemStatusPage } from "./pages/SystemStatus";
 import { CompliancePage } from "./pages/Compliance";
+import { DashboardPage } from "./pages/Dashboard";
 
 export function App() {
   return (
@@ -21,6 +22,7 @@ export function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route path="/" element={<Navigate to="/applications" replace />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/applications" element={<ApplicationsListPage />} />
           <Route path="/applications/:id" element={<ApplicationDetailPage />} />
           <Route path="/clients" element={<ClientsListPage />} />

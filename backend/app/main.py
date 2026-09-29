@@ -10,6 +10,7 @@ from app.api.auth import router as auth_router
 from app.api.clients import router as clients_router
 from app.api.compliance import router as compliance_router
 from app.api.contracts import router as contracts_router
+from app.api.dashboard import router as dashboard_router
 from app.api.employees import router as employees_router
 from app.api.references import router as references_router
 from app.api.system import router as system_router
@@ -66,6 +67,7 @@ app.include_router(employees_router)
 app.include_router(audit_router)
 app.include_router(system_router)
 app.include_router(compliance_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/health")

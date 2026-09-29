@@ -8,6 +8,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { to: "/dashboard", label: "Дашборд", roles: ["risk_manager", "viewer"] },
   { to: "/applications", label: "Заявки", roles: ["risk_manager", "admin", "viewer", "compliance"] },
   { to: "/clients", label: "Клиенты", roles: ["risk_manager", "admin", "viewer", "compliance"] },
   { to: "/contracts", label: "Договоры", roles: ["risk_manager", "admin", "viewer", "compliance"] },

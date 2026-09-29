@@ -411,6 +411,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dashboard Summary */
+        get: operations["get_dashboard_summary_api_dashboard_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -547,6 +564,15 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** BkiMonthlyItem */
+        BkiMonthlyItem: {
+            /** Month */
+            month: string;
+            /** Attempts */
+            attempts: number;
+            /** Successful */
+            successful: number;
         };
         /** BlacklistIn */
         BlacklistIn: {
@@ -751,6 +777,24 @@ export interface components {
              */
             requested_at: string;
         };
+        /** DashboardSummary */
+        DashboardSummary: {
+            /** Period From */
+            period_from: string | null;
+            /** Period To */
+            period_to: string | null;
+            /** Funnel */
+            funnel: components["schemas"]["FunnelItem"][];
+            /** Weekly Approval */
+            weekly_approval: components["schemas"]["WeeklyApprovalItem"][];
+            /** Rejection Reasons */
+            rejection_reasons: components["schemas"]["RejectionReasonItem"][];
+            overrides: components["schemas"]["OverridesSummary"];
+            /** Bki Monthly */
+            bki_monthly: components["schemas"]["BkiMonthlyItem"][];
+            /** Source Availability */
+            source_availability: components["schemas"]["SourceAvailabilityItem"][];
+        };
         /** DecisionOut */
         DecisionOut: {
             /**
@@ -885,6 +929,13 @@ export interface components {
              */
             received_at: string;
         };
+        /** FunnelItem */
+        FunnelItem: {
+            /** Status */
+            status: string;
+            /** Count */
+            count: number;
+        };
         /** GoodsCategoryIn */
         GoodsCategoryIn: {
             /** Code */
@@ -1017,6 +1068,15 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** OverridesSummary */
+        OverridesSummary: {
+            /** Applications Total */
+            applications_total: number;
+            /** Overridden */
+            overridden: number;
+            /** Discrepancies */
+            discrepancies: number;
         };
         /** Page[ApplicationListItem] */
         Page_ApplicationListItem_: {
@@ -1152,6 +1212,13 @@ export interface components {
             /** Stale */
             stale: boolean;
         };
+        /** RejectionReasonItem */
+        RejectionReasonItem: {
+            /** Reason Code */
+            reason_code: string;
+            /** Count */
+            count: number;
+        };
         /** RetryCheckResult */
         RetryCheckResult: {
             check: components["schemas"]["CheckOut"];
@@ -1167,6 +1234,15 @@ export interface components {
             due_date: string;
             /** Due Amount */
             due_amount: string;
+        };
+        /** SourceAvailabilityItem */
+        SourceAvailabilityItem: {
+            /** Source */
+            source: string;
+            /** Unavailable */
+            unavailable: number;
+            /** Total */
+            total: number;
         };
         /** StatusHistoryOut */
         StatusHistoryOut: {
@@ -1217,6 +1293,18 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WeeklyApprovalItem */
+        WeeklyApprovalItem: {
+            /**
+             * Week Start
+             * Format: date
+             */
+            week_start: string;
+            /** Approved */
+            approved: number;
+            /** Total */
+            total: number;
         };
     };
     responses: never;
@@ -2041,6 +2129,38 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dashboard_summary_api_dashboard_summary_get: {
+        parameters: {
+            query?: {
+                period_from?: string | null;
+                period_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardSummary"];
                 };
             };
             /** @description Validation Error */
