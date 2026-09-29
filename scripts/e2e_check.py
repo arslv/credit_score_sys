@@ -9,14 +9,18 @@
 - "Фоновые задачи" — это те же самые функции, что зарегистрированы через
   @celery_app.task (app/tasks/*.py): process_new_applications_task,
   process_reviewed_applications_task, sync_applications_task. Скрипт вызывает
-  их внутри контейнера worker (docker compose exec), тем же кодом, которым их
-  вызвал бы брокер по расписанию (app/celery_app.py) — просто без ожидания
-  таймера, а по требованию скрипта, тик за тиком, пока заявка не дойдёт до
-  терминального состояния или не истечёт таймаут.
+  их внутри контейнера api (docker compose exec, RUNNER_SERVICE), тем же
+  кодом, которым их вызвал бы брокер по расписанию (app/celery_app.py) —
+  просто без ожидания таймера, а по требованию скрипта, тик за тиком, пока
+  заявка не дойдёт до терминального состояния или не истечёт таймаут. beat и
+  worker на время прогона остановлены целиком (см. main()) — иначе задача,
+  которую beat успел поставить в очередь Redis до остановки, всё равно
+  досталась бы worker'у и гонялась бы конкурентно с нашими вызовами тем же
+  дефолтным (не фикстурным) окружением над той же заявкой.
 - Распознавание паспорта и БКИ — фейковые: OCR_PROVIDER_MODE=fixture (читает
   JSON-фикстуру, app/ocr/fixture_provider.py) и BKI_PROVIDER_MODE=fake
   (app/sources/bki.FakeBkiProvider, отчёты из JSON-фикстуры). Сценарий
-  выбирается заявкой через то, какая фикстура лежит в контейнере воркера на
+  выбирается заявкой через то, какая фикстура лежит в контейнере api на
   момент конкретного тика — между сценариями скрипт её переписывает.
 - Операции с БД (проверка итогового решения, посев санкционного перечня для
   сценария 2) идут через _e2e_runner.py — тот же принцип: не прямые вызовы
@@ -77,21 +81,33 @@ def _dc(*args: str, env: dict[str, str] | None = None, input_bytes: bytes | None
     return result.stdout.decode()
 
 
+# Контейнер для наших собственных прямых вызовов _e2e_runner.py (не через
+# Celery/Redis — обычный docker compose exec + python3). Раньше это был
+# "worker", но на время прогона мы теперь останавливаем И beat, И worker
+# целиком (найденный баг, T13c — см. main()), а docker compose exec требует
+# ЖИВОЙ контейнер. "api" собран из того же ./backend с тем же кодом и тем же
+# доступом к БД/Redis/fake_partner/storage_data, но его процесс — uvicorn, не
+# celery worker, поэтому он не подбирает задачи из очереди сам и его можно
+# оставить работающим всё время прогона.
+RUNNER_SERVICE = "api"
+
+
 def _copy_runner() -> None:
     subprocess.run(
-        ["docker", "compose", "cp", "scripts/_e2e_runner.py", "worker:/app/_e2e_runner.py"],
+        ["docker", "compose", "cp", "scripts/_e2e_runner.py", f"{RUNNER_SERVICE}:/app/_e2e_runner.py"],
         cwd=REPO_ROOT, check=True, capture_output=True,
     )
 
 
 def _write_fixture(path: str, content: dict) -> None:
     payload = json.dumps(content, ensure_ascii=False).encode("utf-8")
-    _dc("worker", "sh", "-c", f"cat > {path}", input_bytes=payload)
+    _dc(RUNNER_SERVICE, "sh", "-c", f"cat > {path}", input_bytes=payload)
 
 
 def run_worker_task(task: str, *, bki_mode: str | None = None) -> dict:
-    """Вызывает НАСТОЯЩУЮ Celery-задачу (app/tasks/*.py) внутри контейнера
-    worker — тот же код, что вызвал бы celery beat по расписанию."""
+    """Вызывает НАСТОЯЩУЮ Celery-задачу (app/tasks/*.py) — тот же код, что
+    вызвал бы celery beat по расписанию, но напрямую (без очереди), в
+    контейнере RUNNER_SERVICE."""
     env = {"OCR_PROVIDER_MODE": "fixture", "OCR_FIXTURE_PATH": OCR_FIXTURE_PATH}
     if bki_mode == "fake":
         env["BKI_PROVIDER_MODE"] = "fake"
@@ -99,14 +115,14 @@ def run_worker_task(task: str, *, bki_mode: str | None = None) -> dict:
     elif bki_mode == "not_configured":
         env["BKI_PROVIDER_MODE"] = "not_configured"
     out = _dc(
-        "worker", "python3", "_e2e_runner.py", "run_task",
+        RUNNER_SERVICE, "python3", "_e2e_runner.py", "run_task",
         env=env, input_bytes=json.dumps({"task": task}).encode(),
     )
     return json.loads(out)
 
 
 def runner_action(action: str, args: dict) -> dict:
-    out = _dc("worker", "python3", "_e2e_runner.py", action, input_bytes=json.dumps(args).encode())
+    out = _dc(RUNNER_SERVICE, "python3", "_e2e_runner.py", action, input_bytes=json.dumps(args).encode())
     return json.loads(out)
 
 
@@ -495,10 +511,28 @@ def main() -> int:
     # AnthropicOcrProvider, пустой ключ). Без остановки beat его тик может
     # обогнать наш (с OCR_PROVIDER_MODE=fixture) и попытаться распознать фото
     # настоящим Anthropic без ключа — заявка застревает в статусе "ocr"
-    # навсегda. Останавливаем на время прогона, поднимаем обратно в конце.
-    print("Останавливаю celery beat на время прогона (иначе его тик по расписанию "
-          "гоняет задачи настоящим OCR-провайдером и мешает фикстурам)...")
-    subprocess.run(["docker", "compose", "stop", "beat"], cwd=REPO_ROOT, check=True, capture_output=True)
+    # навсегда.
+    #
+    # Останавливать только beat недостаточно (найденный баг, T13c): beat —
+    # это ПЛАНИРОВЩИК, он кладёт задачи в очередь Redis по расписанию, а
+    # выполняет их отдельный, постоянно работающий контейнер `worker` — тот
+    # же самый, где потом исполняются наши прямые вызовы _e2e_runner.py.
+    # Задача, поставленная в очередь ПОСЛЕДНИМ тиком beat ДО его остановки,
+    # никуда не девается — worker всё равно её разгребёт, тем же дефолтным
+    # (не фикстурным) окружением, конкурентно с нашими вызовами над той же
+    # только что созданной заявкой: реальный провайдер держит блокировку
+    # строки заявки на время сетевого таймаута к Anthropic с пустым ключом,
+    # наш собственный вызов stage_a эту же заявку взять не может — отсюда
+    # статус "new" ровно 30 секунд (POLL_TIMEOUT_SECONDS) и потом 409 при
+    # «Рассмотреть» (переход "new" -> "on_review" запрещён, потому что стадия
+    # А фактически не отработала). Останавливаем оба контейнера — worker
+    # прогону не нужен, все задачи и так исполняются напрямую в его образе
+    # через _e2e_runner.py, без Celery/Redis.
+    print("Останавливаю celery beat и worker на время прогона (иначе они гоняют "
+          "задачи настоящим OCR-провайдером в фоне и мешают фикстурам)...")
+    subprocess.run(
+        ["docker", "compose", "stop", "beat", "worker"], cwd=REPO_ROOT, check=True, capture_output=True
+    )
 
     try:
         results: list[ScenarioResult] = []
@@ -524,8 +558,10 @@ def main() -> int:
                     print(f"    - {err}")
                 print()
     finally:
-        print("Возвращаю celery beat...")
-        subprocess.run(["docker", "compose", "start", "beat"], cwd=REPO_ROOT, check=True, capture_output=True)
+        print("Возвращаю celery beat и worker...")
+        subprocess.run(
+            ["docker", "compose", "start", "beat", "worker"], cwd=REPO_ROOT, check=True, capture_output=True
+        )
 
     print("=== Сводка ===")
     for result in results:
