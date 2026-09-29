@@ -3738,6 +3738,14 @@
       },
       "SystemStatus": {
         "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status"
+          },
           "registries": {
             "items": {
               "$ref": "#/components/schemas/RegistryStatus"
@@ -3790,10 +3798,15 @@
           "stuck_applications_over_1h": {
             "type": "integer",
             "title": "Stuck Applications Over 1H"
+          },
+          "stage_b_reprocessing_loop_applications": {
+            "type": "integer",
+            "title": "Stage B Reprocessing Loop Applications"
           }
         },
         "type": "object",
         "required": [
+          "status",
           "registries",
           "ruleset_active_version",
           "ruleset_matches_file",
@@ -3802,7 +3815,8 @@
           "bki_configured",
           "bki_paid_requests_this_month",
           "partner_integration_errors_last_24h",
-          "stuck_applications_over_1h"
+          "stuck_applications_over_1h",
+          "stage_b_reprocessing_loop_applications"
         ],
         "title": "SystemStatus"
       },

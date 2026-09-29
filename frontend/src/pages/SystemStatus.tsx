@@ -31,8 +31,18 @@ export function SystemStatusPage() {
   return (
     <section>
       <h1>Состояние системы</h1>
+      <p>
+        <span className={`badge ${s.status === "degraded" ? "badge-danger" : "badge-success"}`}>
+          {s.status === "degraded" ? "деградация" : "в порядке"}
+        </span>
+      </p>
       <table className="table table--kv">
         <tbody>
+          <StatusRow
+            label="Заявок с петлёй повторной обработки стадии Б за час"
+            value={String(s.stage_b_reprocessing_loop_applications)}
+            warn={s.stage_b_reprocessing_loop_applications > 0}
+          />
           <StatusRow
             label="Версия правил"
             value={s.ruleset_active_version != null ? String(s.ruleset_active_version) : "нет активной"}

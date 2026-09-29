@@ -1,10 +1,21 @@
 """T12: состояние системы — один эндпоинт для admin (ваше уточнение): свежесть
 реестров, совпадение правил с файлом, ФССП в очереди/просрочено, подключено
 ли БКИ и сколько платных запросов за месяц, ошибки интеграции за сутки, заявки
-без смены статуса дольше часа."""
+без смены статуса дольше часа.
+
+T13c (страховка после расследования петли повторной обработки стадии Б):
+stage_b_reprocessing_loop_applications/status — сигнал, что где-то у заявки
+за последний час появилось подозрительно много снимков или решений стадии Б.
+Мы не смогли воспроизвести саму петлю после фикса content_hash, но именно
+поэтому нужен монитор, а не только тест на конкретный (уже закрытый) баг —
+если он вернётся другим путём, это должно быть видно на экране состояния
+системы и в логе, а не только в аномальных числах в decisions/БКИ."""
 
 from datetime import datetime, timedelta, timezone
+from typing import Literal
+from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -15,9 +26,22 @@ from app.db import get_session, get_sessionmaker
 from app.engine.schema import load_ruleset_from_yaml
 from app.engine.state_machine import ALLOWED_TRANSITIONS
 from app.engine.versions import compute_config_hash, get_active_ruleset_version, load_config
-from app.models import Application, BkiReport, Employee, FsspRequest, IntegrationEvent, StatusHistory
+from app.models import (
+    Application,
+    BkiReport,
+    Decision,
+    Employee,
+    ExternalSnapshot,
+    FsspRequest,
+    IntegrationEvent,
+    StatusHistory,
+)
 from app.registries.sync import is_registry_stale
 from app.security.deps import require_roles
+
+logger = structlog.get_logger()
+
+_STAGE_B_LOOP_THRESHOLD = 3
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -31,6 +55,11 @@ class RegistryStatus(BaseModel):
 
 
 class SystemStatus(BaseModel):
+    status: Literal["ok", "degraded"]
+    """Пока единственный триггер — stage_b_reprocessing_loop_applications
+    ниже (страховка после расследования T13c). Не свод всех warn-индикаторов
+    на этом экране (устаревший реестр/просрочка ФССП и т.п. сами по себе
+    статус не меняют — они уже видны отдельными строками)."""
     registries: list[RegistryStatus]
     ruleset_active_version: int | None
     ruleset_matches_file: bool | None
@@ -40,6 +69,13 @@ class SystemStatus(BaseModel):
     bki_paid_requests_this_month: int
     partner_integration_errors_last_24h: int
     stuck_applications_over_1h: int
+    stage_b_reprocessing_loop_applications: int
+    """Заявки, у которых за последний час появилось больше
+    _STAGE_B_LOOP_THRESHOLD снимков стадии Б или больше
+    _STAGE_B_LOOP_THRESHOLD решений стадии Б — признак петли повторной
+    обработки (T13c: found bug — content_hash снимка включал наши же
+    статус/комментарий; после фикса не смогли воспроизвести, но защита
+    нужна на случай другого пути к тому же симптому)."""
 
 
 @router.get("/status", response_model=SystemStatus)
@@ -110,7 +146,32 @@ async def get_system_status(
         )
     ).scalar_one()
 
+    heavy_snapshots = (
+        select(ExternalSnapshot.application_id)
+        .where(ExternalSnapshot.stage == "B", ExternalSnapshot.received_at >= hour_ago)
+        .group_by(ExternalSnapshot.application_id)
+        .having(func.count() > _STAGE_B_LOOP_THRESHOLD)
+    )
+    heavy_decisions = (
+        select(Decision.application_id)
+        .where(Decision.stage == "B", Decision.created_at >= hour_ago)
+        .group_by(Decision.application_id)
+        .having(func.count() > _STAGE_B_LOOP_THRESHOLD)
+    )
+    stage_b_loop_ids: list[UUID] = (
+        await session.execute(select(heavy_snapshots.union(heavy_decisions).subquery().c.application_id))
+    ).scalars().all()
+    stage_b_reprocessing_loop_applications = len(stage_b_loop_ids)
+
+    if stage_b_reprocessing_loop_applications:
+        logger.error(
+            "stage_b_reprocessing_loop_detected",
+            application_ids=[str(i) for i in stage_b_loop_ids],
+            threshold=_STAGE_B_LOOP_THRESHOLD,
+        )
+
     return SystemStatus(
+        status="degraded" if stage_b_reprocessing_loop_applications else "ok",
         registries=registries,
         ruleset_active_version=ruleset_active_version,
         ruleset_matches_file=ruleset_matches_file,
@@ -120,4 +181,5 @@ async def get_system_status(
         bki_paid_requests_this_month=bki_paid_requests_this_month,
         partner_integration_errors_last_24h=partner_errors,
         stuck_applications_over_1h=stuck,
+        stage_b_reprocessing_loop_applications=stage_b_reprocessing_loop_applications,
     )

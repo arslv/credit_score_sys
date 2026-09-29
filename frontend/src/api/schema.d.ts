@@ -1262,6 +1262,11 @@ export interface components {
         };
         /** SystemStatus */
         SystemStatus: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "degraded";
             /** Registries */
             registries: components["schemas"]["RegistryStatus"][];
             /** Ruleset Active Version */
@@ -1280,6 +1285,8 @@ export interface components {
             partner_integration_errors_last_24h: number;
             /** Stuck Applications Over 1H */
             stuck_applications_over_1h: number;
+            /** Stage B Reprocessing Loop Applications */
+            stage_b_reprocessing_loop_applications: number;
         };
         /** ValidationError */
         ValidationError: {

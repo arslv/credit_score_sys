@@ -1,8 +1,21 @@
-"""T12: состояние системы — один эндпоинт, только admin (ваше уточнение)."""
+"""T12: состояние системы — один эндпоинт, только admin (ваше уточнение).
+
+T13c: stage_b_reprocessing_loop_applications/status — страховка после
+расследования петли повторной обработки стадии Б (found bug: content_hash
+снимка включал наши же статус/комментарий — исправлено, но причину
+конкретного репорта "6 и 5 решений" воспроизвести не удалось; это монитор
+на случай, если тот же симптом вернётся другим путём)."""
+
+import uuid
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
+from structlog.testing import capture_logs
 
+from app.models import Application, Decision, ExternalSnapshot
 from tests._admin_helpers import create_employee, login
+from tests.test_engine_pipeline import active_ruleset  # noqa: F401
 
 _NON_ADMIN_ROLES = ("risk_manager", "viewer", "compliance")
 
@@ -23,9 +36,86 @@ async def test_admin_gets_system_status_shape(admin_client, session_factory):
     assert response.status_code == 200
     body = response.json()
     for key in (
-        "registries", "ruleset_active_version", "ruleset_matches_file", "fssp_pending", "fssp_overdue",
+        "status", "registries", "ruleset_active_version", "ruleset_matches_file", "fssp_pending", "fssp_overdue",
         "bki_configured", "bki_paid_requests_this_month", "partner_integration_errors_last_24h",
-        "stuck_applications_over_1h",
+        "stuck_applications_over_1h", "stage_b_reprocessing_loop_applications",
     ):
         assert key in body
     assert body["bki_configured"] is False  # not_configured по умолчанию (T11)
+    assert body["status"] == "ok"  # ничего не насеяно — петли нет
+    assert body["stage_b_reprocessing_loop_applications"] == 0
+
+
+async def _application(session, *, external_id: str) -> Application:
+    application = Application(
+        external_id=external_id, status="gray_zone",
+        goods_name="Стиральная машина", goods_price=Decimal("50000.00"), down_payment=Decimal("5000.00"),
+        term_months=12, tariff="standard", requested_amount=Decimal("45000.00"),
+        profile={}, consent_pd_at=datetime.now(timezone.utc), submitted_at=datetime.now(timezone.utc),
+    )
+    session.add(application)
+    await session.flush()
+    return application
+
+
+async def test_stage_b_reprocessing_loop_flags_degraded_and_logs_error(
+    admin_client, session_factory, active_ruleset
+):
+    """Найденный баг T13c, страховка: больше 3 снимков ИЛИ больше 3 решений
+    стадии Б за последний час у одной заявки — признак петли повторной
+    обработки, даже если саму причину петли мы не воспроизвели."""
+    await create_employee(session_factory, email="admin2@example.com", role="admin")
+    await login(admin_client, "admin2@example.com")
+
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as session:
+        application = await _application(session, external_id=f"LOOP-{uuid.uuid4().hex[:8]}")
+        for i in range(4):  # больше порога (3)
+            payload = {"stage_b": {"n": i}}
+            session.add(
+                ExternalSnapshot(
+                    application_id=application.id, stage="B", payload_raw=payload,
+                    content_hash=f"{i:064d}", received_at=now - timedelta(minutes=i),
+                )
+            )
+        await session.commit()
+
+    with capture_logs() as logs:
+        response = await admin_client.get("/api/system/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "degraded"
+    assert body["stage_b_reprocessing_loop_applications"] == 1
+
+    error_events = [entry for entry in logs if entry.get("event") == "stage_b_reprocessing_loop_detected"]
+    assert len(error_events) == 1
+    assert error_events[0]["log_level"] == "error"
+    assert str(application.id) in error_events[0]["application_ids"]
+
+
+async def test_stage_b_reprocessing_loop_at_threshold_is_not_degraded(admin_client, session_factory):
+    """Ровно 3 — ещё не «больше трёх» (ваша формулировка), не должно шуметь."""
+    await create_employee(session_factory, email="admin3@example.com", role="admin")
+    await login(admin_client, "admin3@example.com")
+
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as session:
+        application = await _application(session, external_id=f"LOOP-OK-{uuid.uuid4().hex[:8]}")
+        for i in range(3):  # ровно порог — не больше
+            payload = {"stage_b": {"n": i}}
+            session.add(
+                ExternalSnapshot(
+                    application_id=application.id, stage="B", payload_raw=payload,
+                    content_hash=f"{i:064d}", received_at=now - timedelta(minutes=i),
+                )
+            )
+        await session.commit()
+
+    response = await admin_client.get("/api/system/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["stage_b_reprocessing_loop_applications"] == 0
