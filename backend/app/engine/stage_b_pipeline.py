@@ -14,6 +14,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import get_settings
@@ -49,6 +50,7 @@ from app.models import (
     ExternalSnapshot,
     FeatureSnapshot,
     Guarantor,
+    StageBSnapshotAttempt,
 )
 from app.sources.base import CheckStatus, Subject
 from app.sources.bki import BkiProvider, BkiProviderResult, deserialize_report, serialize_report
@@ -91,6 +93,29 @@ async def _latest_stage_b_snapshot(session, application_id: UUID) -> ExternalSna
             .limit(1)
         )
     ).scalar_one_or_none()
+
+
+async def _claim_stage_b_snapshot(session, *, application_id: UUID, snapshot_id: UUID) -> bool:
+    """True — этот вызов первым берёт снимок в обработку, можно продолжать.
+    False — снимок уже обрабатывался (решение принято, или отправлено
+    «неполно» оператору) — no-op, ничего не трогаем.
+
+    Найденный баг (T13c, ваше уточнение): gray_zone/to_operator — валидные
+    статусы, в которые заявка ВОЗВРАЩАЕТСЯ после решения (в отличие от
+    "received" у стадии А, откуда только уходят) — run_stage_b подбирается по
+    статусу, и без этого клейма celery beat решал бы один и тот же снимок
+    заново на каждом тике, пока оператор не нажмёт «Рассмотреть» снова.
+    UNIQUE на snapshot_id (миграция 0013) — гарантия на уровне БД, не только
+    в коде: on_conflict_do_nothing тот же приём, что claim_in_flight в
+    app/engine/bki_cache.py для защиты от двойной оплаты БКИ."""
+    stmt = (
+        pg_insert(StageBSnapshotAttempt)
+        .values(application_id=application_id, snapshot_id=snapshot_id)
+        .on_conflict_do_nothing(index_elements=[StageBSnapshotAttempt.snapshot_id])
+        .returning(StageBSnapshotAttempt.id)
+    )
+    claimed_id = (await session.execute(stmt)).scalar_one_or_none()
+    return claimed_id is not None
 
 
 async def _latest_checks_for_subject(session, application_id: UUID, subject_type: str, subject_id) -> dict:
@@ -251,6 +276,25 @@ async def run_stage_b(
         if application is None:
             raise ValueError(f"заявка {application_id} не найдена")
 
+        snapshot = await _latest_stage_b_snapshot(session, application_id)
+        if snapshot is None:
+            raise NoStageBSnapshotError(f"нет снимка анкеты стадии Б для {application_id}")
+
+        # Стадия Б запускается ровно один раз на снимок анкеты (ваше явное
+        # уточнение — найденный баг T13c): claim ДО любой обработки и ДО
+        # смены статуса. gray_zone/to_operator — статусы, в которые заявка
+        # ВОЗВРАЩАЕТСЯ после решения (в отличие от "received" у стадии А,
+        # откуда только уходят) — без клейма celery beat пере-подбирал бы
+        # уже решённую заявку и решал бы тот же снимок заново на каждом тике.
+        claimed = await _claim_stage_b_snapshot(session, application_id=application_id, snapshot_id=snapshot.id)
+        await session.commit()
+        if not claimed:
+            logger.info(
+                "stage_b_snapshot_already_processed",
+                application_id=str(application_id), snapshot_id=str(snapshot.id),
+            )
+            return application.status
+
         # "gray_zone" -> "stage_b": повторное «Рассмотреть» после серой зоны
         # (например, БКИ было недоступно или согласие истекло, оператор
         # поправил данные и снова нажал «Рассмотреть») — снимок анкеты уже
@@ -262,9 +306,6 @@ async def run_stage_b(
         ruleset_row = await get_active_ruleset_version(session)
         config = load_config(ruleset_row)
 
-        snapshot = await _latest_stage_b_snapshot(session, application_id)
-        if snapshot is None:
-            raise NoStageBSnapshotError(f"нет снимка анкеты стадии Б для {application_id}")
         stage_b_payload = (snapshot.payload_raw or {}).get("stage_b") or {}
 
         missing_sections = [

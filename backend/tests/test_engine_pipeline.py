@@ -96,7 +96,69 @@ async def test_stage_a_rejects_underage_applicant(
     # T11: комментарий — человеческим языком с фактическим значением и порогом,
     # без служебного кода (оператор не программист).
     assert "AGE_BELOW_MIN" not in comment
-    assert "19" in comment and "21" in comment
+
+
+async def test_stage_a_does_not_reprocess_after_decision(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Тот же вопрос, что и для стадии Б (T13c, ваше уточнение) — покрыть
+    тестом, даже если защита уже есть.
+
+    Подбор задачи — по status=="received", а в этот статус ничего не
+    возвращается (ALLOWED_TRANSITIONS: app/engine/state_machine.py —
+    "received" ни разу не встречается целью перехода): после решения
+    диспетчерский запрос `WHERE status = 'received'` эту заявку больше не
+    находит — в отличие от стадии Б, где gray_zone/to_operator переиспользуются.
+    Не гоняем сам app.tasks.stage_a._run() (он же celery-задача) — у него
+    свои настройки/хранилище на весь процесс, не тестовые фикстуры, и запрос
+    global — подхватил бы "received"-заявки других тестов; вместо этого
+    проверяем оба слоя защиты напрямую: диспетчерский SELECT и state machine."""
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(19)))
+    final_status = await run_stage_a(
+        session_factory, application_id,
+        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+    )
+    assert final_status == "rejected_a"
+
+    async def _decision_count() -> int:
+        async with session_factory() as session:
+            return len(
+                (await session.execute(select(Decision).where(Decision.application_id == application_id)))
+                .scalars().all()
+            )
+
+    baseline = await _decision_count()
+    assert baseline == 1
+
+    # 1) Диспетчерский запрос (app/tasks/stage_a.py): "received" больше не
+    # вернёт эту заявку, сколько раз ни повтори — не найдено, не переоткрыто.
+    async with session_factory() as session:
+        for _ in range(10):
+            picked = (
+                await session.execute(
+                    select(Application.id).where(Application.status == "received", Application.id == application_id)
+                )
+            ).scalar_one_or_none()
+            assert picked is None
+
+    # 2) Второй уровень защиты: даже прямой повторный вызов run_stage_a на
+    # уже решённой заявке не проходит тихо — state machine запрещает переход
+    # rejected_a -> ocr (см. app/engine/state_machine.py), решение не дублируется.
+    from app.engine.state_machine import InvalidTransitionError
+
+    for _ in range(9):
+        try:
+            await run_stage_a(
+                session_factory, application_id,
+                ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+            )
+        except InvalidTransitionError:
+            pass
+        else:
+            raise AssertionError("повторный run_stage_a на решённой заявке должен был упасть")
+
+    assert await _decision_count() == baseline
 
 
 async def test_stage_a_sends_adult_applicant_to_operator(

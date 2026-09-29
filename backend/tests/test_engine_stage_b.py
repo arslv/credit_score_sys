@@ -138,6 +138,73 @@ async def test_all_checks_pass_bki_not_configured_is_gray_zone(
     assert "БКИ не подключено" in detail.raw["comments"][-1]["text"]
 
 
+async def test_stage_b_run_ten_times_without_new_snapshot_makes_exactly_one_decision(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Найденный баг (T13c, ваше уточнение): gray_zone — статус, в который
+    заявка ВОЗВРАЩАЕТСЯ после решения (в отличие от "received" у стадии А,
+    откуда только уходят), а run_stage_b подбирается по статусу — без клейма
+    снимка celery beat решал бы тот же снимок заново на каждом тике."""
+    from app.integrations.adapter import _content_hash
+
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory,
+    )
+
+    kwargs = dict(
+        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
+    )
+    first_status = await run_stage_b(session_factory, application_id, partner_client=partner_client, **kwargs)
+    assert first_status == "gray_zone"  # см. test_all_checks_pass_bki_not_configured_is_gray_zone
+
+    async def _counts() -> tuple[int, int, int]:
+        async with session_factory() as session:
+            decisions = len(
+                (await session.execute(select(Decision).where(Decision.application_id == application_id)))
+                .scalars().all()
+            )
+            history = len(
+                (await session.execute(select(StatusHistory).where(StatusHistory.application_id == application_id)))
+                .scalars().all()
+            )
+        detail = await partner_client.get_application(external_id)
+        return decisions, history, len(detail.raw["comments"])
+
+    baseline = await _counts()
+    assert baseline[0] == 1  # ровно одно решение после первого запуска
+
+    # Тот же снимок, тот же статус gray_zone — ещё 9 запусков подряд, как
+    # если бы celery beat подбирал эту заявку на каждом тике без нового
+    # «Рассмотреть» (ровно баг, который чиним).
+    for _ in range(9):
+        status = await run_stage_b(session_factory, application_id, partner_client=partner_client, **kwargs)
+        assert status == "gray_zone"
+
+    assert await _counts() == baseline  # ни одного дубля — решение, статус, комментарий не выросли
+
+    # Новое «Рассмотреть» (новый снимок анкеты) — ОБЯЗАНО дать новое решение.
+    async with session_factory() as session:
+        payload = {"stage_b": _DEFAULT_STAGE_B_PAYLOAD}
+        session.add(ExternalSnapshot(
+            application_id=application_id, stage="B", payload_raw=payload, content_hash=_content_hash(payload),
+        ))
+        await session.commit()
+
+    status_after_new_snapshot = await run_stage_b(
+        session_factory, application_id, partner_client=partner_client, **kwargs
+    )
+    assert status_after_new_snapshot == "gray_zone"
+
+    # Ровно одно НОВОЕ решение на новый снимок — не ноль (не «застряло»
+    # навсегда) и не два (не задвоилось). Комментарий партнёру в этой ветке
+    # не проверяем отдельно: fake_partner отклоняет повторную запись того же
+    # статуса как конфликт (правило 12 CLAUDE.md) — это про синтетическую
+    # подмену снимка в тесте напрямую в БД, без реального нового «Рассмотреть»
+    # на стороне заказчика, не про баг, который здесь чинится.
+    decisions_after, _, _ = await _counts()
+    assert decisions_after == baseline[0] + 1
+
+
 async def test_missing_section_returns_to_operator_with_list(
     partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
@@ -155,6 +222,26 @@ async def test_missing_section_returns_to_operator_with_list(
             await session.execute(select(Decision).where(Decision.application_id == application_id))
         ).scalars().all()
         assert decisions == []
+
+
+async def test_stage_b_run_ten_times_on_incomplete_snapshot_writes_comment_once(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Тот же баг, другая ветка: "неполный снимок" не пишет Decision вовсе
+    (см. test_missing_section_returns_to_operator_with_list выше), но статус
+    остаётся to_operator — тоже переподбираемый статус. Клейм в run_stage_b
+    стоит ДО проверки полноты, поэтому защищает и эту ветку."""
+    incomplete_payload = {"deal": {"goods_category_code": "household_appliances"}}
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=incomplete_payload,
+    )
+
+    for _ in range(10):
+        status = await run_stage_b(session_factory, application_id, partner_client=partner_client)
+        assert status == "to_operator"
+
+    detail = await partner_client.get_application(external_id)
+    assert len(detail.raw["comments"]) == 1
 
     detail = await partner_client.get_application(external_id)
     comment = detail.raw["comments"][-1]["text"]
