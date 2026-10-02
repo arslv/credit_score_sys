@@ -13,6 +13,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/clients", label: "Клиенты", roles: ["risk_manager", "admin", "viewer", "compliance"] },
   { to: "/contracts", label: "Договоры", roles: ["risk_manager", "admin", "viewer", "compliance"] },
   { to: "/compliance", label: "Комплаенс", roles: ["compliance"] },
+  { to: "/rulesets", label: "Правила и пороги", roles: ["risk_manager"] },
   { to: "/references", label: "Справочники", roles: ["risk_manager", "admin"] },
   { to: "/employees", label: "Сотрудники", roles: ["admin"] },
   { to: "/audit", label: "Аудит", roles: ["admin"] },

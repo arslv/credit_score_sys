@@ -14,6 +14,7 @@ import { AuditLogPage } from "./pages/AuditLog";
 import { SystemStatusPage } from "./pages/SystemStatus";
 import { CompliancePage } from "./pages/Compliance";
 import { DashboardPage } from "./pages/Dashboard";
+import { RulesetsPage } from "./pages/Rulesets";
 
 export function App() {
   return (
@@ -34,6 +35,7 @@ export function App() {
           <Route path="/audit" element={<AuditLogPage />} />
           <Route path="/system" element={<SystemStatusPage />} />
           <Route path="/compliance" element={<CompliancePage />} />
+          <Route path="/rulesets" element={<RulesetsPage />} />
         </Route>
       </Route>
     </Routes>

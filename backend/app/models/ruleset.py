@@ -24,8 +24,11 @@ class RulesetVersion(Base):
     author_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), sa.ForeignKey("employees.id")
     )
+    # "Активная" версия определяется чисто по effective_from/version (см.
+    # app.engine.versions.get_active_ruleset_version) — effective_to никогда не
+    # читался и не писался нигде в коде; убран миграцией 0014 (T14, ваше явное
+    # указание), чтобы не выглядеть рабочим механизмом для будущей сессии.
     effective_from: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
-    effective_to: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )

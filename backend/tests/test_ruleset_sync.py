@@ -117,7 +117,13 @@ async def test_sync_creates_new_version_when_file_changes_without_human_author(s
     await sync_ruleset_from_file(session_factory, path)
 
     marker_2 = _marker()
-    _write_yaml(tmp_path, _valid_config_dict(marker_2))  # тот же путь, новое содержимое
+    # Хеш (T14, ваше замечание) считается только по правилам — comment/
+    # effective_from в него не входят, поэтому для "другого содержимого"
+    # нужно менять настоящее правило, не только маркер в комментарии.
+    _write_yaml(
+        tmp_path,
+        _valid_config_dict(marker_2, antifraud={"max_applications_per_phone_30d": 4, "duplicate_window_days": 30}),
+    )
 
     result = await sync_ruleset_from_file(session_factory, path)
 
@@ -185,7 +191,12 @@ async def test_sync_conflict_does_not_touch_human_authored_active_version(sessio
         human_row = await save_ruleset_version(session, human_config, author_id=employee.id)
         await session.commit()
 
-    path = _write_yaml(tmp_path, _valid_config_dict(_marker()))
+    # Снова: файл должен отличаться от активной версии ПРАВИЛАМИ, не только
+    # маркером в комментарии (T14, хеш сузили до самих правил).
+    path = _write_yaml(
+        tmp_path,
+        _valid_config_dict(_marker(), antifraud={"max_applications_per_phone_30d": 5, "duplicate_window_days": 30}),
+    )
 
     result = await sync_ruleset_from_file(session_factory, path)
 

@@ -1494,6 +1494,205 @@
         }
       }
     },
+    "/api/rulesets/active": {
+      "get": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "Get Active",
+        "operationId": "get_active_api_rulesets_active_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Active Api Rulesets Active Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rulesets/simulate": {
+      "post": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "Simulate",
+        "operationId": "simulate_api_rulesets_simulate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Simulate Api Rulesets Simulate Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rulesets/save": {
+      "post": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "Save",
+        "operationId": "save_api_rulesets_save_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Save Api Rulesets Save Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rulesets/rollback": {
+      "post": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "Rollback",
+        "operationId": "rollback_api_rulesets_rollback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Rollback Api Rulesets Rollback Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rulesets/accept-file": {
+      "post": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "Accept File",
+        "description": "Найденный баг (T14, ваше замечание): версия, принятая из файла, —\nauthor_id=None (она пришла из файла, не от человека; нажатие — только\nзапись в аудит, не делает человека \"автором правил\"). Раньше ставился\nauthor_id=employee.id — каждое нажатие создавало версию с человеком-\nавтором, которая на следующей проверке сама считалась конфликтующей с\nфайлом (sync_ruleset_from_file конфликтует именно тогда, когда у активной\nверсии есть автор), поэтому плодились версии при повторных нажатиях.\nЕсли активная версия уже совпадает с файлом по хешу — no-op, ничего не\nсоздаём (повторное нажатие ничего не меняет).",
+        "operationId": "accept_file_api_rulesets_accept_file_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Accept File Api Rulesets Accept File Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rulesets/versions": {
+      "get": {
+        "tags": [
+          "rulesets"
+        ],
+        "summary": "List Versions",
+        "operationId": "list_versions_api_rulesets_versions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Versions Api Rulesets Versions Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -3639,6 +3838,44 @@
         ],
         "title": "RetryCheckResult"
       },
+      "RollbackRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "reason"
+        ],
+        "title": "RollbackRequest"
+      },
+      "SaveRequest": {
+        "properties": {
+          "yaml": {
+            "type": "string",
+            "title": "Yaml"
+          },
+          "simulation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Simulation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "yaml",
+          "simulation_id"
+        ],
+        "title": "SaveRequest"
+      },
       "ScheduleItemOut": {
         "properties": {
           "period_no": {
@@ -3663,6 +3900,30 @@
           "due_amount"
         ],
         "title": "ScheduleItemOut"
+      },
+      "SimulateRequest": {
+        "properties": {
+          "yaml": {
+            "type": "string",
+            "title": "Yaml"
+          },
+          "sample_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "yaml"
+        ],
+        "title": "SimulateRequest"
       },
       "SourceAvailabilityItem": {
         "properties": {

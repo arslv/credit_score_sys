@@ -21,8 +21,21 @@ from app.models import RulesetVersion
 logger = structlog.get_logger()
 
 
+# Найденный баг (T14, ваше замечание): version/comment/effective_from —
+# метаданные версии, не бизнес-правила. Если они участвуют в хеше, два конфига
+# с ОДИНАКОВЫМИ правилами, но разной датой вступления или другим
+# комментарием (например, после отката — там effective_from всегда
+# сегодняшнее число, см. app/api/rulesets.py::rollback) считаются "разными" —
+# "принять версию из файла" никогда не может совпасть с файлом, даже когда
+# правила реально совпадают, и плодит версии при каждом нажатии.
+_HASH_EXCLUDED_FIELDS = ("version", "comment", "effective_from")
+
+
 def compute_config_hash(config: RulesetConfig) -> str:
-    canonical = json.dumps(config.model_dump(mode="json"), sort_keys=True, ensure_ascii=False)
+    data = config.model_dump(mode="json")
+    for field in _HASH_EXCLUDED_FIELDS:
+        data.pop(field, None)
+    canonical = json.dumps(data, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 

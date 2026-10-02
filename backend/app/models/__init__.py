@@ -13,6 +13,7 @@ from app.models.override import ManualOverride
 from app.models.reference import Blacklist, GoodsCategory, ReasonCode
 from app.models.registry import InvalidPassport, RegistrySyncLog, SanctionsList
 from app.models.ruleset import RulesetVersion
+from app.models.ruleset_simulation import RulesetSimulation
 from app.models.stage_b_attempt import StageBSnapshotAttempt
 
 __all__ = [
@@ -48,5 +49,6 @@ __all__ = [
     "RegistrySyncLog",
     "SanctionsList",
     "RulesetVersion",
+    "RulesetSimulation",
     "StageBSnapshotAttempt",
 ]

@@ -153,6 +153,7 @@ async def main() -> None:
             risk_manager = await _seed_employee(session, role="risk_manager")
             viewer = await _seed_employee(session, role="viewer")
             compliance = await _seed_employee(session, role="compliance")
+            admin = await _seed_employee(session, role="admin")
             application = await _seed_discrepancy_application(session)
             frozen_match = await _seed_frozen_sanctions_match(session)
             await session.commit()
@@ -160,7 +161,7 @@ async def main() -> None:
         await engine.dispose()
 
     print(json.dumps({
-        "risk_manager": risk_manager, "viewer": viewer, "compliance": compliance,
+        "risk_manager": risk_manager, "viewer": viewer, "compliance": compliance, "admin": admin,
         "application": application, "frozen_match": frozen_match,
     }))
 

@@ -17,10 +17,30 @@ from app.models import Employee
 from app.security.passwords import hash_password
 
 
+def _read_clean(prompt: str, *, field_label: str) -> str:
+    """input() на POSIX никогда не падает сам на битых байтах — стандартный
+    обработчик ошибок stdin на этой платформе — surrogateescape (PEP 528):
+    непонятный байт тихо становится суррогатной парой, строка собирается
+    без исключения. Проблема всплывает значительно позже и значительно
+    глубже — когда эту строку пытается уйти в Postgres asyncpg (ему нужен
+    честный UTF-8 на проводе) — трассировка через SQLAlchemy, далеко от
+    места, где на самом деле что-то пошло не так (битая кодировка терминала
+    при вводе, не сама команда). Проверяем кодируемость сразу при вводе и
+    просим ввести заново, не давая этой строке дойти до БД вовсе."""
+    while True:
+        value = input(prompt).strip()
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            print(f"{field_label} введено с ошибкой кодировки, введите ещё раз", file=sys.stderr)
+            continue
+        return value
+
+
 async def _run() -> int:
     print("Создание администратора DIALOG Scoring")
-    full_name = input("ФИО: ").strip()
-    email = input("Email: ").strip()
+    full_name = _read_clean("ФИО: ", field_label="Имя")
+    email = _read_clean("Email: ", field_label="Email")
     if not full_name or not email:
         print("ФИО и email обязательны", file=sys.stderr)
         return 1
