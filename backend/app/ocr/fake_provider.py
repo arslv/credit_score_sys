@@ -50,13 +50,19 @@ def build_ocr_result(
 
 
 class FakeOcrProvider:
-    """Возвращает заранее заданный JSON — для тестов и локального прогона без ключа."""
+    """Возвращает заранее заданный JSON — для тестов и локального прогона без ключа.
 
-    def __init__(self, result: OcrRawResult | None = None) -> None:
+    raise_error — имитация недоступности провайдера (сеть/ключ) для тестов
+    пути "сбой распознавания не должен ронять/вешать заявку"."""
+
+    def __init__(self, result: OcrRawResult | None = None, *, raise_error: bool = False) -> None:
         self.name = "fake"
         self._result = result or build_ocr_result()
+        self._raise_error = raise_error
         self.calls: list[tuple[bytes, bytes]] = []
 
     async def recognize(self, passport_main: bytes, passport_reg: bytes) -> OcrRawResult:
         self.calls.append((passport_main, passport_reg))
+        if self._raise_error:
+            raise RuntimeError("fake ocr provider unavailable")
         return self._result

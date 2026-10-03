@@ -48,6 +48,10 @@ services:
     volumes:
       - storage_data:/data/storage
       - ./config:/app/config:ro
+      # T15: docs/demo_import/*.csv — tests/test_demo_import_fixtures.py читает
+      # эти же файлы, что загружает оператор через экран «Импорт данных»,
+      # чтобы docs/demo_import/expected.md не мог разойтись с реальным кодом.
+      - ./docs:/app/docs:ro
     depends_on:
       db:
         condition: service_healthy

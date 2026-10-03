@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { BarList } from "../components/BarList";
 import { SourceBadge } from "../components/SourceBadge";
+import { applicationStatusLabel, reasonCodeLabel } from "../lib/labels";
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -66,7 +67,7 @@ export function DashboardPage() {
               items={query.data.funnel
                 .slice()
                 .sort((a, b) => b.count - a.count)
-                .map((f) => ({ label: f.status, value: f.count }))}
+                .map((f) => ({ label: applicationStatusLabel(f.status), value: f.count }))}
             />
           </div>
 
@@ -106,7 +107,7 @@ export function DashboardPage() {
               items={query.data.rejection_reasons
                 .slice()
                 .sort((a, b) => b.count - a.count)
-                .map((r) => ({ label: r.reason_code, value: r.count }))}
+                .map((r) => ({ label: reasonCodeLabel(r.reason_code), value: r.count }))}
             />
           </div>
 
@@ -193,8 +194,45 @@ export function DashboardPage() {
           </div>
 
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>Винтажный анализ и просрочка</h2>
-            <p className="muted">Появится после импорта платежей (T15).</p>
+            <h2 style={{ marginTop: 0 }}>Винтажный анализ (просрочка 60+ за 6 мес.)</h2>
+            {query.data.vintage.length === 0 && <p className="muted">Нет выданных договоров.</p>}
+            {query.data.vintage.length > 0 && (
+              <table className="table table--compact">
+                <thead>
+                  <tr>
+                    <th>Когорта</th>
+                    <th>Договоров</th>
+                    <th>Зрелых</th>
+                    <th>Доля плохих</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {query.data.vintage.map((v) => (
+                    <tr key={v.cohort_month}>
+                      <td>{v.cohort_month}</td>
+                      <td>{v.total_contracts}</td>
+                      <td>{v.mature_contracts}</td>
+                      <td>
+                        {v.mature_contracts === 0
+                          ? "ещё не зрела"
+                          : `${pct(v.bad_contracts ?? 0, v.mature_contracts)} (${v.bad_contracts} из ${v.mature_contracts})`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="card">
+            <h2 style={{ marginTop: 0 }}>Просрочка сейчас</h2>
+            <BarList
+              emptyText="Нет действующих договоров с данными по платежам."
+              items={query.data.delinquency_buckets.map((b) => ({
+                label: b.bucket === "0" ? "без просрочки" : `${b.bucket} дней`,
+                value: b.contracts,
+              }))}
+            />
           </div>
         </div>
       )}

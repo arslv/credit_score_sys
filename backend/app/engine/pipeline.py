@@ -7,12 +7,12 @@ T09: внешние источники шага 3 (ФНС, Федресурс, �
 опроса ФССП (app/tasks/fssp_poll.py, отложенный путь). Идемпотентность и защита
 от двойной финализации — через SELECT ... FOR UPDATE на строке applications."""
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import get_settings
@@ -31,9 +31,9 @@ from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.adapter import write_decision_status
 from app.integrations.base import PartnerClient
 from app.integrations.status_mapping import build_operator_comment, get_status_mapping, render_comment
-from app.models import Application, Check, Client, Decision, Document, FeatureSnapshot, OcrResult
+from app.models import Application, Check, Client, Decision, Document, FeatureSnapshot, OcrResult, StatusHistory
 from app.ocr.base import OcrProvider
-from app.ocr.service import run_ocr
+from app.ocr.service import OcrProviderUnavailable, run_ocr
 from app.sources.base import Subject
 from app.sources.blacklist import BlacklistSource
 from app.sources.factory import build_fedresurs_source, build_fns_source, build_fssp_source
@@ -312,13 +312,28 @@ async def run_stage_a(
         passport_main = await _load_photo(session, storage, application.id, "passport_main")
         passport_reg = await _load_photo(session, storage, application.id, "passport_reg")
 
-        ocr_outcome = await run_ocr(
-            session,
-            ocr_provider,
-            application=application,
-            passport_main=passport_main,
-            passport_reg=passport_reg,
-        )
+        try:
+            ocr_outcome = await run_ocr(
+                session,
+                ocr_provider,
+                application=application,
+                passport_main=passport_main,
+                passport_reg=passport_reg,
+                max_attempts=settings.ocr_max_attempts,
+                retry_delay_seconds=settings.ocr_retry_delay_seconds,
+            )
+        except OcrProviderUnavailable:
+            # Провайдер не ответил после всех попыток (ваше явное указание):
+            # заявка не должна зависнуть в статусе "ocr" — тот же путь, что и
+            # явный сбой распознавания (below_threshold ниже), просто без
+            # ocr_outcome (разобрать нечего).
+            transition(session, application, "ocr_failed", actor_type="system")
+            transition(session, application, "to_operator", actor_type="system")
+            await session.commit()
+
+            logger.info("stage_a_ocr_provider_unavailable", application_id=str(application.id))
+            await _write_back(session_factory, partner_client, application, "ocr_failed", reason_code=None)
+            return application.status
         await session.commit()
 
         if ocr_outcome.below_threshold:
@@ -399,6 +414,56 @@ async def run_stage_a(
 
     logger.info("stage_a_awaiting_fssp", application_id=str(application_id))
     return application.status
+
+
+async def find_stuck_ocr_application_ids(session, *, cutoff: datetime) -> list[UUID]:
+    """Заявки, которые всё ещё в статусе "ocr", а последний переход В этот
+    статус случился раньше cutoff. Используется и для авто-восстановления
+    (ниже), и для счётчика на экране состояния системы (app/api/system.py) —
+    одна и та же логика, не продублированный SQL в двух местах."""
+    entered_ocr = (
+        select(StatusHistory.application_id, func.max(StatusHistory.created_at).label("entered_at"))
+        .where(StatusHistory.to_status == "ocr")
+        .group_by(StatusHistory.application_id)
+        .subquery()
+    )
+    return (
+        await session.execute(
+            select(Application.id)
+            .join(entered_ocr, entered_ocr.c.application_id == Application.id)
+            .where(Application.status == "ocr", entered_ocr.c.entered_at < cutoff)
+        )
+    ).scalars().all()
+
+
+async def recover_stuck_ocr_applications(
+    session_factory: async_sessionmaker, *, partner_client: PartnerClient, stuck_minutes: int,
+) -> int:
+    """Защита на случай, если даже повторы внутри run_ocr не сработали штатно
+    (фоновый процесс убит посреди вызова, сеть зависла без исключения и
+    т.п.) — заявка, которая дольше stuck_minutes находится в статусе "ocr",
+    считается зависшей и уводится к оператору тем же путём, что и явный сбой
+    распознавания (ваше явное указание). Вызывается каждый тик
+    stage_a.process_new_applications (app/tasks/stage_a.py), тем же темпом,
+    что и обработка новых заявок — отдельное расписание не нужно."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=stuck_minutes)
+    async with session_factory() as session:
+        stuck_ids = await find_stuck_ocr_application_ids(session, cutoff=cutoff)
+
+    recovered = 0
+    for application_id in stuck_ids:
+        async with session_factory() as session:
+            application = await session.get(Application, application_id)
+            if application is None or application.status != "ocr":
+                continue  # уже обработана другим тиком/путём — гонка, не ошибка
+            transition(session, application, "ocr_failed", actor_type="system")
+            transition(session, application, "to_operator", actor_type="system")
+            await session.commit()
+
+        logger.info("stage_a_ocr_stuck_recovered", application_id=str(application_id), stuck_minutes=stuck_minutes)
+        await _write_back(session_factory, partner_client, application, "ocr_failed", reason_code=None)
+        recovered += 1
+    return recovered
 
 
 async def finalize_stage_a(

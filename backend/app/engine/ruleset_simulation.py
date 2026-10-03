@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engine.rules import evaluate_financial, evaluate_hard_stops, evaluate_rule_list, evaluate_stage_b_pre_bki
@@ -171,6 +171,29 @@ async def _latest_decisions(
     return {(row.application_id, row.stage): row for row in rows}
 
 
+async def _known_bad_by_application(session: AsyncSession, application_ids: list[UUID]) -> dict[UUID, int]:
+    """T15: application_id -> bad (0/1) из target_bad_60_6, ТОЛЬКО для
+    зрелых договоров (is_mature) — незрелые/непривязанные заявки просто не
+    попадают в этот словарь, не считаются ни хорошими, ни плохими (ТЗ, T15
+    п.5: таргет известен — или не используется вовсе, не 0 по умолчанию)."""
+    if not application_ids:
+        return {}
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT c.application_id, t.bad
+                FROM contracts c
+                JOIN target_bad_60_6 t ON t.contract_id = c.id
+                WHERE c.application_id = ANY(:application_ids) AND t.is_mature
+                """
+            ),
+            {"application_ids": list(application_ids)},
+        )
+    ).all()
+    return {row.application_id: row.bad for row in rows}
+
+
 async def run_simulation(
     session: AsyncSession, *, active_config: RulesetConfig, candidate_config: RulesetConfig, sample_size: int
 ) -> SimulationSummary:
@@ -185,6 +208,7 @@ async def run_simulation(
     app_ids = [row.id for row in applications]
 
     snapshots = await _latest_feature_snapshots(session, app_ids)
+    known_bad = await _known_bad_by_application(session, app_ids)
     decisions = await _latest_decisions(session, app_ids)
 
     client_ids = {row.client_id for row in applications if row.client_id is not None}
@@ -197,6 +221,11 @@ async def run_simulation(
     known_denominator = 0
     active_approved = 0
     candidate_approved = 0
+    # T15: дефолтность по известным исходам — {outcome: [n_known, n_bad]}, отдельно
+    # для активной версии и кандидата (одна и та же заявка может попасть в разные
+    # outcome-категории по разным конфигам).
+    default_by_active_outcome: dict[str, list[int]] = {}
+    default_by_candidate_outcome: dict[str, list[int]] = {}
     swap_in: list[ApplicationSimulationRow] = []
     swap_out: list[ApplicationSimulationRow] = []
     unknown_after_stage_a_pass: list[ApplicationSimulationRow] = []
@@ -232,6 +261,15 @@ async def run_simulation(
         if candidate.outcome == OUTCOME_APPROVED:
             candidate_approved += 1
 
+        bad = known_bad.get(row.id)
+        if bad is not None:
+            bucket = default_by_active_outcome.setdefault(active.outcome, [0, 0])
+            bucket[0] += 1
+            bucket[1] += bad
+            bucket = default_by_candidate_outcome.setdefault(candidate.outcome, [0, 0])
+            bucket[0] += 1
+            bucket[1] += bad
+
         if active.outcome != candidate.outcome:
             changed_count += 1
             if active.outcome != OUTCOME_APPROVED and candidate.outcome == OUTCOME_APPROVED:
@@ -249,6 +287,25 @@ async def run_simulation(
         for rule_id, ids in sorted(not_computable_ids.items())
     ]
 
+    if default_by_active_outcome or default_by_candidate_outcome:
+        defaultness_by_known_outcome: dict[str, Any] = {
+            "available": True,
+            "by_active_outcome": {
+                outcome: {"known": n, "bad": bad, "bad_rate": bad / n}
+                for outcome, (n, bad) in sorted(default_by_active_outcome.items())
+            },
+            "by_candidate_outcome": {
+                outcome: {"known": n, "bad": bad, "bad_rate": bad / n}
+                for outcome, (n, bad) in sorted(default_by_candidate_outcome.items())
+            },
+        }
+    else:
+        defaultness_by_known_outcome = {
+            "available": False,
+            "note": "Появится после импорта платежей и целевой переменной (T15) — "
+            "в выборке нет ни одного зрелого договора с известным исходом.",
+        }
+
     return SimulationSummary(
         sample_size_requested=sample_size,
         sample_size_actual=len(applications),
@@ -262,10 +319,7 @@ async def run_simulation(
         unknown_after_stage_a_pass_total=unknown_after_stage_a_pass_total,
         insufficient_data_count=insufficient_data_count,
         not_computable=not_computable,
-        defaultness_by_known_outcome={
-            "available": False,
-            "note": "Появится после импорта платежей и целевой переменной (T15).",
-        },
+        defaultness_by_known_outcome=defaultness_by_known_outcome,
     )
 
 

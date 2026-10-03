@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.models import Contract, Employee, Payment, PaymentSchedule
+from app.models import Contract, DelinquencyDaily, Employee, Payment, PaymentSchedule
 from app.security.deps import require_roles
 from app.security.pagination import Page, PageParams
 
@@ -23,7 +23,10 @@ _VIEW_ROLES = ("risk_manager", "admin", "viewer", "compliance")
 
 class ContractListItem(BaseModel):
     id: UUID
-    application_id: UUID
+    # T15: nullable — договор из импорта не всегда привязан к заявке
+    # (app.engine.imports, ContractLinkCandidate — привязку подтверждает
+    # человек, автоматически только по однозначному идентификатору).
+    application_id: UUID | None
     external_number: str | None
     total_amount: Decimal
     term_months: int
@@ -36,6 +39,7 @@ class PaymentOut(BaseModel):
     paid_at: date
     amount: Decimal
     source: str
+    kind: str  # T15: regular | penalty | reversal
 
 
 class ScheduleItemOut(BaseModel):
@@ -44,9 +48,15 @@ class ScheduleItemOut(BaseModel):
     due_amount: Decimal
 
 
+class DelinquencyOut(BaseModel):
+    as_of: date
+    days_past_due: int
+    overdue_amount: Decimal
+
+
 class ContractDetail(BaseModel):
     id: UUID
-    application_id: UUID
+    application_id: UUID | None
     external_number: str | None
     principal: Decimal
     markup: Decimal
@@ -56,8 +66,17 @@ class ContractDetail(BaseModel):
     status: str
     issued_at: date
     closed_at: date | None
+    # T15, ваше замечание: закрытие — не всегда погашение; причина и её
+    # трактовка (config/import_mappings/contracts.yaml::closure_outcome_map)
+    # видны на карточке, не только внутренний таргет.
+    closure_reason: str | None
+    closure_outcome: str | None
+    # T15, ваше замечание: график — импортом, генерация только запасной
+    # вариант; видно на карточке, каким графиком реально пользуется расчёт.
+    schedule_source: str
     schedule: list[ScheduleItemOut]
     payments: list[PaymentOut]
+    current_delinquency: DelinquencyOut | None  # T15: последний пересчитанный снимок
 
 
 @router.get("", response_model=Page[ContractListItem])
@@ -107,14 +126,33 @@ async def get_contract(
             select(Payment).where(Payment.contract_id == contract_id).order_by(Payment.paid_at)
         )
     ).scalars().all()
+    latest_delinquency = (
+        await session.execute(
+            select(DelinquencyDaily)
+            .where(DelinquencyDaily.contract_id == contract_id)
+            .order_by(DelinquencyDaily.as_of.desc())
+            .limit(1)
+        )
+    ).scalars().first()
 
     return ContractDetail(
         id=contract.id, application_id=contract.application_id, external_number=contract.external_number,
         principal=contract.principal, markup=contract.markup, total_amount=contract.total_amount,
         down_payment=contract.down_payment, term_months=contract.term_months, status=contract.status,
         issued_at=contract.issued_at, closed_at=contract.closed_at,
+        closure_reason=contract.closure_reason, closure_outcome=contract.closure_outcome,
+        schedule_source=contract.schedule_source,
+        current_delinquency=(
+            DelinquencyOut(
+                as_of=latest_delinquency.as_of, days_past_due=latest_delinquency.days_past_due,
+                overdue_amount=latest_delinquency.overdue_amount,
+            )
+            if latest_delinquency is not None else None
+        ),
         schedule=[
             ScheduleItemOut(period_no=s.period_no, due_date=s.due_date, due_amount=s.due_amount) for s in schedule
         ],
-        payments=[PaymentOut(id=p.id, paid_at=p.paid_at, amount=p.amount, source=p.source) for p in payments],
+        payments=[
+            PaymentOut(id=p.id, paid_at=p.paid_at, amount=p.amount, source=p.source, kind=p.kind) for p in payments
+        ],
     )

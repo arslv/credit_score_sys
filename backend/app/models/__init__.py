@@ -8,6 +8,7 @@ from app.models.contract import Contract, DelinquencyDaily, Payment, PaymentSche
 from app.models.employee import AuditLog, Document, Employee, StatusHistory
 from app.models.feature import Decision, FeatureSnapshot
 from app.models.fssp import FsspRequest
+from app.models.imports import ContractLinkCandidate, ImportBatch
 from app.models.integration import ExternalSnapshot, IntegrationEvent, OcrResult
 from app.models.override import ManualOverride
 from app.models.reference import Blacklist, GoodsCategory, ReasonCode
@@ -41,6 +42,8 @@ __all__ = [
     "IntegrationEvent",
     "OcrResult",
     "FsspRequest",
+    "ImportBatch",
+    "ContractLinkCandidate",
     "ManualOverride",
     "Blacklist",
     "GoodsCategory",

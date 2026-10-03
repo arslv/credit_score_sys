@@ -24,6 +24,7 @@ dependencies = [
     "PyYAML>=6.0",
     "argon2-cffi>=23.1",
     "pydantic[email]>=2.9",
+    "python-multipart>=0.0.12",
 ]
 
 [project.optional-dependencies]

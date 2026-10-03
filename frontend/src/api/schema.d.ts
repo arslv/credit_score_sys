@@ -541,6 +541,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/contracts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Contracts */
+        post: operations["upload_contracts_api_imports_contracts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Payments */
+        post: operations["upload_payments_api_imports_payments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/payment-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Payment Schedule */
+        post: operations["upload_payment_schedule_api_imports_payment_schedule_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/historical-applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Historical Applications */
+        post: operations["upload_historical_applications_api_imports_historical_applications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/contract-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Contract Candidates */
+        get: operations["list_contract_candidates_api_imports_contract_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/contract-candidates/{candidate_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Contract Candidate */
+        post: operations["confirm_contract_candidate_api_imports_contract_candidates__candidate_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/contract-candidates/{candidate_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Contract Candidate */
+        post: operations["reject_contract_candidate_api_imports_contract_candidates__candidate_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -722,6 +841,33 @@ export interface components {
             /** Active */
             active: boolean;
         };
+        /** Body_upload_contracts_api_imports_contracts_post */
+        Body_upload_contracts_api_imports_contracts_post: {
+            /** File */
+            file: string;
+            /** Data As Of */
+            data_as_of?: string | null;
+        };
+        /** Body_upload_historical_applications_api_imports_historical_applications_post */
+        Body_upload_historical_applications_api_imports_historical_applications_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_upload_payment_schedule_api_imports_payment_schedule_post */
+        Body_upload_payment_schedule_api_imports_payment_schedule_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_upload_payments_api_imports_payments_post */
+        Body_upload_payments_api_imports_payments_post: {
+            /** File */
+            file: string;
+            /**
+             * Data As Of
+             * Format: date
+             */
+            data_as_of: string;
+        };
         /** CheckOut */
         CheckOut: {
             /**
@@ -813,11 +959,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /**
-             * Application Id
-             * Format: uuid
-             */
-            application_id: string;
+            /** Application Id */
+            application_id: string | null;
             /** External Number */
             external_number: string | null;
             /** Principal */
@@ -839,10 +982,17 @@ export interface components {
             issued_at: string;
             /** Closed At */
             closed_at: string | null;
+            /** Closure Reason */
+            closure_reason: string | null;
+            /** Closure Outcome */
+            closure_outcome: string | null;
+            /** Schedule Source */
+            schedule_source: string;
             /** Schedule */
             schedule: components["schemas"]["ScheduleItemOut"][];
             /** Payments */
             payments: components["schemas"]["PaymentOut"][];
+            current_delinquency: components["schemas"]["DelinquencyOut"] | null;
         };
         /** ContractListItem */
         ContractListItem: {
@@ -851,11 +1001,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /**
-             * Application Id
-             * Format: uuid
-             */
-            application_id: string;
+            /** Application Id */
+            application_id: string | null;
             /** External Number */
             external_number: string | null;
             /** Total Amount */
@@ -907,6 +1054,10 @@ export interface components {
             bki_monthly: components["schemas"]["BkiMonthlyItem"][];
             /** Source Availability */
             source_availability: components["schemas"]["SourceAvailabilityItem"][];
+            /** Vintage */
+            vintage: components["schemas"]["VintageItem"][];
+            /** Delinquency Buckets */
+            delinquency_buckets: components["schemas"]["DelinquencyBucketItem"][];
         };
         /** DecisionOut */
         DecisionOut: {
@@ -951,6 +1102,25 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** DelinquencyBucketItem */
+        DelinquencyBucketItem: {
+            /** Bucket */
+            bucket: string;
+            /** Contracts */
+            contracts: number;
+        };
+        /** DelinquencyOut */
+        DelinquencyOut: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Days Past Due */
+            days_past_due: number;
+            /** Overdue Amount */
+            overdue_amount: string;
         };
         /** DocumentOut */
         DocumentOut: {
@@ -1306,6 +1476,8 @@ export interface components {
             amount: string;
             /** Source */
             source: string;
+            /** Kind */
+            kind: string;
         };
         /** ReasonCodeOut */
         ReasonCodeOut: {
@@ -1422,6 +1594,8 @@ export interface components {
             partner_integration_errors_last_24h: number;
             /** Stuck Applications Over 1H */
             stuck_applications_over_1h: number;
+            /** Stuck In Ocr */
+            stuck_in_ocr: number;
             /** Stage B Reprocessing Loop Applications */
             stage_b_reprocessing_loop_applications: number;
         };
@@ -1437,6 +1611,19 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VintageItem */
+        VintageItem: {
+            /** Cohort Month */
+            cohort_month: string;
+            /** Total Contracts */
+            total_contracts: number;
+            /** Mature Contracts */
+            mature_contracts: number;
+            /** Bad Contracts */
+            bad_contracts: number | null;
+            /** Bad Rate */
+            bad_rate: number | null;
         };
         /** WeeklyApprovalItem */
         WeeklyApprovalItem: {
@@ -2485,6 +2672,234 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    upload_contracts_api_imports_contracts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_contracts_api_imports_contracts_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_payments_api_imports_payments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_payments_api_imports_payments_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_payment_schedule_api_imports_payment_schedule_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_payment_schedule_api_imports_payment_schedule_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_historical_applications_api_imports_historical_applications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_historical_applications_api_imports_historical_applications_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_contract_candidates_api_imports_contract_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    confirm_contract_candidate_api_imports_contract_candidates__candidate_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_contract_candidate_api_imports_contract_candidates__candidate_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

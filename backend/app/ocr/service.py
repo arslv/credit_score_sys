@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -19,6 +20,13 @@ from app.ocr.normalize import (
 )
 
 logger = structlog.get_logger()
+
+
+class OcrProviderUnavailable(Exception):
+    """Провайдер распознавания не ответил ни разу после всех попыток (ваше
+    явное указание: сбой источника не должен останавливать заявку). Вызывающий
+    код (app/engine/pipeline.py::run_stage_a) ловит именно этот тип — не любую
+    Exception — и уводит заявку оператору, не маскируя настоящие баги."""
 
 _NORMALIZERS = {
     "birth_date": normalize_date,
@@ -68,10 +76,45 @@ async def run_ocr(
     application: Application,
     passport_main: bytes,
     passport_reg: bytes,
+    max_attempts: int = 1,
+    retry_delay_seconds: float = 0.0,
 ) -> OcrOutcome:
     """Распознаёт паспорт, нормализует поля, сверяет ФИО с анкетой и сохраняет
-    результат в ocr_results. Проверки по распознанным данным — вне рамок (T05)."""
-    raw = await provider.recognize(passport_main, passport_reg)
+    результат в ocr_results. Проверки по распознанным данным — вне рамок (T05).
+
+    max_attempts > 1 — провайдер может быть временно недоступен (сеть, ключ
+    не настроен): несколько попыток подряд, и только после того, как ВСЕ они
+    не удались, наружу уходит OcrProviderUnavailable (ваше явное указание —
+    не держать заявку в статусе "ocr" бесконечно, не роняя при этом саму
+    заявку на первом же сетевом сбое)."""
+    raw = None
+    last_error: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            raw = await provider.recognize(passport_main, passport_reg)
+            break
+        except Exception as exc:  # noqa: BLE001 — провайдер может упасть как угодно, это не должно ронять заявку
+            last_error = exc
+            logger.warning(
+                "ocr_provider_attempt_failed",
+                application_id=str(application.id),
+                provider=provider.name,
+                attempt=attempt + 1,
+                max_attempts=max_attempts,
+                error=str(exc),
+            )
+            if attempt < max_attempts - 1 and retry_delay_seconds > 0:
+                await asyncio.sleep(retry_delay_seconds)
+
+    if raw is None:
+        logger.error(
+            "ocr_provider_unavailable",
+            application_id=str(application.id),
+            provider=provider.name,
+            attempts=max_attempts,
+        )
+        raise OcrProviderUnavailable(str(last_error))
+
     normalized = _normalize_fields(raw.fields)
 
     key_confidences = [normalized[f]["confidence"] for f in KEY_FIELDS if f in normalized]

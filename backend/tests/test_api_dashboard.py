@@ -213,3 +213,61 @@ async def test_dashboard_empty_period_returns_empty_blocks(admin_client, session
     assert body["overrides"] == {"applications_total": 0, "overridden": 0, "discrepancies": 0}
     assert body["bki_monthly"] == []
     assert body["source_availability"] == []
+
+
+async def test_dashboard_vintage_and_delinquency_exact_numbers(admin_client, session_factory):
+    """T15: винтаж и просрочка — реальные числа, не заглушка T13c."""
+    from app.engine.delinquency_recompute import recompute_all_contracts
+    from app.models import Contract, ImportBatch, Payment, PaymentSchedule
+
+    employee_id = await create_employee(session_factory, email="dash-rm3@example.com", role="risk_manager")
+    await login(admin_client, "dash-rm3@example.com")
+
+    async with session_factory() as session:
+        # Когорта 2025-01: один договор вовремя погашен (bad=0), один — без единого платежа (bad=1).
+        good = Contract(
+            application_id=None, external_number=f"DASH-GOOD-{uuid.uuid4().hex[:6]}", principal=Decimal("6000"),
+            markup=Decimal("0"), total_amount=Decimal("6000"), down_payment=Decimal("0"), term_months=6,
+            issued_at=date(2025, 1, 1), status="active",
+        )
+        bad = Contract(
+            application_id=None, external_number=f"DASH-BAD-{uuid.uuid4().hex[:6]}", principal=Decimal("6000"),
+            markup=Decimal("0"), total_amount=Decimal("6000"), down_payment=Decimal("0"), term_months=6,
+            issued_at=date(2025, 1, 1), status="active",
+        )
+        session.add_all([good, bad])
+        await session.flush()
+        for n in range(1, 7):
+            month = 1 + n
+            year = 2025 + (month - 1) // 12
+            month = (month - 1) % 12 + 1
+            due = date(year, month, 1)
+            session.add(PaymentSchedule(contract_id=good.id, period_no=n, due_date=due, due_amount=Decimal("1000")))
+            session.add(Payment(contract_id=good.id, paid_at=due, amount=Decimal("1000"), source="import", kind="regular"))
+            session.add(PaymentSchedule(contract_id=bad.id, period_no=n, due_date=due, due_amount=Decimal("1000")))
+
+        session.add(
+            ImportBatch(
+                kind="payments", filename="x.csv", file_sha256=uuid.uuid4().hex.ljust(64, "0"), storage_key="x",
+                uploaded_by=employee_id, status="completed", data_as_of=date(2026, 1, 1),
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        await recompute_all_contracts(session, upto_date=date(2026, 1, 1))
+        await session.commit()
+
+    response = await admin_client.get("/api/dashboard/summary")
+    assert response.status_code == 200
+    body = response.json()
+
+    cohort = next(v for v in body["vintage"] if v["cohort_month"] == "2025-01")
+    assert cohort["total_contracts"] == 2
+    assert cohort["mature_contracts"] == 2
+    assert cohort["bad_contracts"] == 1
+    assert cohort["bad_rate"] == 0.5
+
+    buckets = {b["bucket"]: b["contracts"] for b in body["delinquency_buckets"]}
+    assert buckets.get("90+", 0) >= 1  # bad-контракт по состоянию на 2026-01-01 глубоко просрочен
+    assert buckets.get("0", 0) >= 1  # good-контракт полностью погашен, без просрочки

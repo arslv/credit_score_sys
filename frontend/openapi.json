@@ -1693,6 +1693,291 @@
         }
       }
     },
+    "/api/imports/contracts": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Upload Contracts",
+        "operationId": "upload_contracts_api_imports_contracts_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_contracts_api_imports_contracts_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Upload Contracts Api Imports Contracts Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/imports/payments": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Upload Payments",
+        "operationId": "upload_payments_api_imports_payments_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_payments_api_imports_payments_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Upload Payments Api Imports Payments Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/imports/payment-schedule": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Upload Payment Schedule",
+        "operationId": "upload_payment_schedule_api_imports_payment_schedule_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_payment_schedule_api_imports_payment_schedule_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Upload Payment Schedule Api Imports Payment Schedule Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/imports/historical-applications": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Upload Historical Applications",
+        "operationId": "upload_historical_applications_api_imports_historical_applications_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_historical_applications_api_imports_historical_applications_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Upload Historical Applications Api Imports Historical Applications Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/imports/contract-candidates": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "List Contract Candidates",
+        "operationId": "list_contract_candidates_api_imports_contract_candidates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Contract Candidates Api Imports Contract Candidates Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/imports/contract-candidates/{candidate_id}/confirm": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Confirm Contract Candidate",
+        "operationId": "confirm_contract_candidate_api_imports_contract_candidates__candidate_id__confirm_post",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Confirm Contract Candidate Api Imports Contract Candidates  Candidate Id  Confirm Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/imports/contract-candidates/{candidate_id}/reject": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Reject Contract Candidate",
+        "operationId": "reject_contract_candidate_api_imports_contract_candidates__candidate_id__reject_post",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Reject Contract Candidate Api Imports Contract Candidates  Candidate Id  Reject Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -2222,6 +2507,80 @@
         ],
         "title": "BlacklistOut"
       },
+      "Body_upload_contracts_api_imports_contracts_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "data_as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data As Of"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_contracts_api_imports_contracts_post"
+      },
+      "Body_upload_historical_applications_api_imports_historical_applications_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_historical_applications_api_imports_historical_applications_post"
+      },
+      "Body_upload_payment_schedule_api_imports_payment_schedule_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_payment_schedule_api_imports_payment_schedule_post"
+      },
+      "Body_upload_payments_api_imports_payments_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "data_as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "Data As Of"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "data_as_of"
+        ],
+        "title": "Body_upload_payments_api_imports_payments_post"
+      },
       "CheckOut": {
         "properties": {
           "id": {
@@ -2457,8 +2816,15 @@
             "title": "Id"
           },
           "application_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Application Id"
           },
           "external_number": {
@@ -2517,6 +2883,32 @@
             ],
             "title": "Closed At"
           },
+          "closure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closure Reason"
+          },
+          "closure_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closure Outcome"
+          },
+          "schedule_source": {
+            "type": "string",
+            "title": "Schedule Source"
+          },
           "schedule": {
             "items": {
               "$ref": "#/components/schemas/ScheduleItemOut"
@@ -2530,6 +2922,16 @@
             },
             "type": "array",
             "title": "Payments"
+          },
+          "current_delinquency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DelinquencyOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2545,8 +2947,12 @@
           "status",
           "issued_at",
           "closed_at",
+          "closure_reason",
+          "closure_outcome",
+          "schedule_source",
           "schedule",
-          "payments"
+          "payments",
+          "current_delinquency"
         ],
         "title": "ContractDetail"
       },
@@ -2558,8 +2964,15 @@
             "title": "Id"
           },
           "application_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Application Id"
           },
           "external_number": {
@@ -2725,6 +3138,20 @@
             },
             "type": "array",
             "title": "Source Availability"
+          },
+          "vintage": {
+            "items": {
+              "$ref": "#/components/schemas/VintageItem"
+            },
+            "type": "array",
+            "title": "Vintage"
+          },
+          "delinquency_buckets": {
+            "items": {
+              "$ref": "#/components/schemas/DelinquencyBucketItem"
+            },
+            "type": "array",
+            "title": "Delinquency Buckets"
           }
         },
         "type": "object",
@@ -2736,7 +3163,9 @@
           "rejection_reasons",
           "overrides",
           "bki_monthly",
-          "source_availability"
+          "source_availability",
+          "vintage",
+          "delinquency_buckets"
         ],
         "title": "DashboardSummary"
       },
@@ -2884,6 +3313,49 @@
           "created_at"
         ],
         "title": "DecisionOut"
+      },
+      "DelinquencyBucketItem": {
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "title": "Bucket"
+          },
+          "contracts": {
+            "type": "integer",
+            "title": "Contracts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket",
+          "contracts"
+        ],
+        "title": "DelinquencyBucketItem"
+      },
+      "DelinquencyOut": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "days_past_due": {
+            "type": "integer",
+            "title": "Days Past Due"
+          },
+          "overdue_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Overdue Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "as_of",
+          "days_past_due",
+          "overdue_amount"
+        ],
+        "title": "DelinquencyOut"
       },
       "DocumentOut": {
         "properties": {
@@ -3751,6 +4223,10 @@
           "source": {
             "type": "string",
             "title": "Source"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
           }
         },
         "type": "object",
@@ -3758,7 +4234,8 @@
           "id",
           "paid_at",
           "amount",
-          "source"
+          "source",
+          "kind"
         ],
         "title": "PaymentOut"
       },
@@ -4060,6 +4537,10 @@
             "type": "integer",
             "title": "Stuck Applications Over 1H"
           },
+          "stuck_in_ocr": {
+            "type": "integer",
+            "title": "Stuck In Ocr"
+          },
           "stage_b_reprocessing_loop_applications": {
             "type": "integer",
             "title": "Stage B Reprocessing Loop Applications"
@@ -4077,6 +4558,7 @@
           "bki_paid_requests_this_month",
           "partner_integration_errors_last_24h",
           "stuck_applications_over_1h",
+          "stuck_in_ocr",
           "stage_b_reprocessing_loop_applications"
         ],
         "title": "SystemStatus"
@@ -4120,6 +4602,53 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VintageItem": {
+        "properties": {
+          "cohort_month": {
+            "type": "string",
+            "title": "Cohort Month"
+          },
+          "total_contracts": {
+            "type": "integer",
+            "title": "Total Contracts"
+          },
+          "mature_contracts": {
+            "type": "integer",
+            "title": "Mature Contracts"
+          },
+          "bad_contracts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bad Contracts"
+          },
+          "bad_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bad Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cohort_month",
+          "total_contracts",
+          "mature_contracts",
+          "bad_contracts",
+          "bad_rate"
+        ],
+        "title": "VintageItem"
       },
       "WeeklyApprovalItem": {
         "properties": {

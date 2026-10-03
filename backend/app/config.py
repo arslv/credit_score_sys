@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     # Технический порог нечёткого сравнения ФИО (допуск на опечатки) — не бизнес-правило
     # вида "возраст/сумма/срок" из правила 2 CLAUDE.md, поэтому не в YAML-конфиге.
     ocr_name_match_min_ratio: float = 0.85
+    # Провайдер распознавания может быть недоступен (сеть, не настроен ключ) —
+    # сбой источника не должен останавливать заявку (тот же принцип, что
+    # правило 4 CLAUDE.md для внешних источников, хотя OCR и не реализует
+    # SourceBase буквально). Несколько попыток подряд, затем — оператору с
+    # пометкой "паспорт не распознан", не бесконечное зависание в статусе ocr.
+    ocr_max_attempts: int = 3
+    ocr_retry_delay_seconds: float = 2.0
+    # Защита на случай, если даже цикл повторов не отработал штатно (процесс
+    # убит посреди вызова, сеть зависла без исключения и т.п.) — заявка,
+    # дольше этого числа минут находящаяся в статусе "ocr", считается
+    # зависшей и уводится к оператору тем же путём (app/tasks/stage_a.py),
+    # а счётчик таких заявок виден на экране состояния системы (app/api/system.py).
+    ocr_stuck_minutes: int = 30
 
     # Движок правил (T06) — активная версия выбирается по effective_from в ruleset_versions
     ruleset_path: str = "config/rulesets/dev.yaml"
@@ -51,6 +64,17 @@ class Settings(BaseSettings):
     # порог из правила 2 CLAUDE.md — технический параметр гейта сохранения).
     ruleset_simulation_default_sample_size: int = 500
     ruleset_simulation_ttl_hours: int = 24
+
+    # T15: импорт договоров/платежей/исторических заявок — формат выгрузки
+    # неизвестен заранее, соответствие колонок только в конфиге.
+    import_mapping_contracts_path: str = "config/import_mappings/contracts.yaml"
+    import_mapping_payments_path: str = "config/import_mappings/payments.yaml"
+    import_mapping_historical_applications_path: str = "config/import_mappings/historical_applications.yaml"
+    import_mapping_payment_schedule_path: str = "config/import_mappings/payment_schedule.yaml"
+    collections_config_path: str = "config/collections.yaml"
+    # Ежедневная задача (ТЗ: «пересчитывается ежедневной задачей») — технический
+    # интервал, не бизнес-порог; раз в сутки, как и реестры.
+    delinquency_recompute_interval_seconds: int = 86400
 
     # Соответствие наших исходов статусам в системе заказчика — в конфиге, не в коде
     # (ТЗ, «Интеграция» -> «Соответствие статусов»)

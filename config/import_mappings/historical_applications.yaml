@@ -1,0 +1,30 @@
+# T15, ТЗ «Логирование под будущую модель», п.4 (отказники — половина
+# ценности датасета): исторические заявки заказчика, включая отказанные без
+# договора вовсе. Импортируются как Application(source="historical_import"),
+# БЕЗ feature_snapshots/decisions — для них нет данных, выдумывать нечего
+# (app/engine/imports.py помечает это явно, не нулями/заглушками).
+
+columns:
+  external_reference: "Номер заявки"
+  last_name: "Фамилия"
+  first_name: "Имя"
+  middle_name: "Отчество"
+  phone: "Телефон"
+  goods_name: "Товар"
+  goods_price: "Сумма"
+  term_months: "Срок мес"
+  tariff: "Тариф"
+  submitted_at: "Дата заявки"
+  outcome: "Результат"
+
+# Значения колонки "Результат" -> applications.status. Неизвестное/
+# неотображённое значение -> rejected_a (см. app/engine/imports.py) —
+# заведомо неточно (мы не знаем настоящую стадию отказа по старой выгрузке),
+# но явный разумный дефолт лучше тихого падения строки.
+status_map:
+  "Отказ": rejected_a
+  "Отказ после звонка": rejected_b
+  "Одобрено": approved
+  "Клиент отказался": expired
+
+date_format: "%d.%m.%Y"

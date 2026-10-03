@@ -1,6 +1,7 @@
-"""T13c: дашборд — блоки на уже существующих данных (ТЗ, «Дашборд»; винтажный
-анализ и просрочка — заглушка до T15, импорта платежей, ваше уточнение).
-Агрегаты считает бэкенд в SQL, не браузер (ваше явное указание) — эндпоинт
+"""T13c/T15: дашборд — блоки на уже существующих данных (ТЗ, «Дашборд»).
+Винтажный анализ и просрочка (T13c откладывал их до T15, импорта платежей) —
+теперь считаются из contracts/delinquency_daily/target_bad_60_6 (T15). Все
+остальные числа — SQL в бэкенде, не браузер (ваше явное указание) — эндпоинт
 отдаёт только готовые числа.
 
 Недели и месяцы — по московскому времени, не UTC (ваше уточнение): заявка,
@@ -18,7 +19,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -81,6 +82,21 @@ class SourceAvailabilityItem(BaseModel):
     total: int
 
 
+class VintageItem(BaseModel):
+    # Месяц выдачи (contracts.issued_at) по календарю — не timestamptz, "Москва
+    # vs UTC" здесь не стоит: issued_at уже обычная дата, не момент времени.
+    cohort_month: str  # "YYYY-MM"
+    total_contracts: int
+    mature_contracts: int  # ТЗ, T15 п.5: таргет известен только для зрелых
+    bad_contracts: int | None  # None — ни один договор когорты ещё не зрел
+    bad_rate: float | None
+
+
+class DelinquencyBucketItem(BaseModel):
+    bucket: str  # "0" | "1-29" | "30-59" | "60-89" | "90+"
+    contracts: int
+
+
 class DashboardSummary(BaseModel):
     period_from: date | None
     period_to: date | None
@@ -90,6 +106,8 @@ class DashboardSummary(BaseModel):
     overrides: OverridesSummary
     bki_monthly: list[BkiMonthlyItem]
     source_availability: list[SourceAvailabilityItem]
+    vintage: list[VintageItem]
+    delinquency_buckets: list[DelinquencyBucketItem]
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -213,8 +231,70 @@ async def get_dashboard_summary(
         for source, unavailable, total in source_rows
     ]
 
+    # --- винтажный анализ: когорта по месяцу выдачи, таргет bad_60_6 (T15) ----
+    # Период (period_from/period_to) здесь намеренно не фильтрует — винтаж
+    # смотрят по всему портфелю, не по "заявкам за период"; contracts.issued_at
+    # обычная дата, без UTC/МСК неоднозначности (ваше уточнение — конвертация
+    # нужна только для timestamptz-полей, не для date).
+    vintage_rows = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    to_char(date_trunc('month', c.issued_at), 'YYYY-MM') AS cohort_month,
+                    count(*) AS total_contracts,
+                    count(*) FILTER (WHERE t.is_mature) AS mature_contracts,
+                    count(*) FILTER (WHERE t.bad = 1) AS bad_contracts
+                FROM contracts c
+                JOIN target_bad_60_6 t ON t.contract_id = c.id
+                GROUP BY date_trunc('month', c.issued_at)
+                ORDER BY date_trunc('month', c.issued_at)
+                """
+            )
+        )
+    ).all()
+    vintage = [
+        VintageItem(
+            cohort_month=row.cohort_month, total_contracts=row.total_contracts,
+            mature_contracts=row.mature_contracts,
+            bad_contracts=row.bad_contracts if row.mature_contracts else None,
+            bad_rate=(row.bad_contracts / row.mature_contracts) if row.mature_contracts else None,
+        )
+        for row in vintage_rows
+    ]
+
+    # --- просрочка сейчас: распределение договоров по дням просрочки (T15) ----
+    bucket_rows = (
+        await session.execute(
+            text(
+                """
+                WITH latest AS (
+                    SELECT DISTINCT ON (contract_id) contract_id, days_past_due
+                    FROM delinquency_daily
+                    ORDER BY contract_id, as_of DESC
+                )
+                SELECT
+                    CASE
+                        WHEN days_past_due = 0 THEN '0'
+                        WHEN days_past_due BETWEEN 1 AND 29 THEN '1-29'
+                        WHEN days_past_due BETWEEN 30 AND 59 THEN '30-59'
+                        WHEN days_past_due BETWEEN 60 AND 89 THEN '60-89'
+                        ELSE '90+'
+                    END AS bucket,
+                    count(*) AS contracts
+                FROM latest
+                GROUP BY 1
+                """
+            )
+        )
+    ).all()
+    delinquency_buckets = [
+        DelinquencyBucketItem(bucket=row.bucket, contracts=row.contracts) for row in bucket_rows
+    ]
+
     return DashboardSummary(
         period_from=period_from, period_to=period_to,
         funnel=funnel, weekly_approval=weekly_approval, rejection_reasons=rejection_reasons,
         overrides=overrides, bki_monthly=bki_monthly, source_availability=source_availability,
+        vintage=vintage, delinquency_buckets=delinquency_buckets,
     )

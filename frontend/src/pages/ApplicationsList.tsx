@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { Badge } from "../components/Badge";
 import { formatAmount, formatDateTime } from "../lib/format";
+import { applicationStatusLabel } from "../lib/labels";
 
 const PAGE_SIZE = 25;
 
@@ -59,12 +60,12 @@ export function ApplicationsListPage() {
           Состояние
           <select value={filters.status} onChange={(e) => updateFilters({ status: e.target.value })}>
             <option value="">любое</option>
-            <option value="to_operator">to_operator</option>
-            <option value="rejected_a">rejected_a</option>
-            <option value="rejected_b">rejected_b</option>
-            <option value="gray_zone">gray_zone</option>
-            <option value="approved">approved</option>
-            <option value="ocr_failed">ocr_failed</option>
+            <option value="to_operator">{applicationStatusLabel("to_operator")}</option>
+            <option value="rejected_a">{applicationStatusLabel("rejected_a")}</option>
+            <option value="rejected_b">{applicationStatusLabel("rejected_b")}</option>
+            <option value="gray_zone">{applicationStatusLabel("gray_zone")}</option>
+            <option value="approved">{applicationStatusLabel("approved")}</option>
+            <option value="ocr_failed">{applicationStatusLabel("ocr_failed")}</option>
           </select>
         </label>
         <label>
@@ -126,7 +127,7 @@ export function ApplicationsListPage() {
                 <td>{formatAmount(item.goods_price)}</td>
                 <td>{item.goods_name}</td>
                 <td>
-                  <Badge value={item.status} />
+                  <Badge value={item.status} label={applicationStatusLabel(item.status)} />
                 </td>
                 <td>
                   <Badge value={item.stage_a_outcome} />

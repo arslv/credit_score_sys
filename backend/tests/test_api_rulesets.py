@@ -142,6 +142,57 @@ async def test_unknown_after_stage_a_pass_bucket(admin_client, session_factory, 
     assert summary["changed_count"] == 0  # не в основной сводке (уточнение 2)
 
 
+async def test_defaultness_by_known_outcome_uses_mature_contracts(admin_client, session_factory, active_ruleset):
+    """T15: дефолтность в симуляции — реальный расчёт по зрелым договорам
+    (target_bad_60_6), не заглушка."""
+    from app.models import Contract, ImportBatch, Payment, PaymentSchedule
+
+    await create_employee(session_factory, email="rm-def@example.com", role="risk_manager")
+    await login(admin_client, "rm-def@example.com")
+    employee_id = await create_employee(session_factory, email="rm-def2@example.com", role="risk_manager")
+
+    async with session_factory() as session:
+        app1 = await _application(session, external_id=f"SIM-DEF-{uuid.uuid4().hex[:6]}")
+        await _snapshot(session, app1.id, "A", _STAGE_A_PASS_FEATURES)
+        await _snapshot(session, app1.id, "B", _STAGE_B_APPROVE_FEATURES)  # score=780 -> approve по dev.yaml
+
+        contract = Contract(
+            application_id=app1.id, external_number=f"DEF-{uuid.uuid4().hex[:8]}",
+            principal=Decimal("6000"), markup=Decimal("0"), total_amount=Decimal("6000"),
+            down_payment=Decimal("0"), term_months=6, issued_at=date(2025, 1, 1), status="active",
+        )
+        session.add(contract)
+        await session.flush()
+        for n in range(1, 7):
+            month = 1 + n
+            year = 2025 + (month - 1) // 12
+            month = (month - 1) % 12 + 1
+            due = date(year, month, 1)
+            session.add(PaymentSchedule(contract_id=contract.id, period_no=n, due_date=due, due_amount=Decimal("1000")))
+            session.add(Payment(contract_id=contract.id, paid_at=due, amount=Decimal("1000"), source="import", kind="regular"))
+        session.add(
+            ImportBatch(
+                kind="payments", filename="x.csv", file_sha256=uuid.uuid4().hex.ljust(64, "0"), storage_key="x",
+                uploaded_by=employee_id, status="completed", data_as_of=date(2026, 1, 1),
+            )
+        )
+        await session.commit()
+        config = load_config(active_ruleset)
+
+    from app.engine.delinquency_recompute import recompute_all_contracts
+
+    async with session_factory() as session:
+        await recompute_all_contracts(session, upto_date=date(2026, 1, 1))
+        await session.commit()
+
+    response = await admin_client.post("/api/rulesets/simulate", json={"yaml": _dump_yaml(config)})
+    assert response.status_code == 200, response.text
+    defaultness = response.json()["summary"]["defaultness_by_known_outcome"]
+
+    assert defaultness["available"] is True
+    assert defaultness["by_candidate_outcome"]["approved"] == {"known": 1, "bad": 0, "bad_rate": 0.0}
+
+
 async def _simulate(client, config) -> dict:
     response = await client.post("/api/rulesets/simulate", json={"yaml": _dump_yaml(config)})
     response.raise_for_status()

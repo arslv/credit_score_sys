@@ -23,12 +23,21 @@ APPLICATION_STATUSES = (
     "expired",
 )
 
+# T15: заявка из исторической выгрузки (не через наш конвейер — нет OCR/БКИ/
+# снимков признаков, импортирована для базового уровня дефолтности и reject
+# inference, ТЗ «Логирование под будущую модель»). "live" — всё, что прошло
+# (или ещё проходит) обычный путь приёма через систему заказчика.
+APPLICATION_SOURCES = ("live", "historical_import")
+
 
 class Application(Base):
     __tablename__ = "applications"
     __table_args__ = (
         sa.CheckConstraint(
             f"status IN {APPLICATION_STATUSES!r}", name="ck_applications_status"
+        ),
+        sa.CheckConstraint(
+            f"source IN {APPLICATION_SOURCES!r}", name="ck_applications_source"
         ),
         sa.Index("ix_applications_client_id", "client_id"),
         sa.Index("ix_applications_status_submitted_at", "status", sa.desc("submitted_at")),
@@ -45,6 +54,7 @@ class Application(Base):
     external_id: Mapped[str] = mapped_column(sa.Text, nullable=False, unique=True)
     number: Mapped[int] = mapped_column(sa.BigInteger, sa.Identity(), nullable=False, unique=True)
     status: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    source: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="live")
 
     # параметры сделки
     goods_name: Mapped[str] = mapped_column(sa.Text, nullable=False)

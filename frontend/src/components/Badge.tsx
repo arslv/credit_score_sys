@@ -9,7 +9,7 @@ function variantFor(value: string): string {
   return "badge-neutral";
 }
 
-export function Badge({ value }: { value: string | null | undefined }) {
+export function Badge({ value, label }: { value: string | null | undefined; label?: string }) {
   if (!value) return <span className="muted">—</span>;
-  return <span className={`badge ${variantFor(value)}`}>{value}</span>;
+  return <span className={`badge ${variantFor(value)}`}>{label ?? value}</span>;
 }

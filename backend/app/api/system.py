@@ -9,7 +9,15 @@ stage_b_reprocessing_loop_applications/status — сигнал, что где-т
 Мы не смогли воспроизвести саму петлю после фикса content_hash, но именно
 поэтому нужен монитор, а не только тест на конкретный (уже закрытый) баг —
 если он вернётся другим путём, это должно быть видно на экране состояния
-системы и в логе, а не только в аномальных числах в decisions/БКИ."""
+системы и в логе, а не только в аномальных числах в decisions/БКИ.
+
+stuck_in_ocr (ваше явное указание после находки с 22 зависшими заявками):
+заявки дольше OCR_STUCK_MINUTES в статусе "ocr" — автоматически уводятся
+оператору тем же тиком, что обрабатывает новые заявки
+(app/tasks/stage_a.py::recover_stuck_ocr_applications), так что в норме
+счётчик всегда 0; ненулевое значение означает, что фоновая задача не
+отрабатывает (beat/worker не запущены, упали и т.п.), а не разовый сбой
+одной заявки — это и есть degraded, не просто предупреждающая строка."""
 
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -23,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import get_session, get_sessionmaker
+from app.engine.pipeline import find_stuck_ocr_application_ids
 from app.engine.schema import load_ruleset_from_yaml
 from app.engine.state_machine import ALLOWED_TRANSITIONS
 from app.engine.versions import compute_config_hash, get_active_ruleset_version, load_config
@@ -56,10 +65,10 @@ class RegistryStatus(BaseModel):
 
 class SystemStatus(BaseModel):
     status: Literal["ok", "degraded"]
-    """Пока единственный триггер — stage_b_reprocessing_loop_applications
-    ниже (страховка после расследования T13c). Не свод всех warn-индикаторов
-    на этом экране (устаревший реестр/просрочка ФССП и т.п. сами по себе
-    статус не меняют — они уже видны отдельными строками)."""
+    """Триггеры — stage_b_reprocessing_loop_applications и stuck_in_ocr ниже.
+    Не свод всех warn-индикаторов на этом экране (устаревший реестр/просрочка
+    ФССП и т.п. сами по себе статус не меняют — они уже видны отдельными
+    строками)."""
     registries: list[RegistryStatus]
     ruleset_active_version: int | None
     ruleset_matches_file: bool | None
@@ -69,6 +78,10 @@ class SystemStatus(BaseModel):
     bki_paid_requests_this_month: int
     partner_integration_errors_last_24h: int
     stuck_applications_over_1h: int
+    stuck_in_ocr: int
+    """Заявки дольше OCR_STUCK_MINUTES в статусе "ocr" (ваше явное указание) —
+    в норме 0 (авто-восстановление каждым тиком стадии А); ненулевое значение
+    переводит status в degraded."""
     stage_b_reprocessing_loop_applications: int
     """Заявки, у которых за последний час появилось больше
     _STAGE_B_LOOP_THRESHOLD снимков стадии Б или больше
@@ -170,8 +183,18 @@ async def get_system_status(
             threshold=_STAGE_B_LOOP_THRESHOLD,
         )
 
+    ocr_cutoff = now - timedelta(minutes=settings.ocr_stuck_minutes)
+    stuck_in_ocr_ids = await find_stuck_ocr_application_ids(session, cutoff=ocr_cutoff)
+    stuck_in_ocr = len(stuck_in_ocr_ids)
+    if stuck_in_ocr:
+        logger.error(
+            "stage_a_ocr_stuck_detected",
+            application_ids=[str(i) for i in stuck_in_ocr_ids],
+            stuck_minutes=settings.ocr_stuck_minutes,
+        )
+
     return SystemStatus(
-        status="degraded" if stage_b_reprocessing_loop_applications else "ok",
+        status="degraded" if (stage_b_reprocessing_loop_applications or stuck_in_ocr) else "ok",
         registries=registries,
         ruleset_active_version=ruleset_active_version,
         ruleset_matches_file=ruleset_matches_file,
@@ -181,5 +204,6 @@ async def get_system_status(
         bki_paid_requests_this_month=bki_paid_requests_this_month,
         partner_integration_errors_last_24h=partner_errors,
         stuck_applications_over_1h=stuck,
+        stuck_in_ocr=stuck_in_ocr,
         stage_b_reprocessing_loop_applications=stage_b_reprocessing_loop_applications,
     )

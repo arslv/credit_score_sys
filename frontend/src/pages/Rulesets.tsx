@@ -41,7 +41,13 @@ interface SimulationSummary {
   unknown_after_stage_a_pass_total: number;
   insufficient_data_count: number;
   not_computable: NotComputableRule[];
-  defaultness_by_known_outcome: { available: boolean; note: string };
+  defaultness_by_known_outcome:
+    | { available: false; note: string }
+    | {
+        available: true;
+        by_active_outcome: Record<string, { known: number; bad: number; bad_rate: number }>;
+        by_candidate_outcome: Record<string, { known: number; bad: number; bad_rate: number }>;
+      };
 }
 
 interface SimulateResponse {
@@ -460,12 +466,51 @@ export function RulesetsPage() {
                           <td>Доля одобрений по новому конфигу</td>
                           <td>{formatRate(s.approval_rate_candidate)}</td>
                         </tr>
-                        <tr>
-                          <td>Дефолтность по известным исходам</td>
-                          <td className="muted">{s.defaultness_by_known_outcome.note}</td>
-                        </tr>
+                        {!s.defaultness_by_known_outcome.available && (
+                          <tr>
+                            <td>Дефолтность по известным исходам</td>
+                            <td className="muted">{s.defaultness_by_known_outcome.note}</td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
+
+                    {s.defaultness_by_known_outcome.available && (
+                      <div style={{ marginTop: 12 }}>
+                        <h3>Дефолтность по известным исходам (зрелые договоры)</h3>
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>Исход</th>
+                              <th>Сейчас</th>
+                              <th>По новому конфигу</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Array.from(
+                              new Set([
+                                ...Object.keys(s.defaultness_by_known_outcome.by_active_outcome),
+                                ...Object.keys(s.defaultness_by_known_outcome.by_candidate_outcome),
+                              ]),
+                            ).map((outcome) => {
+                              const a = s.defaultness_by_known_outcome.available
+                                ? s.defaultness_by_known_outcome.by_active_outcome[outcome]
+                                : undefined;
+                              const c = s.defaultness_by_known_outcome.available
+                                ? s.defaultness_by_known_outcome.by_candidate_outcome[outcome]
+                                : undefined;
+                              return (
+                                <tr key={outcome}>
+                                  <td>{outcomeLabel(outcome)}</td>
+                                  <td>{a ? `${formatRate(a.bad_rate)} (${a.bad} из ${a.known})` : "—"}</td>
+                                  <td>{c ? `${formatRate(c.bad_rate)} (${c.bad} из ${c.known})` : "—"}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
 
                     <ApplicationsTable title="Swap-in — теперь одобрили бы" rows={s.swap_in} emptyText="Нет заявок." />
                     <ApplicationsTable

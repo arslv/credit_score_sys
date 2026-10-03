@@ -16,6 +16,7 @@ celery_app = Celery(
         "app.tasks.stage_b",
         "app.tasks.registries",
         "app.tasks.fssp_poll",
+        "app.tasks.delinquency",
     ],
 )
 
@@ -45,6 +46,10 @@ celery_app.conf.update(
         "poll-fssp": {
             "task": "fssp.poll_pending",
             "schedule": settings.fssp_poll_interval_seconds,
+        },
+        "recompute-delinquency": {
+            "task": "delinquency.recompute_daily",
+            "schedule": settings.delinquency_recompute_interval_seconds,
         },
     },
 )

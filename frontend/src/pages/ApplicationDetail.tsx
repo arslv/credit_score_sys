@@ -7,7 +7,13 @@ import { Badge } from "../components/Badge";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
 import { formatAmount, formatDateTime } from "../lib/format";
-import { actorTypeLabel, documentKindLabel, humanizeFieldPath, subjectTypeLabel } from "../lib/labels";
+import {
+  actorTypeLabel,
+  applicationStatusLabel,
+  documentKindLabel,
+  humanizeFieldPath,
+  subjectTypeLabel,
+} from "../lib/labels";
 
 export function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -59,7 +65,8 @@ export function ApplicationDetailPage() {
           Заявка №{app.number} <span className="muted">(у заказчика {app.external_id})</span>
         </h1>
         <p>
-          {app.client_name ?? "—"} · <Badge value={app.status} /> · {formatAmount(app.requested_amount)} ₽ на{" "}
+          {app.client_name ?? "—"} · <Badge value={app.status} label={applicationStatusLabel(app.status)} /> ·{" "}
+          {formatAmount(app.requested_amount)} ₽ на{" "}
           {app.term_months} мес. · подана {formatDateTime(app.submitted_at)}
         </p>
       </header>
@@ -222,10 +229,10 @@ export function ApplicationDetailPage() {
           {app.status_history.map((h, i) => (
             <tr key={i}>
               <td>
-                <Badge value={h.from_status} />
+                <Badge value={h.from_status} label={h.from_status ? applicationStatusLabel(h.from_status) : undefined} />
               </td>
               <td>
-                <Badge value={h.to_status} />
+                <Badge value={h.to_status} label={applicationStatusLabel(h.to_status)} />
               </td>
               <td className="muted">{actorTypeLabel(h.actor_type)}</td>
               <td className="muted">{formatDateTime(h.created_at)}</td>

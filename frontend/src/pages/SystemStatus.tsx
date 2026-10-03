@@ -78,6 +78,11 @@ export function SystemStatusPage() {
             value={String(s.stuck_applications_over_1h)}
             warn={s.stuck_applications_over_1h > 0}
           />
+          <StatusRow
+            label="Заявок, зависших в распознавании паспорта"
+            value={String(s.stuck_in_ocr)}
+            warn={s.stuck_in_ocr > 0}
+          />
         </tbody>
       </table>
 

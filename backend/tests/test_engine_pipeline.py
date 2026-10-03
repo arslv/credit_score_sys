@@ -229,6 +229,81 @@ async def test_stage_a_ocr_failed_goes_to_operator_with_note(
     assert "распознать" in detail.raw["comments"][-1]["text"]
 
 
+async def test_recover_stuck_ocr_applications_moves_old_ones_to_operator(
+    partner_admin, partner_client, storage, session_factory
+):
+    """Ваше явное указание: защита на случай, что даже повторы в run_ocr не
+    спасли (процесс убит посреди вызова и т.п.) — заявка, дольше
+    OCR_STUCK_MINUTES в статусе "ocr", уводится оператору отдельным
+    механизмом, не связанным с одним конкретным вызовом run_stage_a."""
+    from app.engine.pipeline import recover_stuck_ocr_applications
+    from app.engine.state_machine import transition
+    from app.models import StatusHistory
+
+    stuck_external_id, stuck_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    fresh_external_id, fresh_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+
+    async with session_factory() as session:
+        for application_id in (stuck_id, fresh_id):
+            application = await session.get(Application, application_id)
+            transition(session, application, "ocr", actor_type="system")
+        await session.commit()
+
+    async with session_factory() as session:
+        stuck_row = (
+            await session.execute(
+                select(StatusHistory).where(StatusHistory.application_id == stuck_id, StatusHistory.to_status == "ocr")
+            )
+        ).scalar_one()
+        stuck_row.created_at = datetime.now(timezone.utc) - timedelta(minutes=60)
+        await session.commit()
+
+    recovered = await recover_stuck_ocr_applications(session_factory, partner_client=partner_client, stuck_minutes=30)
+    assert recovered == 1
+
+    async with session_factory() as session:
+        stuck_application = await session.get(Application, stuck_id)
+        fresh_application = await session.get(Application, fresh_id)
+        assert stuck_application.status == "to_operator"
+        assert fresh_application.status == "ocr"  # недавняя — не трогаем, обработка в разгаре
+
+    stuck_detail = await partner_client.get_application(stuck_external_id)
+    assert stuck_detail.status == "on_call"
+
+
+async def test_stage_a_ocr_provider_failure_goes_to_operator_not_stuck(
+    partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Ваше явное указание после находки с 22 зависшими заявками: сбой самого
+    провайдера (не "уверенность ниже порога", а сеть/ключ недоступны) не
+    должен держать заявку в статусе "ocr" бесконечно — после всех повторов из
+    конфига (OCR_MAX_ATTEMPTS) она уходит оператору, как и below_threshold."""
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+
+    ocr_provider = FakeOcrProvider(raise_error=True)
+
+    final_status = await run_stage_a(
+        session_factory, application_id,
+        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+    )
+
+    assert final_status == "to_operator"
+    assert len(ocr_provider.calls) == get_settings().ocr_max_attempts  # все повторы использованы, не один
+
+    async with session_factory() as session:
+        application = await session.get(Application, application_id)
+        assert application.status == "to_operator"
+
+        decisions = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalars().all()
+        assert decisions == []
+
+    detail = await partner_client.get_application(external_id)
+    assert detail.status == "on_call"
+    assert "распознать" in detail.raw["comments"][-1]["text"]
+
+
 async def test_stage_a_missing_document_raises(session_factory, storage, active_ruleset):
     from decimal import Decimal
 

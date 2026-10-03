@@ -15,6 +15,7 @@ import { SystemStatusPage } from "./pages/SystemStatus";
 import { CompliancePage } from "./pages/Compliance";
 import { DashboardPage } from "./pages/Dashboard";
 import { RulesetsPage } from "./pages/Rulesets";
+import { ImportsPage } from "./pages/Imports";
 
 export function App() {
   return (
@@ -36,6 +37,7 @@ export function App() {
           <Route path="/system" element={<SystemStatusPage />} />
           <Route path="/compliance" element={<CompliancePage />} />
           <Route path="/rulesets" element={<RulesetsPage />} />
+          <Route path="/imports" element={<ImportsPage />} />
         </Route>
       </Route>
     </Routes>

@@ -13,7 +13,8 @@ from decimal import Decimal
 import pytest
 from structlog.testing import capture_logs
 
-from app.models import Application, Decision, ExternalSnapshot
+from app.config import get_settings
+from app.models import Application, Decision, ExternalSnapshot, StatusHistory
 from tests._admin_helpers import create_employee, login
 from tests.test_engine_pipeline import active_ruleset  # noqa: F401
 
@@ -38,12 +39,13 @@ async def test_admin_gets_system_status_shape(admin_client, session_factory):
     for key in (
         "status", "registries", "ruleset_active_version", "ruleset_matches_file", "fssp_pending", "fssp_overdue",
         "bki_configured", "bki_paid_requests_this_month", "partner_integration_errors_last_24h",
-        "stuck_applications_over_1h", "stage_b_reprocessing_loop_applications",
+        "stuck_applications_over_1h", "stuck_in_ocr", "stage_b_reprocessing_loop_applications",
     ):
         assert key in body
     assert body["bki_configured"] is False  # not_configured по умолчанию (T11)
     assert body["status"] == "ok"  # ничего не насеяно — петли нет
     assert body["stage_b_reprocessing_loop_applications"] == 0
+    assert body["stuck_in_ocr"] == 0
 
 
 async def _application(session, *, external_id: str) -> Application:
@@ -119,3 +121,75 @@ async def test_stage_b_reprocessing_loop_at_threshold_is_not_degraded(admin_clie
     body = response.json()
     assert body["status"] == "ok"
     assert body["stage_b_reprocessing_loop_applications"] == 0
+
+
+async def test_stuck_in_ocr_flags_degraded_and_logs_error(admin_client, session_factory):
+    """Ваше явное указание после находки с 22 зависшими заявками: заявка
+    дольше OCR_STUCK_MINUTES в статусе "ocr" — degraded, не просто строка на
+    экране (авто-восстановление должно было её забрать, раз не забрало —
+    значит фоновая задача не работает)."""
+    await create_employee(session_factory, email="admin4@example.com", role="admin")
+    await login(admin_client, "admin4@example.com")
+
+    stuck_minutes = get_settings().ocr_stuck_minutes
+    entered_at = datetime.now(timezone.utc) - timedelta(minutes=stuck_minutes + 5)
+
+    async with session_factory() as session:
+        application = Application(
+            external_id=f"OCR-STUCK-{uuid.uuid4().hex[:8]}", status="ocr",
+            goods_name="Товар", goods_price=Decimal("10000.00"), down_payment=Decimal("0"),
+            term_months=6, tariff="standard", requested_amount=Decimal("10000.00"),
+            profile={}, consent_pd_at=datetime.now(timezone.utc), submitted_at=datetime.now(timezone.utc),
+        )
+        session.add(application)
+        await session.flush()
+        session.add(
+            StatusHistory(
+                application_id=application.id, from_status="received", to_status="ocr",
+                actor_type="system", created_at=entered_at,
+            )
+        )
+        await session.commit()
+        application_id = application.id
+
+    with capture_logs() as logs:
+        response = await admin_client.get("/api/system/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "degraded"
+    assert body["stuck_in_ocr"] == 1
+
+    error_events = [entry for entry in logs if entry.get("event") == "stage_a_ocr_stuck_detected"]
+    assert len(error_events) == 1
+    assert str(application_id) in error_events[0]["application_ids"]
+
+
+async def test_fresh_ocr_status_is_not_stuck(admin_client, session_factory):
+    """Заявка только что вошла в "ocr" (ещё не прошло OCR_STUCK_MINUTES) —
+    не должна считаться зависшей, обработка в самом разгаре."""
+    await create_employee(session_factory, email="admin5@example.com", role="admin")
+    await login(admin_client, "admin5@example.com")
+
+    async with session_factory() as session:
+        application = Application(
+            external_id=f"OCR-FRESH-{uuid.uuid4().hex[:8]}", status="ocr",
+            goods_name="Товар", goods_price=Decimal("10000.00"), down_payment=Decimal("0"),
+            term_months=6, tariff="standard", requested_amount=Decimal("10000.00"),
+            profile={}, consent_pd_at=datetime.now(timezone.utc), submitted_at=datetime.now(timezone.utc),
+        )
+        session.add(application)
+        await session.flush()
+        session.add(
+            StatusHistory(
+                application_id=application.id, from_status="received", to_status="ocr",
+                actor_type="system", created_at=datetime.now(timezone.utc),
+            )
+        )
+        await session.commit()
+
+    response = await admin_client.get("/api/system/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["stuck_in_ocr"] == 0

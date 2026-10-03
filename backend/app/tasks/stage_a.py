@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.celery_app import celery_app
 from app.config import get_settings
 from app.db import new_sessionmaker
-from app.engine.pipeline import run_stage_a
+from app.engine.pipeline import recover_stuck_ocr_applications, run_stage_a
 from app.integrations.fake_partner_client import FakePartnerClient
 from app.models import Application
 from app.ocr.factory import build_ocr_provider
@@ -44,6 +44,14 @@ async def _run() -> dict[str, int]:
             except Exception:
                 summary["errors"] += 1
                 logger.exception("stage_a_processing_failed", application_id=str(application_id))
+
+        # Ваше явное указание: заявка, зависшая в статусе "ocr" дольше
+        # OCR_STUCK_MINUTES (процесс убит посреди вызова и т.п., retry внутри
+        # run_ocr не спас), не должна молча висеть — тем же тиком уводим её
+        # оператору, не дожидаясь отдельного расписания.
+        summary["recovered_stuck_ocr"] = await recover_stuck_ocr_applications(
+            session_factory, partner_client=partner_client, stuck_minutes=settings.ocr_stuck_minutes,
+        )
     finally:
         await partner_client.aclose()
         await engine.dispose()
