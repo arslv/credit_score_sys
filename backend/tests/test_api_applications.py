@@ -441,3 +441,78 @@ async def test_card_exposes_decision_stage_for_overrides_and_goods_category_name
     assert body["goods_category"] == category_name
     assert body["manual_overrides"][0]["decision_stage"] == "A"
 
+
+
+async def test_list_queues_are_per_role_and_sorted_by_waiting_time(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """«Требуют действия» — своя очередь у каждой роли (T17, часть 4):
+    оператор — позвонить/проверить ФССП; комплаенс — совпадения по перечню;
+    риск-менеджер — серая зона и «оператор изменил статус». Наблюдатель
+    очереди не имеет. Заявки в очереди — с самой долгой ожидания сверху."""
+    _, waiting_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    await run_stage_a(
+        session_factory, waiting_id, ocr_provider=FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30))),
+        partner_client=partner_client, storage=storage,
+    )
+    _, frozen_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    await run_stage_a(
+        session_factory, frozen_id, ocr_provider=FakeOcrProvider(build_ocr_result(overrides=_age_overrides(19))),
+        partner_client=partner_client, storage=storage,
+    )
+    async with session_factory() as session:
+        ruleset_row = await get_active_ruleset_version(session)
+        session.add(
+            Decision(
+                application_id=frozen_id, stage="A", outcome="reject", reason_code="SANCTIONS_HIT",
+                freeze=True, triggered_rules=[], ruleset_version_id=ruleset_row.id, feature_snapshot_id=None,
+            )
+        )
+        await session.commit()
+
+    for email, role in (
+        ("op_queue@example.com", "operator"),
+        ("cmp_queue@example.com", "compliance"),
+        ("rm_queue@example.com", "risk_manager"),
+        ("viewer_queue@example.com", "viewer"),
+    ):
+        await create_employee(session_factory, email=email, role=role)
+
+    def ids(body):
+        return {item["id"] for item in body["items"]}
+
+    await login(admin_client, "op_queue@example.com")
+    operator = (await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})).json()
+    assert str(waiting_id) in ids(operator)
+    assert str(frozen_id) not in ids(operator)  # комплаенс, не оператор
+    waiting_item = next(item for item in operator["items"] if item["id"] == str(waiting_id))
+    assert waiting_item["action_kind"] == "call"
+    assert waiting_item["action_text"] == "Позвонить"
+    waits = [item["waiting_since"] for item in operator["items"]]
+    assert waits == sorted(waits)  # дольше всех ждущие — сверху
+    counts = (await admin_client.get("/api/applications/quick-counts")).json()
+    assert counts["action"] == operator["total"]
+
+    await login(admin_client, "cmp_queue@example.com")
+    compliance = (await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})).json()
+    assert str(frozen_id) in ids(compliance)
+    assert str(waiting_id) not in ids(compliance)
+    frozen_item = next(item for item in compliance["items"] if item["id"] == str(frozen_id))
+    assert frozen_item["action_text"] == "Ждёт комплаенс"
+
+    await login(admin_client, "rm_queue@example.com")
+    risk = (await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})).json()
+    assert str(waiting_id) not in ids(risk)  # стадия А «передано оператору» — не серая зона
+    assert str(frozen_id) not in ids(risk)
+
+    await login(admin_client, "viewer_queue@example.com")
+    viewer = (await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})).json()
+    assert viewer["total"] == 0
+    assert (await admin_client.get("/api/applications/quick-counts")).json()["action"] is None
+
+    await login(admin_client, "rm_queue@example.com")
+    gray = (await admin_client.get("/api/applications", params={"view": "gray", "page_size": 50})).json()
+    assert str(waiting_id) not in ids(gray)
+    today = (await admin_client.get("/api/applications", params={"view": "today", "page_size": 50})).json()
+    assert {str(waiting_id), str(frozen_id)} <= ids(today)
+    assert (await admin_client.get("/api/applications", params={"view": "bogus"})).status_code == 422

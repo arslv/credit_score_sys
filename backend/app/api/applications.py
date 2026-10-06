@@ -4,14 +4,15 @@ compliance; admin и viewer получают обезличенный вид (в
 для своей работы — сотрудники/справочники/аудит/состояние системы — паспорта
 заявителей ему не нужны)."""
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import exists, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -30,6 +31,7 @@ from app.models import (
     Employee,
     ExternalSnapshot,
     FeatureSnapshot,
+    FreezeLift,
     FsspPostDecisionAlert,
     GoodsCategory,
     Guarantor,
@@ -39,7 +41,7 @@ from app.models import (
     StatusHistory,
 )
 from app.security.audit import record_audit
-from app.security.deps import ROLES_WITH_FULL_PII, get_current_employee, has_full_pii, require_roles
+from app.security.deps import ROLES_WITH_FULL_PII, get_current_employee, require_roles
 from app.security.pagination import Page, PageParams
 from app.sources.base import Subject
 from app.sources.factory import build_fns_egrip_source, build_fns_inn_source, build_fns_npd_source
@@ -49,6 +51,11 @@ from app.storage.base import Storage
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 
 _MASKED_NAME = "Клиент скрыт"
+# T17, часть 4 (ваше указание): оператор видит ФИО в СПИСКЕ заявок тоже (раньше —
+# только в карточке). Остальные списки/экраны по-прежнему по ROLES_WITH_FULL_PII.
+_LIST_PII_ROLES = (*ROLES_WITH_FULL_PII, "operator")
+# Часовой пояс сервиса — для «Сегодня» (заявки за текущие сутки по Москве).
+_SERVICE_TZ = ZoneInfo("Europe/Moscow")
 _VIEW_ROLES = ("risk_manager", "admin", "viewer", "compliance", "operator")
 _PHOTO_ROLES = ("risk_manager", "compliance")
 _CREDIT_REPORT_ROLES = ("risk_manager", "compliance")
@@ -80,12 +87,19 @@ class ApplicationListItem(BaseModel):
     client_name: str | None
     goods_price: Decimal
     goods_name: str
+    requested_amount: Decimal
+    term_months: int
     status: str
     stage_a_outcome: str | None
     stage_b_outcome: str | None
     score: Decimal | None
     has_override: bool
     override_matches_system: bool | None
+    # Очередь роли (только для «Требуют действия»): вид действия (точка-цвет),
+    # короткий текст и момент, с которого заявка ждёт этой роли.
+    action_kind: str | None
+    action_text: str | None
+    waiting_since: datetime | None
 
 
 async def _latest_outcome(session: AsyncSession, application_id: UUID, stage: str) -> Decision | None:
@@ -97,6 +111,124 @@ async def _latest_outcome(session: AsyncSession, application_id: UUID, stage: st
             .limit(1)
         )
     ).scalars().first()
+
+
+def _freeze_pending_clause():
+    """Есть решение с заморозкой по перечню, которое комплаенс ещё не снял
+    (FreezeLift привязан к конкретному решению — decision_id)."""
+    return exists(
+        select(Decision.id).where(
+            Decision.application_id == Application.id,
+            Decision.freeze.is_(True),
+            ~exists(select(FreezeLift.id).where(FreezeLift.decision_id == Decision.id)),
+        )
+    )
+
+
+def _fssp_unchecked_gray_clause():
+    """Серая зона из-за непроверенной ФССП (стадия Б, reason FSSP_NOT_CHECKED)."""
+    return exists(
+        select(Decision.id).where(
+            Decision.application_id == Application.id,
+            Decision.stage == "B",
+            Decision.reason_code == "FSSP_NOT_CHECKED",
+        )
+    )
+
+
+def _override_mismatch_clause():
+    """Оператор в системе заказчика изменил статус — итог не совпадает с
+    последним решением нашего сервиса («расхождение», см. discrepancies_only)."""
+    latest_outcome = (
+        select(Decision.outcome)
+        .where(Decision.application_id == Application.id)
+        .order_by(Decision.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    return exists(
+        select(ManualOverride.id).where(
+            ManualOverride.application_id == Application.id,
+            ManualOverride.to_outcome != latest_outcome,
+        )
+    )
+
+
+# T17, часть 4 (ваше указание): у каждой роли своя очередь «Требуют действия».
+# Заявка, которую роль ничего сделать не может, в её очередь не попадает.
+_QUEUE_ROLES = ("operator", "compliance", "risk_manager")
+
+
+def _queue_clause(role: str):
+    """SQL-условие очереди роли (зеркало _queue_entry — держать в синхроне)."""
+    if role == "operator":
+        return or_(
+            Application.status.in_(("to_operator", "ocr_failed")),
+            and_(Application.status == "gray_zone", _fssp_unchecked_gray_clause()),
+        )
+    if role == "compliance":
+        return _freeze_pending_clause()
+    if role == "risk_manager":
+        return or_(Application.status == "gray_zone", _override_mismatch_clause())
+    return None
+
+
+def _queue_entry(
+    role: str,
+    status: str,
+    latest_b: Decision | None,
+    freeze_at: datetime | None,
+    mismatch_override: ManualOverride | None,
+    status_since: datetime,
+) -> tuple[str, str, datetime] | None:
+    """(вид действия, короткий текст, с какого момента ждёт) — если заявка в
+    очереди этой роли, иначе None. Короткие тексты — для колонки списка; полные
+    формулировки — в карточке."""
+    if role == "operator":
+        if status in ("to_operator", "ocr_failed"):
+            return ("call", "Позвонить", status_since)
+        if status == "gray_zone" and latest_b is not None and latest_b.reason_code == "FSSP_NOT_CHECKED":
+            return ("fssp", "Проверить ФССП", latest_b.created_at)
+        return None
+    if role == "compliance":
+        return ("compliance", "Ждёт комплаенс", freeze_at) if freeze_at is not None else None
+    if role == "risk_manager":
+        if status == "gray_zone":
+            return ("gray", "Решение по серой зоне", latest_b.created_at if latest_b else status_since)
+        if mismatch_override is not None:
+            return ("override", "Проверить изменение", mismatch_override.created_at)
+        return None
+    return None
+
+
+def _service_today_start_utc() -> datetime:
+    """Начало текущих суток по Москве, в UTC — для фильтра «Сегодня»."""
+    now_local = datetime.now(_SERVICE_TZ)
+    return now_local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+
+@router.get("/quick-counts")
+async def quick_counts(
+    employee: Employee = Depends(require_roles(*_VIEW_ROLES)),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, int | None]:
+    """Счётчики быстрых фильтров списка (макет «Заявки»): тот же набор условий,
+    что у самих фильтров в list_applications, — цифра на чипе совпадает со
+    списком, который откроется по клику."""
+    async def _count(*conditions) -> int:
+        stmt = select(func.count(Application.id))
+        for condition in conditions:
+            stmt = stmt.where(condition)
+        return (await session.execute(stmt)).scalar_one()
+
+    queue = _queue_clause(employee.role)
+    return {
+        # None — у роли нет своей очереди (наблюдатель, администратор): чип не показываем.
+        "action": await _count(queue) if queue is not None else None,
+        "gray": await _count(Application.status == "gray_zone"),
+        "today": await _count(Application.submitted_at >= _service_today_start_utc()),
+        "all": await _count(),
+    }
 
 
 @router.get("", response_model=Page[ApplicationListItem])
@@ -118,10 +250,22 @@ async def list_applications(
     # самое свежее решение по заявке) — материализуем кандидатов и сравниваем
     # в Python (см. цикл ниже), как уже делает total= для остальных фильтров.
     discrepancies_only: bool = False,
+    # Быстрые фильтры макета: action — «Требуют действия», gray — «Серая зона»,
+    # today — «Сегодня» (по Москве), all — без ограничения.
+    view: str = Query("all", pattern="^(action|gray|today|all)$"),
     employee: Employee = Depends(require_roles(*_VIEW_ROLES)),
     session: AsyncSession = Depends(get_session),
 ) -> Page[ApplicationListItem]:
     stmt = select(Application)
+    queue = _queue_clause(employee.role) if view == "action" else None
+    if view == "action":
+        if queue is None:
+            return Page(items=[], total=0, page=params.page, page_size=params.page_size)
+        stmt = stmt.where(queue)
+    elif view == "gray":
+        stmt = stmt.where(Application.status == "gray_zone")
+    elif view == "today":
+        stmt = stmt.where(Application.submitted_at >= _service_today_start_utc())
     if status_filter:
         stmt = stmt.where(Application.status == status_filter)
     if submitted_from:
@@ -157,11 +301,11 @@ async def list_applications(
         )
     stmt = stmt.order_by(Application.submitted_at.desc())
 
-    full_pii = has_full_pii(employee)
+    list_pii = employee.role in _LIST_PII_ROLES
 
     async def _to_item(application: Application) -> tuple[ApplicationListItem, bool | None]:
         client_name = None
-        if full_pii and application.client_id is not None:
+        if list_pii and application.client_id is not None:
             client = await session.get(Client, application.client_id)
             if client is not None:
                 client_name = f"{client.last_name} {client.first_name} {client.middle_name or ''}".strip()
@@ -179,25 +323,66 @@ async def list_applications(
             )
         ).scalars().first()
 
+        freeze_at = (
+            await session.execute(
+                select(func.max(Decision.created_at)).where(
+                    Decision.application_id == application.id,
+                    Decision.freeze.is_(True),
+                    ~exists(select(FreezeLift.id).where(FreezeLift.decision_id == Decision.id)),
+                )
+            )
+        ).scalar_one()
+        status_since = (
+            await session.execute(
+                select(func.max(StatusHistory.created_at)).where(
+                    StatusHistory.application_id == application.id,
+                    StatusHistory.to_status == application.status,
+                )
+            )
+        ).scalar_one() or application.submitted_at
+
         latest_decision = decision_b or decision_a
         override_matches = None
         if override is not None and latest_decision is not None:
             override_matches = override.to_outcome == latest_decision.outcome
+        mismatch_override = override if override_matches is False else None
+        entry = _queue_entry(
+            employee.role, application.status, decision_b, freeze_at, mismatch_override, status_since,
+        )
 
         item = ApplicationListItem(
             id=application.id, number=application.number, external_id=application.external_id,
             submitted_at=application.submitted_at, client_name=client_name,
             goods_price=application.goods_price, goods_name=application.goods_name,
+            requested_amount=application.requested_amount, term_months=application.term_months,
             status=application.status,
             stage_a_outcome=decision_a.outcome if decision_a else None,
             stage_b_outcome=decision_b.outcome if decision_b else None,
             score=(decision_b.score if decision_b else None),
             has_override=override is not None,
             override_matches_system=override_matches,
+            action_kind=entry[0] if entry else None,
+            action_text=entry[1] if entry else None,
+            waiting_since=entry[2] if entry else None,
         )
         return item, override_matches
 
-    if discrepancies_only:
+    if view == "action":
+        # Очередь роли: кто дольше всех ждёт — сверху (waiting_since по возрастанию).
+        # Сортировка и страница — в Python: момент ожидания в SQL не выражается.
+        candidates = (await session.execute(stmt)).scalars().all()
+        queued: list[ApplicationListItem] = []
+        for application in candidates:
+            item, override_matches = await _to_item(application)
+            if item.action_text is None:
+                continue
+            if discrepancies_only and override_matches is not False:
+                continue
+            queued.append(item)
+        queued.sort(key=lambda entry: entry.waiting_since)
+        total = len(queued)
+        items = queued[params.offset : params.offset + params.page_size]
+    elif discrepancies_only:
         candidates = (await session.execute(stmt)).scalars().all()
         matched: list[ApplicationListItem] = []
         for application in candidates:

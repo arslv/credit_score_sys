@@ -30,6 +30,17 @@
   --decision-reject-bg: #fdeceb;
   --decision-pending: #475467;
   --decision-pending-bg: #eef0f3;
+
+  /* T17, часть 4: статусы заявок в списке и точки «нужно сделать» — здесь же,
+     рядом с решениями. «В процессе» — нейтральный серо-синий, не янтарный:
+     янтарный только у серой зоны. */
+  --status-progress: var(--decision-pending);
+  --status-progress-bg: var(--decision-pending-bg);
+  --dot-call: #2952e3;
+  --dot-fssp: #0a7ea4;
+  --dot-compliance: #7c3aed;
+  --dot-gray: var(--decision-gray);
+  --dot-override: #475467;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -42,7 +53,26 @@
     --decision-reject-bg: rgba(255, 107, 99, 0.12);
     --decision-pending: #9aa3b2;
     --decision-pending-bg: rgba(154, 163, 178, 0.12);
+    --dot-call: #7b9bff;
+    --dot-fssp: #5cc8e8;
+    --dot-compliance: #b794f6;
+    --dot-override: #9aa3b2;
   }
+}
+
+:root[data-theme="dark"] {
+  --decision-approve: #3ddc84;
+  --decision-approve-bg: rgba(61, 220, 132, 0.12);
+  --decision-gray: #f0a93b;
+  --decision-gray-bg: rgba(240, 169, 59, 0.12);
+  --decision-reject: #ff6b63;
+  --decision-reject-bg: rgba(255, 107, 99, 0.12);
+  --decision-pending: #9aa3b2;
+  --decision-pending-bg: rgba(154, 163, 178, 0.12);
+  --dot-call: #7b9bff;
+  --dot-fssp: #5cc8e8;
+  --dot-compliance: #b794f6;
+  --dot-override: #9aa3b2;
 }
 
 * {
@@ -356,6 +386,71 @@ a:hover {
 }
 
 /* T17, часть 2: пара «подпись — значение» в блоках карточки (Клиент, Сделка). */
+/* T17, часть 4: быстрые фильтры списка заявок (макет «Заявки»). */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.chip {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chip--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.chip-count {
+  opacity: 0.75;
+}
+
+/* «Нужно сделать» в списке — ожидание человека, цвет серой зоны (макет). */
+.need-action {
+  color: var(--decision-gray);
+  font-weight: 500;
+}
+
+/* T17, часть 4: статус заявки в списке — пилюля, цвет из токенов выше. */
+.status-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-pill--progress { color: var(--status-progress); background: var(--status-progress-bg); }
+.status-pill--approve { color: var(--decision-approve); background: var(--decision-approve-bg); }
+.status-pill--gray { color: var(--decision-gray); background: var(--decision-gray-bg); }
+.status-pill--reject { color: var(--decision-reject); background: var(--decision-reject-bg); }
+
+/* Точка перед текстом «нужно сделать» — цвет по виду действия. */
+.action-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.action-dot--call { background: var(--dot-call); }
+.action-dot--fssp { background: var(--dot-fssp); }
+.action-dot--compliance { background: var(--dot-compliance); }
+.action-dot--gray { background: var(--dot-gray); }
+.action-dot--override { background: var(--dot-override); }
+
 .kv-grid {
   display: grid;
   grid-template-columns: minmax(160px, 220px) 1fr;

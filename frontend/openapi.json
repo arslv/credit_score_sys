@@ -90,6 +90,39 @@
         }
       }
     },
+    "/api/applications/quick-counts": {
+      "get": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Quick Counts",
+        "description": "Счётчики быстрых фильтров списка (макет «Заявки»): тот же набор условий,\nчто у самих фильтров в list_applications, — цифра на чипе совпадает со\nсписком, который откроется по клику.",
+        "operationId": "quick_counts_api_applications_quick_counts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": "object",
+                  "title": "Response Quick Counts Api Applications Quick Counts Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/applications": {
       "get": {
         "tags": [
@@ -248,6 +281,17 @@
               "type": "boolean",
               "default": false,
               "title": "Discrepancies Only"
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(action|gray|today|all)$",
+              "default": "all",
+              "title": "View"
             }
           },
           {
@@ -2438,6 +2482,15 @@
             "type": "string",
             "title": "Goods Name"
           },
+          "requested_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Requested Amount"
+          },
+          "term_months": {
+            "type": "integer",
+            "title": "Term Months"
+          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -2490,6 +2543,40 @@
               }
             ],
             "title": "Override Matches System"
+          },
+          "action_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Kind"
+          },
+          "action_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Text"
+          },
+          "waiting_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting Since"
           }
         },
         "type": "object",
@@ -2501,12 +2588,17 @@
           "client_name",
           "goods_price",
           "goods_name",
+          "requested_amount",
+          "term_months",
           "status",
           "stage_a_outcome",
           "stage_b_outcome",
           "score",
           "has_override",
-          "override_matches_system"
+          "override_matches_system",
+          "action_kind",
+          "action_text",
+          "waiting_since"
         ],
         "title": "ApplicationListItem"
       },

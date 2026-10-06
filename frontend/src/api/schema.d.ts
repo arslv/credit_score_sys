@@ -55,6 +55,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/quick-counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Quick Counts
+         * @description Счётчики быстрых фильтров списка (макет «Заявки»): тот же набор условий,
+         *     что у самих фильтров в list_applications, — цифра на чипе совпадает со
+         *     списком, который откроется по клику.
+         */
+        get: operations["quick_counts_api_applications_quick_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications": {
         parameters: {
             query?: never;
@@ -825,6 +847,10 @@ export interface components {
             goods_price: string;
             /** Goods Name */
             goods_name: string;
+            /** Requested Amount */
+            requested_amount: string;
+            /** Term Months */
+            term_months: number;
             /** Status */
             status: string;
             /** Stage A Outcome */
@@ -837,6 +863,12 @@ export interface components {
             has_override: boolean;
             /** Override Matches System */
             override_matches_system: boolean | null;
+            /** Action Kind */
+            action_kind: string | null;
+            /** Action Text */
+            action_text: string | null;
+            /** Waiting Since */
+            waiting_since: string | null;
         };
         /** AuditLogOut */
         AuditLogOut: {
@@ -1849,6 +1881,28 @@ export interface operations {
             };
         };
     };
+    quick_counts_api_applications_quick_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number | null;
+                    };
+                };
+            };
+        };
+    };
     list_applications_api_applications_get: {
         parameters: {
             query?: {
@@ -1862,6 +1916,7 @@ export interface operations {
                 ocr_failed_only?: boolean;
                 source_unavailable_only?: boolean;
                 discrepancies_only?: boolean;
+                view?: string;
                 page?: number;
                 page_size?: number;
             };

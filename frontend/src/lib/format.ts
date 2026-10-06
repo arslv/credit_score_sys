@@ -41,3 +41,13 @@ export function formatAmount(value: string | number | null | undefined): string 
   if (Number.isNaN(numeric)) return "—";
   return amountFormatter.format(numeric);
 }
+
+// «В работе»: сколько прошло с подачи — «45 мин», «3 ч 10 мин», «2 дн 4 ч».
+export function formatElapsed(fromIso: string, now: Date = new Date()): string {
+  const minutes = Math.max(0, Math.floor((now.getTime() - new Date(fromIso).getTime()) / 60000));
+  if (minutes < 60) return `${minutes} мин`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ч ${minutes % 60} мин`;
+  return `${Math.floor(hours / 24)} дн ${hours % 24} ч`;
+}
+

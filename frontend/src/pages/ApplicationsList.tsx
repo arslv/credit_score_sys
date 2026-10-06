@@ -2,11 +2,37 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import { Badge } from "../components/Badge";
-import { formatAmount, formatDateTime } from "../lib/format";
-import { applicationStatusLabel, decisionOutcomeLabel } from "../lib/labels";
+import { useAuth } from "../auth/AuthProvider";
+import { formatAmount, formatElapsed } from "../lib/format";
+import { applicationStatusLabel } from "../lib/labels";
 
 const PAGE_SIZE = 25;
+
+// T17, часть 4 (макет «Заявки»). Быстрые фильтры и их счётчики — с сервера.
+// «Требуют действия» — очередь РОЛИ (оператор / комплаенс / риск-менеджер);
+// у наблюдателя и администратора очереди нет, чипа нет.
+type View = "action" | "gray" | "today" | "all";
+
+const VIEW_LABELS: Record<View, string> = {
+  action: "Требуют действия",
+  gray: "Серая зона",
+  today: "Сегодня",
+  all: "Все",
+};
+
+const QUEUE_ROLES = ["operator", "compliance", "risk_manager"];
+
+// Статусы, при которых заявка закрыта — «Ждёт» для них не показываем.
+const TERMINAL_STATUSES = new Set(["approved", "rejected_a", "rejected_b", "contracted", "expired"]);
+
+// Тон пилюли статуса: одобрено — зелёный, отказ — красный, серая зона — янтарный,
+// всё «в процессе» — нейтральный серо-синий. Цвета — токены в index.css.
+function statusTone(status: string): "progress" | "approve" | "gray" | "reject" {
+  if (status === "approved" || status === "contracted") return "approve";
+  if (status === "rejected_a" || status === "rejected_b" || status === "expired") return "reject";
+  if (status === "gray_zone") return "gray";
+  return "progress";
+}
 
 interface Filters {
   status: string;
@@ -23,15 +49,28 @@ const EMPTY_FILTERS: Filters = {
 };
 
 export function ApplicationsListPage() {
+  const { employee } = useAuth();
+  const hasQueue = QUEUE_ROLES.includes(employee?.role ?? "");
+  const [view, setView] = useState<View>(hasQueue ? "action" : "all");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
 
+  const countsQuery = useQuery({
+    queryKey: ["applications", "quick-counts"],
+    queryFn: async () => {
+      const { data, error } = await api.GET("/api/applications/quick-counts");
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const query = useQuery({
-    queryKey: ["applications", filters, page],
+    queryKey: ["applications", view, filters, page],
     queryFn: async () => {
       const { data, error } = await api.GET("/api/applications", {
         params: {
           query: {
+            view,
             status: filters.status || undefined,
             discrepancies_only: filters.discrepanciesOnly || undefined,
             ocr_failed_only: filters.ocrFailedOnly,
@@ -51,48 +90,74 @@ export function ApplicationsListPage() {
     setFilters((prev) => ({ ...prev, ...patch }));
   }
 
+  function selectView(next: View) {
+    setPage(1);
+    setView(next);
+  }
+
+  const counts = countsQuery.data;
+  const views = (Object.keys(VIEW_LABELS) as View[]).filter((key) => key !== "action" || counts?.action != null);
+
   return (
     <section>
       <h1>Заявки</h1>
 
-      <div className="toolbar">
-        <label>
-          Состояние
-          <select value={filters.status} onChange={(e) => updateFilters({ status: e.target.value })}>
-            <option value="">любое</option>
-            <option value="to_operator">{applicationStatusLabel("to_operator")}</option>
-            <option value="rejected_a">{applicationStatusLabel("rejected_a")}</option>
-            <option value="rejected_b">{applicationStatusLabel("rejected_b")}</option>
-            <option value="gray_zone">{applicationStatusLabel("gray_zone")}</option>
-            <option value="approved">{applicationStatusLabel("approved")}</option>
-            <option value="ocr_failed">{applicationStatusLabel("ocr_failed")}</option>
-          </select>
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={filters.discrepanciesOnly}
-            onChange={(e) => updateFilters({ discrepanciesOnly: e.target.checked })}
-          />
-          только расхождения с оператором
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={filters.ocrFailedOnly}
-            onChange={(e) => updateFilters({ ocrFailedOnly: e.target.checked })}
-          />
-          только ocr_failed
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={filters.sourceUnavailableOnly}
-            onChange={(e) => updateFilters({ sourceUnavailableOnly: e.target.checked })}
-          />
-          есть недоступный источник
-        </label>
+      <div className="chips" role="group" aria-label="Быстрые фильтры">
+        {views.map((key) => (
+          <button
+            key={key}
+            type="button"
+            className={`chip${view === key ? " chip--active" : ""}`}
+            aria-pressed={view === key}
+            onClick={() => selectView(key)}
+          >
+            {VIEW_LABELS[key]}
+            {counts && counts[key] != null && <span className="chip-count"> · {counts[key]}</span>}
+          </button>
+        ))}
       </div>
+
+      <details className="more-filters">
+        <summary>Ещё фильтры</summary>
+        <div className="toolbar">
+          <label>
+            Статус
+            <select value={filters.status} onChange={(e) => updateFilters({ status: e.target.value })}>
+              <option value="">любой</option>
+              <option value="to_operator">{applicationStatusLabel("to_operator")}</option>
+              <option value="rejected_a">{applicationStatusLabel("rejected_a")}</option>
+              <option value="rejected_b">{applicationStatusLabel("rejected_b")}</option>
+              <option value="gray_zone">{applicationStatusLabel("gray_zone")}</option>
+              <option value="approved">{applicationStatusLabel("approved")}</option>
+              <option value="ocr_failed">{applicationStatusLabel("ocr_failed")}</option>
+            </select>
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={filters.discrepanciesOnly}
+              onChange={(e) => updateFilters({ discrepanciesOnly: e.target.checked })}
+            />
+            только расхождения с оператором
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={filters.ocrFailedOnly}
+              onChange={(e) => updateFilters({ ocrFailedOnly: e.target.checked })}
+            />
+            только не распознанные паспорта
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={filters.sourceUnavailableOnly}
+              onChange={(e) => updateFilters({ sourceUnavailableOnly: e.target.checked })}
+            />
+            есть недоступный источник
+          </label>
+        </div>
+      </details>
 
       {query.isLoading && <p className="muted">Загрузка…</p>}
       {query.isError && <p role="alert" className="alert">Не удалось загрузить список заявок.</p>}
@@ -102,16 +167,12 @@ export function ApplicationsListPage() {
         <table className="table">
           <thead>
             <tr>
-              <th>№</th>
-              <th>№ заказчика</th>
-              <th>Дата</th>
-              <th>ФИО</th>
-              <th>Сумма</th>
-              <th>Товар</th>
-              <th>Состояние</th>
-              <th>Стадия А</th>
-              <th>Стадия Б</th>
-              <th>Скор</th>
+              <th>Клиент</th>
+              <th>Сумма / срок</th>
+              <th>Статус</th>
+              <th>Балл БКИ</th>
+              <th>Нужно сделать</th>
+              <th>Ждёт</th>
               <th>Итог оператора</th>
             </tr>
           </thead>
@@ -119,33 +180,39 @@ export function ApplicationsListPage() {
             {query.data.items.map((item) => (
               <tr key={item.id}>
                 <td>
-                  <Link to={`/applications/${item.id}`}>{item.number}</Link>
+                  <Link to={`/applications/${item.id}`}>{item.client_name ?? "—"}</Link>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    №{item.number} · у заказчика {item.external_id} · {item.goods_name}
+                  </div>
                 </td>
-                <td>{item.external_id}</td>
-                <td>{formatDateTime(item.submitted_at)}</td>
-                <td>{item.client_name ?? "—"}</td>
-                <td>{formatAmount(item.goods_price)}</td>
-                <td>{item.goods_name}</td>
-                <td>
-                  <Badge value={item.status} label={applicationStatusLabel(item.status)} />
+                <td className="num">
+                  {formatAmount(item.requested_amount)} ₽ / {item.term_months} мес.
                 </td>
                 <td>
-                  <Badge value={item.stage_a_outcome} label={item.stage_a_outcome ? decisionOutcomeLabel("A", item.stage_a_outcome) : undefined} />
+                  <span className={`status-pill status-pill--${statusTone(item.status)}`}>
+                    {applicationStatusLabel(item.status)}
+                  </span>
                 </td>
+                <td className="num">{item.score != null ? Math.round(Number(item.score)) : ""}</td>
                 <td>
-                  <Badge value={item.stage_b_outcome} label={item.stage_b_outcome ? decisionOutcomeLabel("B", item.stage_b_outcome) : undefined} />
-                </td>
-                <td>{item.score ?? "—"}</td>
-                <td>
-                  {item.has_override ? (
-                    item.override_matches_system ? (
-                      <span className="badge badge-neutral">совпал</span>
-                    ) : (
-                      <span className="badge badge-warning">разошёлся</span>
-                    )
-                  ) : (
-                    <span className="muted">—</span>
+                  {item.action_text && (
+                    <>
+                      <span className={`action-dot action-dot--${item.action_kind}`} aria-hidden="true" />
+                      {item.action_text}
+                    </>
                   )}
+                </td>
+                <td className="muted num">
+                  {item.waiting_since && !TERMINAL_STATUSES.has(item.status)
+                    ? formatElapsed(item.waiting_since)
+                    : ""}
+                </td>
+                <td>
+                  {item.has_override && item.override_matches_system === false ? (
+                    <span title="Итог оператора не совпадает с последним решением системы">
+                      Оператор изменил статус
+                    </span>
+                  ) : null}
                 </td>
               </tr>
             ))}
