@@ -22,8 +22,11 @@ const VIEW_LABELS: Record<View, string> = {
 
 const QUEUE_ROLES = ["operator", "compliance", "risk_manager"];
 
-// Статусы, при которых заявка закрыта — «Ждёт» для них не показываем.
-const TERMINAL_STATUSES = new Set(["approved", "rejected_a", "rejected_b", "contracted", "expired"]);
+// Колонки, которые у роли всегда пусты, не показываем: у комплаенса очередь —
+// заморозки по перечню, без балла БКИ и без итога оператора.
+const HIDDEN_COLUMNS_BY_ROLE: Record<string, Set<string>> = {
+  compliance: new Set(["score", "override"]),
+};
 
 // Тон пилюли статуса: одобрено — зелёный, отказ — красный, серая зона — янтарный,
 // всё «в процессе» — нейтральный серо-синий. Цвета — токены в index.css.
@@ -96,6 +99,16 @@ export function ApplicationsListPage() {
   }
 
   const counts = countsQuery.data;
+  const hidden = HIDDEN_COLUMNS_BY_ROLE[employee?.role ?? ""] ?? new Set<string>();
+  const columns = [
+    { key: "client", title: "Клиент" },
+    { key: "amount", title: "Сумма / срок" },
+    { key: "status", title: "Статус" },
+    { key: "score", title: "Балл БКИ" },
+    { key: "action", title: "Нужно сделать" },
+    { key: "waiting", title: "Ждёт" },
+    { key: "override", title: "Итог оператора" },
+  ].filter((column) => !hidden.has(column.key));
   const views = (Object.keys(VIEW_LABELS) as View[]).filter((key) => key !== "action" || counts?.action != null);
 
   return (
@@ -167,13 +180,9 @@ export function ApplicationsListPage() {
         <table className="table">
           <thead>
             <tr>
-              <th>Клиент</th>
-              <th>Сумма / срок</th>
-              <th>Статус</th>
-              <th>Балл БКИ</th>
-              <th>Нужно сделать</th>
-              <th>Ждёт</th>
-              <th>Итог оператора</th>
+              {columns.map((column) => (
+                <th key={column.key}>{column.title}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -193,7 +202,9 @@ export function ApplicationsListPage() {
                     {applicationStatusLabel(item.status)}
                   </span>
                 </td>
-                <td className="num">{item.score != null ? Math.round(Number(item.score)) : ""}</td>
+                {!hidden.has("score") && (
+                  <td className="num">{item.score != null ? Math.round(Number(item.score)) : ""}</td>
+                )}
                 <td>
                   {item.action_text && (
                     <>
@@ -203,17 +214,18 @@ export function ApplicationsListPage() {
                   )}
                 </td>
                 <td className="muted num">
-                  {item.waiting_since && !TERMINAL_STATUSES.has(item.status)
-                    ? formatElapsed(item.waiting_since)
-                    : ""}
+                  {/* «Ждёт» — только у заявок очереди роли: момент встал в очередь. */}
+                  {item.action_text && item.waiting_since ? formatElapsed(item.waiting_since) : ""}
                 </td>
-                <td>
-                  {item.has_override && item.override_matches_system === false ? (
-                    <span title="Итог оператора не совпадает с последним решением системы">
-                      Оператор изменил статус
-                    </span>
-                  ) : null}
-                </td>
+                {!hidden.has("override") && (
+                  <td>
+                    {item.has_override && item.override_matches_system === false ? (
+                      <span title="Итог оператора не совпадает с последним решением системы">
+                        Оператор изменил статус
+                      </span>
+                    ) : null}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

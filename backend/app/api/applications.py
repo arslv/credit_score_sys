@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -136,9 +136,9 @@ def _fssp_unchecked_gray_clause():
     )
 
 
-def _override_mismatch_clause():
-    """Оператор в системе заказчика изменил статус — итог не совпадает с
-    последним решением нашего сервиса («расхождение», см. discrepancies_only)."""
+def _latest_override_mismatch_clause():
+    """Последний итог оператора не совпадает с последним решением нашего
+    сервиса — «оператор изменил статус» (то же, что в _to_item: override_matches)."""
     latest_outcome = (
         select(Decision.outcome)
         .where(Decision.application_id == Application.id)
@@ -146,11 +146,36 @@ def _override_mismatch_clause():
         .limit(1)
         .scalar_subquery()
     )
+    latest_override = (
+        select(ManualOverride.id)
+        .where(ManualOverride.application_id == Application.id)
+        .order_by(ManualOverride.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
     return exists(
         select(ManualOverride.id).where(
-            ManualOverride.application_id == Application.id,
+            ManualOverride.id == latest_override,
             ManualOverride.to_outcome != latest_outcome,
         )
+    )
+
+
+def _latest_override_at_expr():
+    """Момент последнего итога оператора, если он расходится с решением."""
+    latest_outcome = (
+        select(Decision.outcome)
+        .where(Decision.application_id == Application.id)
+        .order_by(Decision.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    return (
+        select(ManualOverride.created_at)
+        .where(ManualOverride.application_id == Application.id, ManualOverride.to_outcome != latest_outcome)
+        .order_by(ManualOverride.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
     )
 
 
@@ -169,8 +194,50 @@ def _queue_clause(role: str):
     if role == "compliance":
         return _freeze_pending_clause()
     if role == "risk_manager":
-        return or_(Application.status == "gray_zone", _override_mismatch_clause())
+        return or_(Application.status == "gray_zone", _latest_override_mismatch_clause())
     return None
+
+
+def _latest_decision_at_expr(stage: str):
+    return (
+        select(func.max(Decision.created_at))
+        .where(Decision.application_id == Application.id, Decision.stage == stage)
+        .scalar_subquery()
+    )
+
+
+def _queue_waiting_expr(role: str):
+    """SQL-выражение «ждёт с» для очереди роли — то же, что _queue_entry, но в
+    SQL: сортировка и страница делаются в базе, а не в Python по всем заявкам."""
+    status_since = (
+        select(func.max(StatusHistory.created_at))
+        .where(StatusHistory.application_id == Application.id, StatusHistory.to_status == Application.status)
+        .scalar_subquery()
+    )
+    fallback = Application.submitted_at
+    if role == "operator":
+        expr = case(
+            (Application.status.in_(("to_operator", "ocr_failed")), status_since),
+            else_=_latest_decision_at_expr("B"),
+        )
+    elif role == "compliance":
+        expr = (
+            select(func.max(Decision.created_at))
+            .where(
+                Decision.application_id == Application.id,
+                Decision.freeze.is_(True),
+                ~exists(select(FreezeLift.id).where(FreezeLift.decision_id == Decision.id)),
+            )
+            .scalar_subquery()
+        )
+    elif role == "risk_manager":
+        expr = case(
+            (Application.status == "gray_zone", _latest_decision_at_expr("B")),
+            else_=_latest_override_at_expr(),
+        )
+    else:
+        return fallback
+    return func.coalesce(expr, fallback)
 
 
 def _queue_entry(
@@ -368,20 +435,16 @@ async def list_applications(
         return item, override_matches
 
     if view == "action":
-        # Очередь роли: кто дольше всех ждёт — сверху (waiting_since по возрастанию).
-        # Сортировка и страница — в Python: момент ожидания в SQL не выражается.
-        candidates = (await session.execute(stmt)).scalars().all()
-        queued: list[ApplicationListItem] = []
-        for application in candidates:
-            item, override_matches = await _to_item(application)
-            if item.action_text is None:
-                continue
-            if discrepancies_only and override_matches is not False:
-                continue
-            queued.append(item)
-        queued.sort(key=lambda entry: entry.waiting_since)
-        total = len(queued)
-        items = queued[params.offset : params.offset + params.page_size]
+        # Очередь роли: дольше всех ждущие — сверху. Сортировка и страница в SQL
+        # (раньше — Python по всем заявкам очереди: ~1.3 с на 260 заявок).
+        total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+        page_stmt = (
+            stmt.order_by(None).order_by(_queue_waiting_expr(employee.role).asc(), Application.id)
+            .offset(params.offset)
+            .limit(params.page_size)
+        )
+        applications = (await session.execute(page_stmt)).scalars().all()
+        items = [(await _to_item(application))[0] for application in applications]
     elif discrepancies_only:
         candidates = (await session.execute(stmt)).scalars().all()
         matched: list[ApplicationListItem] = []

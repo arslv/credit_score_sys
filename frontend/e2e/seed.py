@@ -157,6 +157,7 @@ async def main() -> None:
             viewer = await _seed_employee(session, role="viewer")
             compliance = await _seed_employee(session, role="compliance")
             admin = await _seed_employee(session, role="admin")
+            operator = await _seed_employee(session, role="operator")
             application = await _seed_discrepancy_application(session)
             frozen_match = await _seed_frozen_sanctions_match(session)
             await session.commit()
@@ -165,7 +166,7 @@ async def main() -> None:
 
     print(json.dumps({
         "risk_manager": risk_manager, "viewer": viewer, "compliance": compliance, "admin": admin,
-        "application": application, "frozen_match": frozen_match,
+        "application": application, "frozen_match": frozen_match, "operator": operator,
     }))
 
 

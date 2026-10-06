@@ -9,6 +9,7 @@ export interface Seed {
   viewer: { email: string; password: string };
   compliance: { email: string; password: string };
   admin: { email: string; password: string };
+  operator: { email: string; password: string };
   application: { id: string; external_id: string; number: number; last_name: string };
   frozen_match: { application_id: string; client_id: string; decision_id: string; external_id: string };
 }
