@@ -1,10 +1,15 @@
-"""T09: ФССП/ФНС/Федресурс, ранний выход, параллельность, идемпотентная
-финализация, заморозка при санкциях. Общие хелперы (_ingest, _age_overrides,
-active_ruleset) — из test_engine_pipeline.py, чтобы не дублировать."""
+"""T09/T16: ранний выход при hard_stop, идемпотентная финализация, заморозка
+при санкциях. ФНС в этом файле — только "не вызвана при раннем выходе"
+(fire-and-forget с T16, запускается после финализации queue_fns_checks,
+проверяем patch'ем, не считая реальные check()-вызовы — тех больше нет в
+синхронном пути). ФССП здесь не участвует вообще (T16 — только по действию
+оператора, см. tests/test_api_fssp.py). Общие хелперы (_ingest,
+_age_overrides, active_ruleset) — из test_engine_pipeline.py, чтобы не
+дублировать."""
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,50 +19,11 @@ from app.config import get_settings
 from app.engine.pipeline import finalize_stage_a, run_stage_a
 from app.engine.rules import _MISSING, get_field, parse_matrix_key
 from app.engine.schema import load_ruleset_from_yaml
-from app.models import Application, Check, Client, Decision, FeatureSnapshot, FsspRequest, SanctionsList
+from app.engine.state_machine import transition
+from app.models import Application, Check, Client, Decision, FeatureSnapshot, SanctionsList
 from app.ocr.fake_provider import FakeOcrProvider, build_ocr_result
-from app.sources.fedresurs import FakeFedresursSource
-from app.sources.fns import FakeFnsSource
-from app.sources.fssp import FakeFsspSource
-from app.tasks.fssp_poll import _poll_one
 from tests.test_engine_pipeline import _age_overrides, _ingest, active_ruleset  # noqa: F401
 from tests.conftest import unique_valid_passport_series
-
-
-class _CallTrackingSource:
-    """Оборачивает fake-источник и считает вызовы check() — для проверки
-    "ни одного внешнего запроса" (T09, п.1 поправок)."""
-
-    def __init__(self, inner) -> None:
-        self._inner = inner
-        self.source_name = inner.source_name
-        self.calls = 0
-
-    async def check(self, subject):
-        self.calls += 1
-        return await self._inner.check(subject)
-
-
-class _BarrierSyncedSource:
-    """Не измеряет длительность (замер времени в тестах флаки под нагрузкой —
-    см. отчёт по прогонам T11) — вместо этого источник перед ответом ждёт
-    общий asyncio.Barrier на двоих. При параллельном вызове (asyncio.gather в
-    run_fns_and_fedresurs) обе стороны доходят до барьера одновременно и сразу
-    проходят; при случайно вернувшемся последовательном вызове первая сторона
-    ждала бы вторую, которую никто не позовёт, пока не дождётся первой, — и
-    падает по таймауту барьера. execute_check (правило 4 CLAUDE.md) ловит это
-    исключение и превращает в CheckResult(status=error) — отличимый от
-    настоящего успеха результат, по которому тест и проверяет параллельность."""
-
-    def __init__(self, inner, barrier: asyncio.Barrier, *, timeout: float = 2.0) -> None:
-        self._inner = inner
-        self.source_name = inner.source_name
-        self._barrier = barrier
-        self._timeout = timeout
-
-    async def check(self, subject):
-        await asyncio.wait_for(self._barrier.wait(), timeout=self._timeout)
-        return await self._inner.check(subject)
 
 
 # --- п.1: ранний выход при локальном hard_stop --------------------------------
@@ -69,186 +35,55 @@ async def test_local_hard_stop_skips_external_sources_entirely(
     external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
     ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(19)))  # AGE_BELOW_MIN
 
-    fns = _CallTrackingSource(FakeFnsSource())
-    fedresurs = _CallTrackingSource(FakeFedresursSource())
-    fssp = FakeFsspSource()
-
-    final_status = await run_stage_a(
-        session_factory, application_id,
-        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
-        fns_source=fns, fedresurs_source=fedresurs, fssp_source=fssp,
-    )
+    with patch("app.engine.pipeline.queue_fns_checks") as mock_queue:
+        final_status = await run_stage_a(
+            session_factory, application_id,
+            ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+        )
 
     assert final_status == "rejected_a"
-    assert fns.calls == 0
-    assert fedresurs.calls == 0
-    assert fssp.submitted == []
+    mock_queue.assert_not_called()  # T16: hard_stop -> ни одной внешней проверки, даже фоновой
 
     async with session_factory() as session:
-        fssp_requests = (
-            await session.execute(select(FsspRequest).where(FsspRequest.application_id == application_id))
-        ).scalars().all()
-        assert fssp_requests == []
-
         checks = (
             await session.execute(select(Check).where(Check.application_id == application_id))
         ).scalars().all()
         assert {c.source for c in checks} == {"mvd", "rosfinmon", "blacklist"}
 
 
-# --- п.2: ФНС и Федресурс параллельно ------------------------------------------
+# --- ФНС — фоновой задачей после финализации (T16) ------------------------------
 
 
-async def test_fns_and_fedresurs_run_concurrently_not_sequentially(
+async def test_fns_checks_queued_after_stage_a_finalizes_without_waiting(
     partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
+    """Стадия А не ждёт ФНС (ваше явное указание) — финализируется сразу по
+    локальным признакам, задача на ФНС просто ставится в очередь Celery."""
     external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
     ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
 
-    barrier = asyncio.Barrier(2)
-    fns = _BarrierSyncedSource(FakeFnsSource(), barrier)
-    fedresurs = _BarrierSyncedSource(FakeFedresursSource(), barrier)
-    fssp = FakeFsspSource(raise_on_submit=True)  # settles немедленно, не ждём опроса в этом тесте
+    with patch("app.engine.pipeline.queue_fns_checks") as mock_queue:
+        final_status = await run_stage_a(
+            session_factory, application_id,
+            ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+        )
 
-    await run_stage_a(
-        session_factory, application_id,
-        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
-        fns_source=fns, fedresurs_source=fedresurs, fssp_source=fssp,
-    )
+    assert final_status == "to_operator"  # решение принято сразу, без ФНС
+    mock_queue.assert_called_once()
+    _, kwargs = mock_queue.call_args
+    assert kwargs["application_id"] == application_id
+    assert kwargs["subject_type"] == "applicant"
 
     async with session_factory() as session:
+        # Фоновая задача ничего не записала СИНХРОННО — закономерно, она не
+        # была реально выполнена (queue_fns_checks замокан), это и есть суть
+        # "не ждём": на момент финализации проверок ФНС ещё нет.
         checks = (
             await session.execute(
-                select(Check).where(Check.application_id == application_id, Check.source.in_(["fns", "fedresurs"]))
+                select(Check).where(Check.application_id == application_id, Check.source.like("fns_%"))
             )
         ).scalars().all()
-    statuses = {c.source: c.status for c in checks}
-    # "error" здесь — исключительно след таймаута барьера (execute_check ловит
-    # его и подменяет CheckResult), а не обычный исход этих фейков.
-    assert statuses.get("fns") != "error", "fns не дождался fedresurs на барьере — вызваны не параллельно"
-    assert statuses.get("fedresurs") != "error", "fedresurs не дождался fns на барьере — вызваны не параллельно"
-
-
-# --- п.4: ФССП не принял запрос -> сразу source_unavailable и финализация -----
-
-
-async def test_fssp_submit_failure_finalizes_immediately_as_source_unavailable(
-    partner_admin, partner_client, storage, session_factory, active_ruleset
-):
-    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
-    ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
-
-    final_status = await run_stage_a(
-        session_factory, application_id,
-        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(),
-        fssp_source=FakeFsspSource(raise_on_submit=True),
-    )
-
-    assert final_status == "to_operator"  # никакой другой стоп-фактор не сработал
-
-    async with session_factory() as session:
-        fssp_requests = (
-            await session.execute(select(FsspRequest).where(FsspRequest.application_id == application_id))
-        ).scalars().all()
-        assert fssp_requests == []
-
-        fssp_check = (
-            await session.execute(
-                select(Check).where(Check.application_id == application_id, Check.source == "fssp")
-            )
-        ).scalar_one()
-        assert fssp_check.status == "source_unavailable"
-
-
-# --- ФССП: асинхронный happy path через задачу опроса --------------------------
-
-
-async def test_fssp_async_credit_debt_resolves_via_poll_task_and_rejects(
-    partner_admin, partner_client, storage, session_factory, active_ruleset
-):
-    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
-    ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
-
-    fssp = FakeFsspSource(
-        productions_by_request={"fake-1": [{"subject": "Взыскание по кредитному договору", "amount": "200000"}]},
-        # 1 -> первый poll (сразу после submit, см. _submit_fssp) ещё не готов,
-        # заявка реально остаётся в очереди на опрос отдельной задачей.
-        not_ready_polls=1,
-    )
-
-    final_status = await run_stage_a(
-        session_factory, application_id,
-        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=fssp,
-    )
-    assert final_status == "stage_a"  # решение ещё не принято, ждём опроса
-
-    async with session_factory() as session:
-        row = (
-            await session.execute(select(FsspRequest).where(FsspRequest.application_id == application_id))
-        ).scalar_one()
-        assert row.status == "pending"
-
-    outcome = await _poll_one(session_factory, fssp, partner_client, row.id)
-    assert outcome == "finalized"
-
-    async with session_factory() as session:
-        decision = (
-            await session.execute(select(Decision).where(Decision.application_id == application_id))
-        ).scalar_one()
-        assert decision.outcome == "reject"
-        assert decision.reason_code == "FSSP_CREDIT_DEBT"
-
-        snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
-        assert snapshot.features["features"]["fssp_credit_debt_amount"] == 200000.0
-
-    detail = await partner_client.get_application(external_id)
-    assert detail.status == "rejected"
-
-
-async def test_fssp_poll_deadline_expired_is_source_unavailable_not_reject(
-    partner_admin, partner_client, storage, session_factory, active_ruleset
-):
-    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
-    ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
-
-    fssp = FakeFsspSource(never_ready=True)
-    await run_stage_a(
-        session_factory, application_id,
-        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=fssp,
-    )
-
-    async with session_factory() as session:
-        row = (
-            await session.execute(select(FsspRequest).where(FsspRequest.application_id == application_id))
-        ).scalar_one()
-        row.deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
-        await session.commit()
-        row_id = row.id
-
-    outcome = await _poll_one(session_factory, fssp, partner_client, row_id)
-    assert outcome == "finalized"
-
-    async with session_factory() as session:
-        row = await session.get(FsspRequest, row_id)
-        assert row.status == "expired"
-
-        fssp_check = (
-            await session.execute(
-                select(Check).where(Check.application_id == application_id, Check.source == "fssp")
-            )
-        ).scalar_one()
-        assert fssp_check.status == "source_unavailable"
-
-        decision = (
-            await session.execute(select(Decision).where(Decision.application_id == application_id))
-        ).scalar_one()
-        assert decision.outcome == "manual_review"  # флаг оператору, не автоотказ
-
-    detail = await partner_client.get_application(external_id)
-    assert detail.status == "on_call"
+        assert checks == []
 
 
 # --- п.3: идемпотентная финализация ---------------------------------------------
@@ -257,15 +92,32 @@ async def test_fssp_poll_deadline_expired_is_source_unavailable_not_reject(
 async def test_finalize_stage_a_concurrent_calls_produce_exactly_one_decision(
     partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
+    """run_stage_a теперь всегда финализирует сразу (T16) — чтобы проверить
+    идемпотентность самой finalize_stage_a (SELECT ... FOR UPDATE), заводим
+    заявку в статус "stage_a" напрямую в обход run_stage_a, имитируя редкую
+    гонку двух конкурентных вызовов финализации одной и той же заявки."""
     external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
     ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
 
-    fssp = FakeFsspSource(never_ready=True)  # оставляет заявку в "stage_a" (не финализирована)
-    await run_stage_a(
-        session_factory, application_id,
-        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=fssp,
-    )
+    async with session_factory() as session:
+        application = await session.get(Application, application_id)
+        transition(session, application, "ocr", actor_type="system")
+        transition(session, application, "stage_a", actor_type="system")
+        await session.commit()
+
+    # OCR должен существовать для finalize_stage_a (читает ocr_results) —
+    # прогоняем его напрямую тем же путём, что run_stage_a, без финализации.
+    from app.engine.pipeline import _load_photo
+    from app.ocr.service import run_ocr
+
+    async with session_factory() as session:
+        application = await session.get(Application, application_id)
+        passport_main = await _load_photo(session, storage, application_id, "passport_main")
+        passport_reg = await _load_photo(session, storage, application_id, "passport_reg")
+        await run_ocr(
+            session, ocr_provider, application=application, passport_main=passport_main, passport_reg=passport_reg,
+        )
+        await session.commit()
 
     await asyncio.gather(
         finalize_stage_a(session_factory, application_id, partner_client=partner_client),
@@ -313,7 +165,6 @@ async def test_sanctions_hit_persists_freeze_logs_error_and_notes_operator(
         final_status = await run_stage_a(
             session_factory, application_id,
             ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
-            fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
         )
 
     assert final_status == "rejected_a"
@@ -360,7 +211,6 @@ async def test_repeat_application_of_frozen_passport_is_rejected_without_any_che
     await run_stage_a(
         session_factory, application_id_1,
         ocr_provider=ocr_1, partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
     # Вторая заявка — тот же паспорт, другое имя (заявитель мог его сменить/скрыть) —
@@ -375,21 +225,14 @@ async def test_repeat_application_of_frozen_passport_is_rejected_without_any_che
             }
         )
     )
-    fns_2 = _CallTrackingSource(FakeFnsSource())
-    fedresurs_2 = _CallTrackingSource(FakeFedresursSource())
-    fssp_2 = FakeFsspSource()
-
-    with patch("app.engine.pipeline.logger") as mock_logger:
+    with patch("app.engine.pipeline.logger") as mock_logger, patch("app.engine.pipeline.queue_fns_checks") as mock_queue:
         final_status = await run_stage_a(
             session_factory, application_id_2,
             ocr_provider=ocr_2, partner_client=partner_client, storage=storage,
-            fns_source=fns_2, fedresurs_source=fedresurs_2, fssp_source=fssp_2,
         )
 
     assert final_status == "rejected_a"
-    assert fns_2.calls == 0
-    assert fedresurs_2.calls == 0
-    assert fssp_2.submitted == []
+    mock_queue.assert_not_called()
 
     error_events = [call.args[0] for call in mock_logger.error.call_args_list]
     assert "sanctions_freeze_reapplied" in error_events
@@ -437,20 +280,29 @@ async def test_dev_ruleset_rule_field_paths_all_resolve_against_real_snapshot(
     """Ловит класс бага T09 (fssp_credit_debt/fssp_minor ссылались на путь,
     который признаки никогда не заполняли, — правило тихо никогда не
     срабатывало) автоматически: гоняет реальную стадию А с максимально
-    заполненными признаками (включая непустой ответ ФССП) и проверяет для
-    каждого правила из dev.yaml, что его field реально разрешается в
-    получившемся снапшоте, а не просто отсутствует."""
+    заполненными признаками (включая непустой ответ ФССП — T16, заранее
+    записанный в checks, как если бы оператор уже прошёл капчу до этого) и
+    проверяет для каждого правила из dev.yaml, что его field реально
+    разрешается в получившемся снапшоте, а не просто отсутствует."""
     external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
     ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
 
-    fssp = FakeFsspSource(
-        productions_by_request={"fake-1": [{"subject": "Взыскание по кредитному договору", "amount": "10000"}]}
-    )
-    await run_stage_a(
-        session_factory, application_id,
-        ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=fssp,
-    )
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        session.add(
+            Check(
+                application_id=application_id, subject_type="applicant", source="fssp", status="hit",
+                parsed={"productions": [{"subject": "Взыскание по кредитному договору", "amount": "10000"}]},
+                started_at=now, finished_at=now, duration_ms=0,
+            )
+        )
+        await session.commit()
+
+    with patch("app.engine.pipeline.queue_fns_checks"):
+        await run_stage_a(
+            session_factory, application_id,
+            ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
+        )
 
     async with session_factory() as session:
         decision = (
@@ -500,7 +352,6 @@ async def test_two_applications_same_passport_link_to_same_client(
             **_age_overrides(30), "passport_series": series, "passport_number": number,
         })),
         partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
     _, application_id_2 = await _ingest(partner_admin, partner_client, storage, session_factory)
@@ -510,7 +361,6 @@ async def test_two_applications_same_passport_link_to_same_client(
             **_age_overrides(30), "passport_series": series, "passport_number": number,
         })),
         partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
     async with session_factory() as session:
@@ -558,7 +408,6 @@ async def test_same_name_and_birth_date_different_passport_links_to_same_client_
             "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
         })),
         partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
     _, application_id_2 = await _ingest(partner_admin, partner_client, storage, session_factory)
@@ -570,7 +419,6 @@ async def test_same_name_and_birth_date_different_passport_links_to_same_client_
             "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
         })),
         partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
     async with session_factory() as session:
@@ -615,26 +463,24 @@ async def test_freeze_persists_for_same_client_across_passport_change(
             "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
         })),
         partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
     # Новая заявка — то же ФИО+ДР, но СОВСЕМ ДРУГОЙ паспорт (переоформление).
     _, application_id_2 = await _ingest(partner_admin, partner_client, storage, session_factory)
-    fns_2 = _CallTrackingSource(FakeFnsSource())
-    final_status = await run_stage_a(
-        session_factory, application_id_2,
-        ocr_provider=FakeOcrProvider(build_ocr_result(overrides={
-            **_age_overrides(30),
-            "last_name": last_name, "first_name": first_name, "middle_name": middle_name,
-            "passport_series": unique_valid_passport_series(),
-            "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
-        })),
-        partner_client=partner_client, storage=storage,
-        fns_source=fns_2, fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
-    )
+    with patch("app.engine.pipeline.queue_fns_checks") as mock_queue:
+        final_status = await run_stage_a(
+            session_factory, application_id_2,
+            ocr_provider=FakeOcrProvider(build_ocr_result(overrides={
+                **_age_overrides(30),
+                "last_name": last_name, "first_name": first_name, "middle_name": middle_name,
+                "passport_series": unique_valid_passport_series(),
+                "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
+            })),
+            partner_client=partner_client, storage=storage,
+        )
 
     assert final_status == "rejected_a"
-    assert fns_2.calls == 0  # заморозка сработала раньше внешних проверок
+    mock_queue.assert_not_called()  # заморозка сработала раньше внешних проверок
 
     async with session_factory() as session:
         decision_2 = (
@@ -667,7 +513,6 @@ async def test_is_repeat_and_prior_counts_computed_from_client_history(
             **_age_overrides(30), "passport_series": series, "passport_number": number,
         })),
         partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
 
     async with session_factory() as session:

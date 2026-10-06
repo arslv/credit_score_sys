@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
+import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
 import { formatAmount, formatDateTime } from "../lib/format";
@@ -54,6 +55,15 @@ export function ApplicationDetailPage() {
 
   const app = query.data;
   const canRetry = employee?.role === "risk_manager";
+  const canOperateFssp = employee?.role === "operator" || employee?.role === "risk_manager";
+
+  const findLatestFsspCheck = (subjectType: "applicant" | "guarantor", subjectId: string | null) => {
+    const matches = app.checks.filter(
+      (c) => c.source === "fssp" && c.subject_type === subjectType && (c.subject_id ?? null) === subjectId,
+    );
+    if (matches.length === 0) return null;
+    return matches.reduce((latest, c) => (c.started_at > latest.started_at ? c : latest));
+  };
 
   return (
     <section>
@@ -152,6 +162,55 @@ export function ApplicationDetailPage() {
         </tbody>
       </table>
       {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
+
+      <p className="muted">
+        Федресурс (сведения о банкротстве) в автоматический конвейер не входит — проверьте вручную на{" "}
+        <a href="https://fedresurs.ru" target="_blank" rel="noreferrer">
+          fedresurs.ru
+        </a>
+        .
+      </p>
+
+      <h2>ФССП</h2>
+      <FsspPanel
+        applicationId={app.id}
+        subjectType="applicant"
+        subjectLabel="заявитель"
+        subjectId={null}
+        latestCheck={findLatestFsspCheck("applicant", null)}
+        canOperate={canOperateFssp}
+        hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("applicant")}
+      />
+      {app.guarantor_profile && (
+        <div className="card">
+          <p style={{ marginTop: 0 }}>
+            <strong>Поручитель</strong>
+          </p>
+          <table className="table table--compact">
+            <tbody>
+              {Object.entries(app.guarantor_profile)
+                .filter(([, value]) => value != null && value !== "")
+                .map(([field, value]) => (
+                  <tr key={field}>
+                    <td>{humanizeFieldPath(field)}</td>
+                    <td>{String(value)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {app.has_guarantor && app.guarantor_id && (
+        <FsspPanel
+          applicationId={app.id}
+          subjectType="guarantor"
+          subjectLabel="поручитель"
+          subjectId={app.guarantor_id}
+          latestCheck={findLatestFsspCheck("guarantor", app.guarantor_id)}
+          canOperate={canOperateFssp}
+          hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("guarantor")}
+        />
+      )}
 
       {app.ocr_result && (
         <>

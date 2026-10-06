@@ -29,6 +29,11 @@ async def is_passport_reused_with_different_identity(
     stmt = (
         select(OcrResult.application_id, OcrResult.fields)
         .where(
+            # JSONB-путь ("fields", ...) — та же обёртка {"fields": {...}},
+            # что распаковывает app.engine.pipeline.unwrap_ocr_fields для
+            # Python-кода; здесь путь строится для SQL-запроса напрямую,
+            # unwrap_ocr_fields тут не применить (сравнение значения внутри
+            # БД, не чтение объекта в Python) — тот же первый уровень обёртки.
             OcrResult.application_id != application_id,
             OcrResult.fields[("fields", "passport_series", "value")].astext == passport_series,
             OcrResult.fields[("fields", "passport_number", "value")].astext == passport_number,

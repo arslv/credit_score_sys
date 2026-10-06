@@ -1978,6 +1978,199 @@
         }
       }
     },
+    "/api/fssp/regions": {
+      "get": {
+        "tags": [
+          "fssp"
+        ],
+        "summary": "List Fssp Regions",
+        "operationId": "list_fssp_regions_api_fssp_regions_get",
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Application Id"
+            }
+          },
+          {
+            "name": "subject_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "applicant",
+              "title": "Subject Type"
+            }
+          },
+          {
+            "name": "subject_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsspRegionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/applications/{application_id}/fssp/search": {
+      "post": {
+        "tags": [
+          "fssp"
+        ],
+        "summary": "Fssp Search",
+        "operationId": "fssp_search_api_applications__application_id__fssp_search_post",
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsspSearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsspSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/applications/{application_id}/fssp/{session_id}/submit-code": {
+      "post": {
+        "tags": [
+          "fssp"
+        ],
+        "summary": "Fssp Submit Code",
+        "operationId": "fssp_submit_code_api_applications__application_id__fssp__session_id__submit_code_post",
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsspSubmitCodeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsspSubmitCodeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -2103,6 +2296,25 @@
             "type": "boolean",
             "title": "Has Guarantor"
           },
+          "guarantor_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guarantor Id"
+          },
+          "fssp_post_decision_alert_subjects": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fssp Post Decision Alert Subjects"
+          },
           "profile": {
             "anyOf": [
               {
@@ -2153,6 +2365,8 @@
           "documents",
           "manual_overrides",
           "has_guarantor",
+          "guarantor_id",
+          "fssp_post_decision_alert_subjects",
           "profile",
           "ocr_result",
           "external_snapshots"
@@ -3564,6 +3778,183 @@
         ],
         "title": "ExternalSnapshotOut"
       },
+      "FsspRegionOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "label"
+        ],
+        "title": "FsspRegionOut"
+      },
+      "FsspRegionsResponse": {
+        "properties": {
+          "regions": {
+            "items": {
+              "$ref": "#/components/schemas/FsspRegionOut"
+            },
+            "type": "array",
+            "title": "Regions"
+          },
+          "suggested_region_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Region Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "regions"
+        ],
+        "title": "FsspRegionsResponse"
+      },
+      "FsspSearchRequest": {
+        "properties": {
+          "subject_type": {
+            "type": "string",
+            "title": "Subject Type"
+          },
+          "subject_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Id"
+          },
+          "region_code": {
+            "type": "string",
+            "title": "Region Code"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "subject_type",
+          "region_code"
+        ],
+        "title": "FsspSearchRequest"
+      },
+      "FsspSearchResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "captcha_png_base64": {
+            "type": "string",
+            "title": "Captcha Png Base64"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "captcha_png_base64"
+        ],
+        "title": "FsspSearchResponse"
+      },
+      "FsspSubmitCodeRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "FsspSubmitCodeRequest"
+      },
+      "FsspSubmitCodeResponse": {
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "title": "Outcome"
+          },
+          "check": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check"
+          },
+          "new_session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Session Id"
+          },
+          "new_captcha_png_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Captcha Png Base64"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outcome"
+        ],
+        "title": "FsspSubmitCodeResponse"
+      },
       "FunnelItem": {
         "properties": {
           "status": {
@@ -4513,13 +4904,9 @@
             ],
             "title": "Ruleset Matches File"
           },
-          "fssp_pending": {
+          "fssp_results_after_decision": {
             "type": "integer",
-            "title": "Fssp Pending"
-          },
-          "fssp_overdue": {
-            "type": "integer",
-            "title": "Fssp Overdue"
+            "title": "Fssp Results After Decision"
           },
           "bki_configured": {
             "type": "boolean",
@@ -4552,8 +4939,7 @@
           "registries",
           "ruleset_active_version",
           "ruleset_matches_file",
-          "fssp_pending",
-          "fssp_overdue",
+          "fssp_results_after_decision",
           "bki_configured",
           "bki_paid_requests_this_month",
           "partner_integration_errors_last_24h",

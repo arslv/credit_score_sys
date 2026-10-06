@@ -98,27 +98,45 @@ class Settings(BaseSettings):
     # не синхронизируется периодически (см. docs/registries.md).
     department_codes_path: str = "config/reference/fms_unit.csv"
 
-    # ФССП/ФНС/Федресурс (T09): таймауты/повторы — технические параметры, не
-    # бизнес-правило (правило 2 CLAUDE.md касается порогов вида возраст/сумма/
-    # срок; ср. ocr_name_match_min_ratio выше). Числа — из таблицы ТЗ «Стадия А,
-    # шаг 3». Классификация типов производств ФССП, в отличие от этого, —
-    # business-правило и живёт в YAML-конфиге (sources.fssp.classification).
+    # ФНС/ФССП (T16, заменяет старый блок T09 — Федресурс убран, ФССП больше
+    # не опрашивается автоматически): таймауты/интервалы — технические
+    # параметры, не бизнес-правило (правило 2 CLAUDE.md касается порогов вида
+    # возраст/сумма/срок; ср. ocr_name_match_min_ratio выше). Классификация
+    # типов производств ФССП, в отличие от этого, — business-правило и живёт
+    # в YAML-конфиге (sources.fssp.classification).
     external_sources_mode: str = "fake"  # fake (по умолчанию) | http — см. app/sources/*.py
-    fns_base_url: str = ""
-    fns_request_timeout_seconds: float = 10.0
-    fns_max_attempts: int = 2
-    fedresurs_request_timeout_seconds: float = 20.0
-    fedresurs_max_attempts: int = 2
-    fssp_base_url: str = ""
-    fssp_api_key: str = ""
-    fssp_submit_timeout_seconds: float = 10.0
-    fssp_submit_max_attempts: int = 3
-    fssp_poll_interval_seconds: int = 5
-    fssp_poll_deadline_seconds: int = 120  # "120 с на опрос" из таблицы ТЗ
-    # Потолок на ВЕСЬ внешний блок шага 3 целиком (ФНС + Федресурс + ожидание
-    # ФССП) — отдельно от таймаутов конкретных запросов, чтобы сумма ретраев не
-    # растягивала стадию А на неопределённое время.
-    stage_a_external_checks_deadline_seconds: float = 180.0
+
+    # service.nalog.ru (fns_inn) и egrul.nalog.ru (fns_egrip) — одна платформа
+    # ("uni", общий стек статики), обе формы умеют показать капчу при
+    # превышении частоты запросов (разведка T16) — капчу решает только
+    # человек (ваше жёсткое правило), поэтому мы её никогда не показываем и
+    # не решаем: при captchaRequired=true просто откладываем попытку.
+    # Официального числа для этого лимита нет (в отличие от statusnpd ниже) —
+    # 20 с между запросами выбрано консервативно, не на основании измеренного
+    # порога: единственный живой кейс, где я увидела капчу на разведке,
+    # оказался статическим файлом-примером (/static/captcha-dialog.html), а
+    # не подтверждённым откликом именно на мою частоту запросов — см.
+    # docs/reports/T16.md, честно об этом сказано, порог не измерен.
+    fns_shared_request_interval_seconds: float = 20.0
+    fns_max_attempts: int = 5
+    fns_retry_backoff_seconds: float = 20.0
+    fns_request_timeout_seconds: float = 15.0
+    # statusnpd.nalog.ru (fns_npd) — отдельный простой REST, без капчи на
+    # разведке; задокументированный лимит ФНС — не больше 2 запросов в минуту
+    # с одного IP (ваше сообщение с разведкой) — 30 с с запасом на джиттер.
+    fns_npd_min_interval_seconds: float = 30.0
+    fns_npd_request_timeout_seconds: float = 20.0
+
+    # ФССП (is-go.fssp.gov.ru) — капчу вводит оператор (T16), без кук
+    # (подтверждено дважды живым тестом). Интервал — консервативная защита от
+    # собственного флуда с нашей стороны, не измеренный порог сайта.
+    fssp_min_request_interval_seconds: float = 5.0
+    fssp_request_timeout_seconds: float = 15.0
+    fssp_regions_path: str = "config/fssp_regions.yaml"
+    # Сессия "код показан, ждём ввода" считается истёкшей через столько минут
+    # без ответа оператора — новый поиск можно начать, старая строка
+    # fssp_captcha_sessions помечается expired.
+    fssp_captcha_session_timeout_minutes: int = 15
 
     # БКИ (T11): договора с бюро нет и неизвестно, с каким бюро он будет —
     # отдельная настройка от external_sources_mode (у ФССП/ФНС хотя бы есть

@@ -9,7 +9,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
 CHECK_SUBJECT_TYPES = ("applicant", "guarantor")
-CHECK_SOURCES = ("mvd", "rosfinmon", "fssp", "fedresurs", "fns", "bki", "blacklist")
+# fedresurs/fns — T16: больше не пишутся новыми проверками (Федресурс убран,
+# ФНС теперь fns_inn/fns_npd/fns_egrip), но остаются в допустимых значениях —
+# история (checks append-only, правило 1 CLAUDE.md) не трогается.
+CHECK_SOURCES = (
+    "mvd", "rosfinmon", "fssp", "fedresurs", "fns", "fns_inn", "fns_npd", "fns_egrip", "bki", "blacklist",
+)
 CHECK_STATUSES = ("ok", "hit", "no_data", "source_unavailable", "error")
 
 

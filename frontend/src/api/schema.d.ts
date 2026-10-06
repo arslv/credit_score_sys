@@ -660,6 +660,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fssp/regions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Fssp Regions */
+        get: operations["list_fssp_regions_api_fssp_regions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/fssp/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fssp Search */
+        post: operations["fssp_search_api_applications__application_id__fssp_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/fssp/{session_id}/submit-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fssp Submit Code */
+        post: operations["fssp_submit_code_api_applications__application_id__fssp__session_id__submit_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -734,6 +785,10 @@ export interface components {
             manual_overrides: components["schemas"]["ManualOverrideOut"][];
             /** Has Guarantor */
             has_guarantor: boolean;
+            /** Guarantor Id */
+            guarantor_id: string | null;
+            /** Fssp Post Decision Alert Subjects */
+            fssp_post_decision_alert_subjects: string[];
             /** Profile */
             profile: {
                 [key: string]: unknown;
@@ -1212,6 +1267,61 @@ export interface components {
              */
             received_at: string;
         };
+        /** FsspRegionOut */
+        FsspRegionOut: {
+            /** Code */
+            code: string;
+            /** Label */
+            label: string;
+        };
+        /** FsspRegionsResponse */
+        FsspRegionsResponse: {
+            /** Regions */
+            regions: components["schemas"]["FsspRegionOut"][];
+            /** Suggested Region Code */
+            suggested_region_code?: string | null;
+        };
+        /** FsspSearchRequest */
+        FsspSearchRequest: {
+            /** Subject Type */
+            subject_type: string;
+            /** Subject Id */
+            subject_id?: string | null;
+            /** Region Code */
+            region_code: string;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** FsspSearchResponse */
+        FsspSearchResponse: {
+            /**
+             * Session Id
+             * Format: uuid
+             */
+            session_id: string;
+            /** Captcha Png Base64 */
+            captcha_png_base64: string;
+        };
+        /** FsspSubmitCodeRequest */
+        FsspSubmitCodeRequest: {
+            /** Code */
+            code: string;
+        };
+        /** FsspSubmitCodeResponse */
+        FsspSubmitCodeResponse: {
+            /** Outcome */
+            outcome: string;
+            /** Check */
+            check?: {
+                [key: string]: unknown;
+            } | null;
+            /** New Session Id */
+            new_session_id?: string | null;
+            /** New Captcha Png Base64 */
+            new_captcha_png_base64?: string | null;
+            /** Message */
+            message?: string | null;
+        };
         /** FunnelItem */
         FunnelItem: {
             /** Status */
@@ -1582,10 +1692,8 @@ export interface components {
             ruleset_active_version: number | null;
             /** Ruleset Matches File */
             ruleset_matches_file: boolean | null;
-            /** Fssp Pending */
-            fssp_pending: number;
-            /** Fssp Overdue */
-            fssp_overdue: number;
+            /** Fssp Results After Decision */
+            fssp_results_after_decision: number;
             /** Bki Configured */
             bki_configured: boolean;
             /** Bki Paid Requests This Month */
@@ -2891,6 +2999,110 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_fssp_regions_api_fssp_regions_get: {
+        parameters: {
+            query?: {
+                application_id?: string | null;
+                subject_type?: string;
+                subject_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FsspRegionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fssp_search_api_applications__application_id__fssp_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FsspSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FsspSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fssp_submit_code_api_applications__application_id__fssp__session_id__submit_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FsspSubmitCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FsspSubmitCodeResponse"];
                 };
             };
             /** @description Validation Error */

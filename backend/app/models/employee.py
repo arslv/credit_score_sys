@@ -10,13 +10,20 @@ from app.models.base import Base
 
 # compliance — T12: не было в ролях ТЗ, заведена по вашему указанию (единственная
 # роль, которая снимает заморозку по санкциям и помечает совпадения ложными).
-EMPLOYEE_ROLES = ("risk_manager", "admin", "viewer", "compliance")
+# operator — T16, ваше явное указание: видит заявки и делает проверку ФССП
+# (капча); правила/сотрудники/аудит недоступны — не риск-менеджер и не админ,
+# у admin тоже нет доступа к /fssp/* (та же модель ролей — персданные
+# заявителей не для админской роли, см. app/api/fssp.py).
+EMPLOYEE_ROLES = ("risk_manager", "admin", "viewer", "compliance", "operator")
 DOCUMENT_KINDS = ("selfie_passport", "passport_main", "passport_reg")
 AUDIT_LOG_ACTIONS = (
     "view_application", "view_document", "view_credit_report", "change_ruleset", "export",
     "login", "login_failed", "logout", "lift_freeze", "mark_false_positive",
     "manage_employee", "manage_reference", "retry_check",
     "import_data", "link_contract",  # T15
+    # T16: только факт попытки/кто/когда/результат — НИКОГДА картинка капчи
+    # или введённый код (ваше явное указание), см. app/api/fssp.py.
+    "fssp_search_started", "fssp_code_submitted",
 )
 STATUS_HISTORY_ACTOR_TYPES = ("system", "employee", "client")
 

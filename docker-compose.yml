@@ -45,6 +45,10 @@ services:
       STORAGE_DIR: /data/storage
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}
+      # T16: fake (по умолчанию) | http — настоящие ФНС/ФССП, см.
+      # app/sources/factory.py. Переключать явно через .env, не менять
+      # дефолт здесь.
+      EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-fake}
     volumes:
       - storage_data:/data/storage
       - ./config:/app/config:ro
@@ -76,10 +80,13 @@ services:
       STORAGE_DIR: /data/storage
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}
+      OCR_PROVIDER_MODE: ${OCR_PROVIDER_MODE:-anthropic}
+      OCR_FIXTURE_PATH: ${OCR_FIXTURE_PATH:-}
       REGISTRIES_DIR: /data/registries
       REGISTRIES_DOWNLOADER: ${REGISTRIES_DOWNLOADER:-local}
       MVD_REGISTRY_URL: ${MVD_REGISTRY_URL:-}
       ROSFINMON_REGISTRY_URL: ${ROSFINMON_REGISTRY_URL:-}
+      EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-fake}
     volumes:
       - storage_data:/data/storage
       - ./config:/app/config:ro

@@ -1,8 +1,10 @@
 """T13a: карточка заявки — человекочитаемые правила, обезличивание для
 admin/viewer, повтор проверки недоступного источника (только risk_manager,
-только ФНС/Федресурс, ваше уточнение)."""
+только ФНС — fns_inn/fns_npd/fns_egrip, T16; ФССП туда не входит вообще, у
+него свой экран с капчей)."""
 
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from sqlalchemy import select
 
@@ -10,21 +12,35 @@ from app.engine.pipeline import run_stage_a
 from app.integrations.adapter import _content_hash
 from app.models import AuditLog, Check, Decision, ExternalSnapshot, ManualOverride
 from app.ocr.fake_provider import FakeOcrProvider, build_ocr_result
-from app.sources.fedresurs import FakeFedresursSource
-from app.sources.fns import FakeFnsSource
-from app.sources.fssp import FakeFsspSource
+from app.sources.fns import FakeFnsInnSource
 from tests._admin_helpers import create_employee, login
 from tests.conftest import unique_valid_passport_series
 from tests.test_engine_pipeline import _age_overrides, _ingest, active_ruleset  # noqa: F401
 
 
-async def _good_applicant(partner_admin, partner_client, storage, session_factory, active_ruleset, **fns_kwargs):
+async def _good_applicant(
+    partner_admin, partner_client, storage, session_factory, active_ruleset, *, fns_unavailable: bool = False,
+):
+    """T16: ФНС — фоновая задача, run_stage_a её не ждёт и не принимает
+    fns_source. fns_unavailable=True имитирует "фоновая задача уже
+    отработала и записала source_unavailable" — вставляем Check напрямую,
+    как это сделал бы app/tasks/fns_checks.py."""
     external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
     ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
     final_status = await run_stage_a(
         session_factory, application_id, ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(**fns_kwargs), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
+    if fns_unavailable:
+        now = datetime.now(timezone.utc)
+        async with session_factory() as session:
+            session.add(
+                Check(
+                    application_id=application_id, subject_type="applicant", source="fns_inn",
+                    status="source_unavailable", started_at=now, finished_at=now, duration_ms=0,
+                    error_text="fake fns_inn unavailable",
+                )
+            )
+            await session.commit()
     return application_id, final_status
 
 
@@ -106,33 +122,63 @@ async def test_admin_and_viewer_get_masked_application_detail(
     ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(19)))
     await run_stage_a(session_factory, application_id, ocr_provider=ocr_provider, partner_client=partner_client, storage=storage)
 
-    await create_employee(session_factory, email="v@example.com", role="viewer")
-    await login(admin_client, "v@example.com")
+    for role, email in (("viewer", "v@example.com"), ("admin", "adm@example.com")):
+        await create_employee(session_factory, email=email, role=role)
+        await login(admin_client, email)
+
+        response = await admin_client.get(f"/api/applications/{application_id}")
+        assert response.status_code == 200
+        body = response.json()
+
+        assert body["client_name"] == "Клиент скрыт", role
+        assert body["profile"] is None, role
+        assert body["ocr_result"] is None, role
+        assert body["external_snapshots"] == [], role
+        assert body["guarantor_profile"] is None, role
+        for check in body["checks"]:
+            assert check["parsed"] is None, role
+            assert check["response_raw"] is None, role
+
+
+async def test_operator_sees_application_pii_in_card_but_stays_out_of_rest(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """T16, ваша правка после отчёта: operator нужен ФИО/дата рождения/адрес
+    регистрации заявителя (и поручителя — если он есть) в КАРТОЧКЕ заявки,
+    чтобы выбрать регион ФССП и отличить должника от однофамильца — но не
+    где-либо ещё (сотрудники/аудит/правила/импорт по-прежнему закрыты)."""
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
+    await run_stage_a(session_factory, application_id, ocr_provider=ocr_provider, partner_client=partner_client, storage=storage)
+
+    await create_employee(session_factory, email="op@example.com", role="operator")
+    await login(admin_client, "op@example.com")
 
     response = await admin_client.get(f"/api/applications/{application_id}")
     assert response.status_code == 200
     body = response.json()
+    assert body["client_name"] != "Клиент скрыт"
+    assert body["profile"] is not None
+    assert body["ocr_result"] is not None
+    assert body["ocr_result"]["fields"]
 
-    assert body["client_name"] == "Клиент скрыт"
-    assert body["profile"] is None
-    assert body["ocr_result"] is None
-    assert body["external_snapshots"] == []
-    for check in body["checks"]:
-        assert check["parsed"] is None
-        assert check["response_raw"] is None
+    assert (await admin_client.get("/api/employees")).status_code == 403
+    assert (await admin_client.get("/api/audit-log")).status_code == 403
+    assert (await admin_client.get("/api/rulesets/active")).status_code == 403
+    assert (await admin_client.get("/api/imports/contract-candidates")).status_code == 403
 
 
 async def test_retry_check_succeeds_for_risk_manager_and_writes_audit(
     admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
     application_id, final_status = await _good_applicant(
-        partner_admin, partner_client, storage, session_factory, active_ruleset, raise_error=True,
+        partner_admin, partner_client, storage, session_factory, active_ruleset, fns_unavailable=True,
     )
 
     async with session_factory() as session:
         fns_check = (
             await session.execute(
-                select(Check).where(Check.application_id == application_id, Check.source == "fns")
+                select(Check).where(Check.application_id == application_id, Check.source == "fns_inn")
             )
         ).scalars().first()
     assert fns_check is not None
@@ -141,12 +187,22 @@ async def test_retry_check_succeeds_for_risk_manager_and_writes_audit(
     employee_id = await create_employee(session_factory, email="rm2@example.com", role="risk_manager")
     await login(admin_client, "rm2@example.com")
 
-    response = await admin_client.post(f"/api/applications/{application_id}/checks/{fns_check.id}/retry")
+    # Найденный баг (живой прогон, T16): OcrResult.fields — обёртка
+    # {"fields": {...}, ...}, не сами поля; без распаковки retry уходил с
+    # пустым Subject (ФИО/дата рождения — None) к настоящему источнику.
+    # FakeFnsInnSource на пустой Subject тоже отвечает "no_data" (как и на
+    # непустой без совпадения в responses) — статус один и тот же в обоих
+    # случаях, поэтому проверяем сам Subject, а не только итоговый статус.
+    fake_fns_inn = FakeFnsInnSource()
+    with patch("app.api.applications.build_fns_inn_source", return_value=fake_fns_inn):
+        response = await admin_client.post(f"/api/applications/{application_id}/checks/{fns_check.id}/retry")
     assert response.status_code == 200
     new_check = response.json()["check"]
     assert new_check["id"] != str(fns_check.id)
-    assert new_check["source"] == "fns"
-    assert new_check["status"] != "source_unavailable"  # рабочий фейк-источник по умолчанию (без raise_error)
+    assert new_check["source"] == "fns_inn"
+    assert new_check["status"] != "source_unavailable"  # рабочий фейк-источник по умолчанию (без fns_unavailable)
+    assert fake_fns_inn.check_calls[-1].last_name
+    assert fake_fns_inn.check_calls[-1].birth_date is not None
 
     async with session_factory() as session:
         audit_row = (
@@ -161,13 +217,13 @@ async def test_retry_check_rejected_for_wrong_role_wrong_source_and_wrong_status
     admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
     application_id, _ = await _good_applicant(
-        partner_admin, partner_client, storage, session_factory, active_ruleset, raise_error=True,
+        partner_admin, partner_client, storage, session_factory, active_ruleset, fns_unavailable=True,
     )
 
     async with session_factory() as session:
         fns_check = (
             await session.execute(
-                select(Check).where(Check.application_id == application_id, Check.source == "fns")
+                select(Check).where(Check.application_id == application_id, Check.source == "fns_inn")
             )
         ).scalars().first()
         mvd_check = (

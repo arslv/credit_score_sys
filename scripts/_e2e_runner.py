@@ -169,12 +169,46 @@ async def _checks_called(args: dict) -> dict:
         await engine.dispose()
 
 
+async def _mark_fssp_checked(args: dict) -> dict:
+    """T16: fssp_required_for_approval — без пройденной проверки ФССП
+    approve недостижим ни при каком БКИ/скоре (app/engine/stage_b_pipeline.py).
+    Капчу в e2e-прогоне вводить некому (решает только человек, см.
+    app/api/fssp.py) — для сценариев, которым нужен именно 'approved' как
+    итог, пишем результат проверки напрямую в checks, тем же способом, каким
+    это сделал бы успешный ответ капчи (без неё самой)."""
+    from datetime import datetime, timezone
+
+    from app.models import Check
+
+    engine, session_factory = new_sessionmaker()
+    try:
+        async with session_factory() as session:
+            application = (
+                await session.execute(select(Application).where(Application.external_id == args["external_id"]))
+            ).scalar_one_or_none()
+            if application is None:
+                return {"ok": False}
+            now = datetime.now(timezone.utc)
+            session.add(
+                Check(
+                    application_id=application.id, subject_type="applicant", subject_id=None,
+                    source="fssp", status="ok", parsed={"productions": []},
+                    started_at=now, finished_at=now, duration_ms=0,
+                )
+            )
+            await session.commit()
+        return {"ok": True}
+    finally:
+        await engine.dispose()
+
+
 _ACTIONS = {
     "run_task": _run_task,
     "seed_sanctions": _seed_sanctions,
     "app_state": _app_state,
     "bki_attempt_count": _bki_attempt_count,
     "checks_called": _checks_called,
+    "mark_fssp_checked": _mark_fssp_checked,
 }
 
 

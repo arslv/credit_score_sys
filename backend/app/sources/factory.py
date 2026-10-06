@@ -1,45 +1,71 @@
-"""Выбор fake/http реализации внешних источников T09 по настройке
-external_sources_mode (app.config.Settings). fake — безопасный дефолт: нет ни
-ключей, ни подтверждённых URL, поэтому переключение на http — осознанное
-действие оператора окружения, не поведение по умолчанию (тот же принцип, что
-и registries_downloader в T08)."""
+"""Выбор fake/http реализации внешних источников по настройке
+external_sources_mode (app.config.Settings). fake — безопасный дефолт для
+ФНС/ФССП — оба бьют в настоящие публичные сайты без ключа (T16), переключение
+на http — осознанное действие оператора окружения (тот же принцип, что и
+registries_downloader в T08). Федресурс убран из конвейера целиком (T16, не
+был настоящей интеграцией — всегда source_unavailable)."""
 
 import json
 from pathlib import Path
 
 from app.config import Settings
+from app.redis import get_redis
 from app.sources.bki import BkiProvider, FakeBkiProvider, NotConfiguredBkiProvider, deserialize_report
-from app.sources.fedresurs import FakeFedresursSource, FedresursHttpSource
-from app.sources.fns import FakeFnsSource, FnsHttpSource
-from app.sources.fssp import FakeFsspSource, FsspHttpSource, FsspSource
+from app.sources.fns import (
+    FakeFnsEgripSource,
+    FakeFnsInnSource,
+    FakeFnsNpdSource,
+    FnsEgripHttpSource,
+    FnsInnHttpSource,
+    FnsNpdHttpSource,
+)
+from app.sources.fssp import FakeFsspCaptchaSource, FsspCaptchaHttpSource, FsspCaptchaSource
 
 
-def build_fns_source(settings: Settings):
+def build_fns_inn_source(settings: Settings):
     if settings.external_sources_mode == "http":
-        return FnsHttpSource(
-            base_url=settings.fns_base_url,
-            timeout_seconds=settings.fns_request_timeout_seconds,
+        return FnsInnHttpSource(
+            redis=get_redis(),
+            request_timeout_seconds=settings.fns_request_timeout_seconds,
             max_attempts=settings.fns_max_attempts,
+            retry_backoff_seconds=settings.fns_retry_backoff_seconds,
+            throttle_interval_seconds=settings.fns_shared_request_interval_seconds,
         )
-    return FakeFnsSource()
+    return FakeFnsInnSource()
 
 
-def build_fedresurs_source(settings: Settings):
+def build_fns_npd_source(settings: Settings):
     if settings.external_sources_mode == "http":
-        # Всегда source_unavailable — см. app/sources/fedresurs.py.
-        return FedresursHttpSource()
-    return FakeFedresursSource()
-
-
-def build_fssp_source(settings: Settings) -> FsspSource:
-    if settings.external_sources_mode == "http":
-        return FsspHttpSource(
-            base_url=settings.fssp_base_url,
-            api_key=settings.fssp_api_key,
-            submit_timeout_seconds=settings.fssp_submit_timeout_seconds,
-            submit_max_attempts=settings.fssp_submit_max_attempts,
+        return FnsNpdHttpSource(
+            redis=get_redis(),
+            request_timeout_seconds=settings.fns_npd_request_timeout_seconds,
+            throttle_interval_seconds=settings.fns_npd_min_interval_seconds,
         )
-    return FakeFsspSource()
+    return FakeFnsNpdSource()
+
+
+def build_fns_egrip_source(settings: Settings):
+    if settings.external_sources_mode == "http":
+        return FnsEgripHttpSource(
+            redis=get_redis(),
+            request_timeout_seconds=settings.fns_request_timeout_seconds,
+            max_attempts=settings.fns_max_attempts,
+            retry_backoff_seconds=settings.fns_retry_backoff_seconds,
+            throttle_interval_seconds=settings.fns_shared_request_interval_seconds,
+        )
+    return FakeFnsEgripSource()
+
+
+def build_fssp_captcha_source(settings: Settings) -> FsspCaptchaSource:
+    """Используется ТОЛЬКО из app/api/fssp.py по действию оператора (T16) —
+    никогда из автоматического конвейера стадии А/Б."""
+    if settings.external_sources_mode == "http":
+        return FsspCaptchaHttpSource(
+            redis=get_redis(),
+            request_timeout_seconds=settings.fssp_request_timeout_seconds,
+            throttle_interval_seconds=settings.fssp_min_request_interval_seconds,
+        )
+    return FakeFsspCaptchaSource()
 
 
 def build_bki_provider(settings: Settings) -> BkiProvider:

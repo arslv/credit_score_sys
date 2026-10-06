@@ -60,13 +60,9 @@ export function SystemStatusPage() {
           />
           <StatusRow label="Платных запросов в БКИ за месяц" value={String(s.bki_paid_requests_this_month)} />
           <StatusRow
-            label="ФССП: ждут ответа"
-            value={String(s.fssp_pending)}
-          />
-          <StatusRow
-            label="ФССП: просрочено"
-            value={String(s.fssp_overdue)}
-            warn={s.fssp_overdue > 0}
+            label="ФССП найдено после решения (пересмотреть вручную)"
+            value={String(s.fssp_results_after_decision)}
+            warn={s.fssp_results_after_decision > 0}
           />
           <StatusRow
             label="Ошибок интеграции за сутки"

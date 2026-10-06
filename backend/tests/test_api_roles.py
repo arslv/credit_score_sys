@@ -84,9 +84,17 @@ class _FakeStorage:
 
 @pytest.fixture(autouse=True)
 def _install_fake_storage(monkeypatch):
+    # Найденный баг (T16): app.state — общий на весь процесс pytest (один
+    # app.main.app на все тесты, см. фикстуру client/admin_client), а здесь
+    # monkeypatch принимался, но не использовался — storage заменялась
+    # напрямую и НИКОГДА не восстанавливалась. Любой тест, запущенный позже в
+    # том же процессе (например, test_demo_import_fixtures_match_expected_md,
+    # которому нужен настоящий Storage.read() для разбора загруженного CSV),
+    # получал эту фейковую реализацию вместо настоящей. monkeypatch.setattr
+    # сам откатывает изменение после теста — тем и чинится.
     from app.main import app
 
-    app.state.storage = _FakeStorage()
+    monkeypatch.setattr(app.state, "storage", _FakeStorage())
 
 
 async def _client_for_role(admin_client, session_factory, role: str, email: str | None = None):

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { Badge } from "../components/Badge";
 
-const ROLES = ["risk_manager", "admin", "viewer", "compliance"];
+const ROLES = ["risk_manager", "admin", "viewer", "compliance", "operator"];
 
 export function EmployeesPage() {
   const queryClient = useQueryClient();

@@ -258,6 +258,11 @@ def scenario_good_client() -> ScenarioResult:
         if status_after_a != "on_call":
             result.errors.append(f"после стадии А ожидался статус 'on_call', получили {status_after_a!r}")
 
+        # T16: fssp_required_for_approval — approve недостижим без проверки
+        # ФССП; капчу вводить некому в автоматическом прогоне (решает только
+        # человек), поэтому результат пишем напрямую (см. _mark_fssp_checked).
+        runner_action("mark_fssp_checked", {"external_id": external_id})
+
         partner_fill_stage_b(external_id, _DEFAULT_STAGE_B)
         partner_press_review(external_id)
         result.path.append("operator filled stage B + pressed «Рассмотреть»")
@@ -332,7 +337,10 @@ def scenario_sanctions_hit() -> ScenarioResult:
             result.errors.append("заморозка (Decision.freeze) не сохранилась")
         if "комплаенс" not in result.partner_comment.lower():
             result.errors.append(f"в комментарии нет пометки для комплаенса: {result.partner_comment!r}")
-        for external_source in ("fns", "fedresurs", "fssp"):
+        # T16: ФНС теперь fns_inn/fns_npd/fns_egrip (фоновая задача, не
+        # вызывается синхронно при hard_stop), Федресурс убран целиком,
+        # ФССП — только по ручному действию оператора (app/api/fssp.py).
+        for external_source in ("fns_inn", "fns_npd", "fns_egrip", "fssp"):
             if external_source in checks:
                 result.errors.append(f"внешний источник {external_source} был вызван — не должен был")
         if "rosfinmon" not in checks:

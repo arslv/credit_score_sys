@@ -12,6 +12,7 @@ from app.api.compliance import router as compliance_router
 from app.api.contracts import router as contracts_router
 from app.api.dashboard import router as dashboard_router
 from app.api.employees import router as employees_router
+from app.api.fssp import router as fssp_router
 from app.api.imports import router as imports_router
 from app.api.references import router as references_router
 from app.api.rulesets import router as rulesets_router
@@ -72,6 +73,7 @@ app.include_router(compliance_router)
 app.include_router(dashboard_router)
 app.include_router(rulesets_router)
 app.include_router(imports_router)
+app.include_router(fssp_router)
 
 
 @app.get("/health")

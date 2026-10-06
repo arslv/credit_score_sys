@@ -159,3 +159,7 @@ matrix:
 antifraud:
   max_applications_per_phone_30d: 3
   duplicate_window_days: 30
+
+# T16, ваше явное указание: без проверки ФССП (заявитель и поручитель, если
+# есть) approved невозможен — максимум gray_zone, причина FSSP_NOT_CHECKED.
+fssp_required_for_approval: true

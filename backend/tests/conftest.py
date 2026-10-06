@@ -30,10 +30,17 @@ os.environ.setdefault("OCR_RETRY_DELAY_SECONDS", "0.01")
 
 # APP_ENV по умолчанию — production (app/config.py, T11) — самый строгий режим,
 # который отказывается стартовать с фейковыми провайдерами (app/startup_guard.py).
-# Тесты сами используют FakeFnsSource/FakeBkiProvider/и т.п. повсеместно, поэтому
+# Тесты сами используют FakeFnsInnSource/FakeBkiProvider/и т.п. повсеместно, поэтому
 # без этого импорт app.main/app.celery_app (через app.tasks.*) падал бы уже на
 # сборе тестов — до первого импорта app.config, как и остальные переменные выше.
 os.environ.setdefault("APP_ENV", "test")
+
+# T16: правило 10 CLAUDE.md — в тестах нет реальных сетевых вызовов.
+# НЕ setdefault: EXTERNAL_SOURCES_MODE=http теперь реально приходит в
+# окружение api/worker из docker-compose.yml (для живого прогона) — если
+# тесты запускаются в том же контейнере, им нужно явно перебить это
+# значение на "fake", а не просто подставить, если переменной нет вовсе.
+os.environ["EXTERNAL_SOURCES_MODE"] = "fake"
 
 import asyncpg
 import pytest

@@ -12,9 +12,6 @@ from app.engine.freeze import find_active_sanctions_freeze
 from app.models import Check, Decision, FreezeLift, SanctionsList
 from app.ocr.fake_provider import FakeOcrProvider, build_ocr_result
 from app.registries.jobs import sync_sanctions_list
-from app.sources.fedresurs import FakeFedresursSource
-from app.sources.fns import FakeFnsSource
-from app.sources.fssp import FakeFsspSource
 from app.sources.name_normalize import full_name, normalize_name
 from tests._admin_helpers import create_employee, login
 from tests.conftest import unique_valid_passport_series
@@ -51,7 +48,6 @@ async def _run_matching_applicant(
     )
     final_status = await run_stage_a(
         session_factory, application_id, ocr_provider=ocr_provider, partner_client=partner_client, storage=storage,
-        fns_source=FakeFnsSource(), fedresurs_source=FakeFedresursSource(), fssp_source=FakeFsspSource(),
     )
     return application_id, final_status
 

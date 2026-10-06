@@ -4,7 +4,7 @@ compliance; admin и viewer получают обезличенный вид (в
 для своей работы — сотрудники/справочники/аудит/состояние системы — паспорта
 заявителей ему не нужны)."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import get_session
-from app.engine.pipeline import _subject_from_ocr
+from app.engine.pipeline import _subject_from_ocr, unwrap_ocr_fields
 from app.integrations.status_mapping import _render_rule_text, get_all_reason_notes
 from app.models import (
     Application,
@@ -27,6 +27,7 @@ from app.models import (
     Document,
     Employee,
     ExternalSnapshot,
+    FsspPostDecisionAlert,
     GoodsCategory,
     Guarantor,
     ManualOverride,
@@ -34,27 +35,33 @@ from app.models import (
     StatusHistory,
 )
 from app.security.audit import record_audit
-from app.security.deps import get_current_employee, has_full_pii, require_roles
+from app.security.deps import ROLES_WITH_FULL_PII, get_current_employee, has_full_pii, require_roles
 from app.security.pagination import Page, PageParams
 from app.sources.base import Subject
-from app.sources.factory import build_fedresurs_source, build_fns_source
-from app.sources.runner import run_and_record_check
+from app.sources.factory import build_fns_egrip_source, build_fns_inn_source, build_fns_npd_source
+from app.sources.runner import record_check, run_and_record_check
 from app.storage.base import Storage
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 
 _MASKED_NAME = "Клиент скрыт"
-_VIEW_ROLES = ("risk_manager", "admin", "viewer", "compliance")
+_VIEW_ROLES = ("risk_manager", "admin", "viewer", "compliance", "operator")
 _PHOTO_ROLES = ("risk_manager", "compliance")
 _CREDIT_REPORT_ROLES = ("risk_manager", "compliance")
 _RETRY_ROLES = ("risk_manager",)
-# Только эти два источника имеют смысл повторять руками (ваше уточнение):
-# ФССП уже опрашивается автоматически до дедлайна (app/tasks/fssp_poll.py) —
-# ручной повтор дал бы новый параллельный запрос, а не переиспользовал бы
-# уже поданный; МВД/Росфинмониторинг/чёрный список — локальные (БД), их
-# "недоступность" — не то, что чинится нажатием кнопки; БКИ — платный запрос,
-# повтор только через «Рассмотреть» оператором (ваше явное указание).
-_RETRYABLE_SOURCES = ("fns", "fedresurs")
+# T16 (ваша правка): ПД в КАРТОЧКЕ заявки (не в списке, не у клиентов, не в
+# симуляции правил — там has_full_pii/ROLES_WITH_FULL_PII не меняем) —
+# operator нужно видеть ФИО/дату рождения/адрес регистрации заявителя и
+# поручителя, чтобы выбрать регион ФССП и отличить должника из найденного
+# производства от однофамильца. Фото и кредитный отчёт — не входят
+# (_PHOTO_ROLES/_CREDIT_REPORT_ROLES выше не трогаем), не запрошено.
+_DETAIL_PII_ROLES = (*ROLES_WITH_FULL_PII, "operator")
+# Только эти источники имеют смысл повторять руками (ваше уточнение):
+# МВД/Росфинмониторинг/чёрный список — локальные (БД), их "недоступность" —
+# не то, что чинится нажатием кнопки; БКИ — платный запрос, повтор только
+# через «Рассмотреть» оператором; ФССП (T16) — вообще не через эту кнопку,
+# у него свой экран с капчей (app/api/fssp.py).
+_RETRYABLE_SOURCES = ("fns_inn", "fns_npd", "fns_egrip")
 
 
 def get_storage(request: Request) -> Storage:
@@ -302,6 +309,11 @@ class ApplicationDetail(BaseModel):
     documents: list[DocumentOut]
     manual_overrides: list[ManualOverrideOut]
     has_guarantor: bool
+    guarantor_id: UUID | None
+    # T16, п.3 ваших правок: ФССП пришёл ПОСЛЕ уже принятого решения и сработал
+    # бы на hard_stop — список субъектов (applicant/guarantor), по которым это
+    # случилось, для заметного предупреждения в карточке (fssp_post_decision_alerts).
+    fssp_post_decision_alert_subjects: list[str]
     # Анкета/распознавание/снимки — ПД, только risk_manager/compliance (как выше).
     # profile — неизменяемый снимок на момент подачи (см. Application.profile).
     # external_snapshots — ВСЕ снимки анкеты по стадиям (T04/T10:
@@ -312,6 +324,12 @@ class ApplicationDetail(BaseModel):
     profile: dict[str, Any] | None
     ocr_result: OcrResultOut | None
     external_snapshots: list[ExternalSnapshotOut]
+    # T16 (ваша правка после отчёта): operator видит ПД ТОЛЬКО в этой карточке —
+    # без ФИО/даты рождения/адреса регистрации заявителя и поручителя нельзя ни
+    # выбрать регион ФССП, ни отличить должника из найденного производства от
+    # однофамильца. Список заявок, клиенты, сотрудники/аудит/правила/импорт —
+    # по-прежнему закрыты (_DETAIL_PII_ROLES используется только здесь).
+    guarantor_profile: dict[str, Any] | None
 
 
 @router.get("/{application_id}", response_model=ApplicationDetail)
@@ -325,7 +343,7 @@ async def get_application(
     if application is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="заявка не найдена")
 
-    full_pii = has_full_pii(employee)
+    full_pii = employee.role in _DETAIL_PII_ROLES
     client_name = None
     if application.client_id is not None:
         if full_pii:
@@ -364,9 +382,20 @@ async def get_application(
             .order_by(ManualOverride.created_at)
         )
     ).scalars().all()
-    guarantor_exists = (
-        await session.execute(select(Guarantor.id).where(Guarantor.application_id == application_id).limit(1))
-    ).scalar_one_or_none() is not None
+    guarantor_row = (
+        await session.execute(select(Guarantor).where(Guarantor.application_id == application_id).limit(1))
+    ).scalars().first()
+    guarantor_id = guarantor_row.id if guarantor_row is not None else None
+    guarantor_profile = guarantor_row.profile if (full_pii and guarantor_row is not None) else None
+    fssp_alert_subjects = sorted(
+        (
+            await session.execute(
+                select(FsspPostDecisionAlert.subject_type)
+                .where(FsspPostDecisionAlert.application_id == application_id)
+                .distinct()
+            )
+        ).scalars().all()
+    )
 
     notes = get_all_reason_notes()
     ocr_result = None
@@ -383,6 +412,11 @@ async def get_application(
             )
         ).scalars().first()
         if ocr_row is not None:
+            # fields=ocr_row.fields — ЦЕЛИКОМ, с обёрткой {"fields":...,
+            # "flags":...}, намеренно: фронту нужны и сами поля, и флаги
+            # (unreadable/cropped/name_mismatch), не только значения. Это не
+            # место для unwrap_ocr_fields — та распаковка для кода, которому
+            # нужен ПЛОСКИЙ словарь полей (Subject и т.п.), не для ответа API.
             ocr_result = OcrResultOut(
                 provider=ocr_row.provider, fields=ocr_row.fields,
                 min_confidence=ocr_row.min_confidence, created_at=ocr_row.created_at,
@@ -453,7 +487,10 @@ async def get_application(
             )
             for o in overrides
         ],
-        has_guarantor=guarantor_exists,
+        has_guarantor=guarantor_id is not None,
+        guarantor_id=guarantor_id,
+        guarantor_profile=guarantor_profile,
+        fssp_post_decision_alert_subjects=fssp_alert_subjects,
         profile=profile,
         ocr_result=ocr_result,
         external_snapshots=external_snapshots,
@@ -594,7 +631,7 @@ async def retry_check(
         ).scalars().first()
         if ocr_row is None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="нет данных распознавания для повтора")
-        subject = _subject_from_ocr(ocr_row.fields, application)
+        subject = _subject_from_ocr(unwrap_ocr_fields(ocr_row.fields), application)
     else:
         guarantor = await session.get(Guarantor, check.subject_id) if check.subject_id else None
         if guarantor is None:
@@ -609,11 +646,40 @@ async def retry_check(
         )
 
     settings = get_settings()
-    source = build_fns_source(settings) if check.source == "fns" else build_fedresurs_source(settings)
-    new_check = await run_and_record_check(
-        session, source, application_id=application_id, subject_type=check.subject_type,
-        subject_id=check.subject_id, subject=subject,
-    )
+    if check.source == "fns_inn":
+        new_check = await run_and_record_check(
+            session, build_fns_inn_source(settings), application_id=application_id,
+            subject_type=check.subject_type, subject_id=check.subject_id, subject=subject,
+        )
+    else:
+        # fns_npd/fns_egrip принимают ИНН, не Subject — берём его из самого
+        # свежего fns_inn-результата по этому же subject (ваше указание: без
+        # ИНН спрашивать нечего, тот же принцип, что в app/tasks/fns_checks.py).
+        inn_check = (
+            await session.execute(
+                select(Check)
+                .where(
+                    Check.application_id == application_id, Check.subject_type == check.subject_type,
+                    Check.subject_id == check.subject_id, Check.source == "fns_inn", Check.status == "ok",
+                )
+                .order_by(Check.started_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        if inn_check is None or not (inn_check.parsed or {}).get("inn"):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="нет найденного ИНН для повтора")
+        inn = inn_check.parsed["inn"]
+
+        started_at = datetime.now(timezone.utc)
+        if check.source == "fns_npd":
+            result = await build_fns_npd_source(settings).check_by_inn(inn, as_of=date.today())
+        else:
+            result = await build_fns_egrip_source(settings).check_by_inn(inn)
+        new_check = await record_check(
+            session, application_id=application_id, subject_type=check.subject_type,
+            subject_id=check.subject_id, source_name=check.source, result=result,
+            started_at=started_at, finished_at=datetime.now(timezone.utc), duration_ms=0,
+        )
 
     await record_audit(
         session, employee_id=employee.id, action="retry_check",

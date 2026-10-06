@@ -1,7 +1,7 @@
 from app.engine.clients import compute_client_history_features, find_or_create_client
 from app.engine.department_codes import load_department_codes
 from app.engine.duplicates import is_passport_reused_with_different_identity
-from app.engine.external_checks import run_fns_and_fedresurs, submit_fssp
+from app.engine.external_checks import queue_fns_checks
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_age, compute_stage_a_features
 from app.engine.freeze import find_active_sanctions_freeze
 from app.engine.fssp import classify_production, summarize_productions
@@ -92,8 +92,7 @@ __all__ = [
     "load_department_codes",
     "find_or_create_client",
     "compute_client_history_features",
-    "run_fns_and_fedresurs",
-    "submit_fssp",
+    "queue_fns_checks",
     "compute_goods_features",
     "find_goods_category",
     "DealLimitsOutcome",

@@ -7,7 +7,7 @@ from app.models.client import Client
 from app.models.contract import Contract, DelinquencyDaily, Payment, PaymentSchedule
 from app.models.employee import AuditLog, Document, Employee, StatusHistory
 from app.models.feature import Decision, FeatureSnapshot
-from app.models.fssp import FsspRequest
+from app.models.fssp import FsspCaptchaSession, FsspPostDecisionAlert
 from app.models.imports import ContractLinkCandidate, ImportBatch
 from app.models.integration import ExternalSnapshot, IntegrationEvent, OcrResult
 from app.models.override import ManualOverride
@@ -41,7 +41,8 @@ __all__ = [
     "ExternalSnapshot",
     "IntegrationEvent",
     "OcrResult",
-    "FsspRequest",
+    "FsspCaptchaSession",
+    "FsspPostDecisionAlert",
     "ImportBatch",
     "ContractLinkCandidate",
     "ManualOverride",

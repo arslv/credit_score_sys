@@ -1,11 +1,12 @@
 """Оркестратор стадии А: заявка уже получена адаптером (T04) -> распознавание ->
 признаки -> движок -> решение -> статус в систему заказчика (T07).
 
-T09: внешние источники шага 3 (ФНС, Федресурс, ФССП) добавляют вторую точку
-входа, finalize_stage_a — общий "хвост" (признаки -> движок -> решение),
-вызываемый и из run_stage_a напрямую (быстрый путь), и из периодической задачи
-опроса ФССП (app/tasks/fssp_poll.py, отложенный путь). Идемпотентность и защита
-от двойной финализации — через SELECT ... FOR UPDATE на строке applications."""
+T16: ФНС не блокирует финализацию (ваше явное указание) — запускается фоновой
+задачей Celery (queue_fns_checks, "выстрелили и забыли") сразу после локальных
+проверок, finalize_stage_a вызывается немедленно, не дожидаясь результата.
+Федресурс убран из конвейера целиком; ФССП — больше не здесь вообще, только
+по действию оператора (app/api/fssp.py). Идемпотентность и защита от двойной
+финализации finalize_stage_a — через SELECT ... FOR UPDATE на applications."""
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -20,7 +21,7 @@ from app.engine.clients import compute_client_history_features, find_or_create_c
 from app.engine.compliance_overrides import suppress_reviewed_false_positive
 from app.engine.department_codes import load_department_codes
 from app.engine.duplicates import is_passport_reused_with_different_identity
-from app.engine.external_checks import run_fns_and_fedresurs, submit_fssp
+from app.engine.external_checks import queue_fns_checks
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_stage_a_features
 from app.engine.freeze import find_active_sanctions_freeze
 from app.engine.fssp import summarize_productions
@@ -36,8 +37,6 @@ from app.ocr.base import OcrProvider
 from app.ocr.service import OcrProviderUnavailable, run_ocr
 from app.sources.base import Subject
 from app.sources.blacklist import BlacklistSource
-from app.sources.factory import build_fedresurs_source, build_fns_source, build_fssp_source
-from app.sources.fssp import FsspSource
 from app.sources.mvd import MvdSource
 from app.sources.rosfinmon import RosfinmonSource
 from app.sources.runner import run_and_record_check
@@ -91,11 +90,23 @@ async def _load_photo(session, storage: Storage, application_id: UUID, kind: str
     return await storage.read(document.storage_key)
 
 
+def unwrap_ocr_fields(ocr_result_fields: dict | None) -> dict:
+    """OcrResult.fields в БД — обёртка {"fields": {...}, "flags": {...},
+    "below_threshold": ...} (app/ocr/service.py::run_ocr), не сами поля
+    распознавания напрямую. Единственное место распаковки (найденный баг,
+    T16, живой прогон: app/api/fssp.py и retry_check в app/api/applications.py
+    передавали обёртку целиком в _subject_from_ocr, получая пустой Subject —
+    внешний сайт ФССП искал по пустому ФИО). Везде, где нужен Subject из уже
+    сохранённого распознавания — через этот хелпер, не напрямую."""
+    return dict((ocr_result_fields or {}).get("fields") or {})
+
+
 def _subject_from_ocr(ocr_fields: dict, application: Application) -> Subject:
     def value(name: str) -> str | None:
         return (ocr_fields.get(name) or {}).get("value")
 
     birth_date_raw = value("birth_date")
+    issue_date_raw = value("issue_date")
     return Subject(
         last_name=value("last_name"),
         first_name=value("first_name"),
@@ -103,6 +114,8 @@ def _subject_from_ocr(ocr_fields: dict, application: Application) -> Subject:
         birth_date=date.fromisoformat(birth_date_raw) if birth_date_raw else None,
         passport_series=value("passport_series"),
         passport_number=value("passport_number"),
+        passport_issue_date=date.fromisoformat(issue_date_raw) if issue_date_raw else None,
+        registration_address=value("registration_address"),
         phone=(application.profile or {}).get("phone"),
     )
 
@@ -288,18 +301,12 @@ async def run_stage_a(
     ocr_provider: OcrProvider,
     partner_client: PartnerClient,
     storage: Storage,
-    fns_source=None,
-    fedresurs_source=None,
-    fssp_source: FsspSource | None = None,
 ) -> str:
-    """Прогоняет заявку через стадию А до точки, откуда решение можно принять
-    сразу (локальный hard_stop уже сработал, или ФССП не принял запрос), либо
-    до постановки в очередь на опрос ФССП. Возвращает статус заявки на этот
-    момент — не обязательно финальный, если ФССП ещё не ответил (T09)."""
+    """Прогоняет заявку через стадию А и сразу финализирует решение по
+    локальным признакам (T16: ФНС запускается фоновой задачей и не
+    блокирует эту функцию — см. queue_fns_checks ниже; ФССП в этом пути
+    больше не участвует вообще)."""
     settings = get_settings()
-    fns_source = fns_source or build_fns_source(settings)
-    fedresurs_source = fedresurs_source or build_fedresurs_source(settings)
-    fssp_source = fssp_source or build_fssp_source(settings)
 
     async with session_factory() as session:
         application = await session.get(Application, application_id)
@@ -381,39 +388,16 @@ async def run_stage_a(
         )
         await session.commit()
 
-        # T09, п.1: локальный hard_stop уже решает всё — внешние источники шага 3
-        # не вызываются вовсе (ни ФНС/Федресурс, ни тем более заявка на ФССП).
+        # T09, п.1: локальный hard_stop уже решает всё — внешние источники не
+        # вызываются вовсе.
         local_stop_outcome = evaluate_hard_stops(config, features)
         if local_stop_outcome.matched:
             return await finalize_stage_a(session_factory, application_id, partner_client=partner_client)
 
-        await run_fns_and_fedresurs(
-            session,
-            settings=settings,
-            application_id=application.id,
-            subject_type="applicant",
-            subject_id=None,
-            subject=subject,
-            fns_source=fns_source,
-            fedresurs_source=fedresurs_source,
-        )
-        fssp_settled = await submit_fssp(
-            session,
-            settings,
-            application_id=application.id,
-            subject_type="applicant",
-            subject_id=None,
-            stage="A",
-            subject=subject,
-            fssp_source=fssp_source,
-        )
-        await session.commit()
-
-    if fssp_settled:
-        return await finalize_stage_a(session_factory, application_id, partner_client=partner_client)
-
-    logger.info("stage_a_awaiting_fssp", application_id=str(application_id))
-    return application.status
+    # T16: ФНС — фоновой задачей, не ждём (ваше явное указание). ФССП в этом
+    # пути не участвует вообще — только по действию оператора позже.
+    queue_fns_checks(application_id=application.id, subject_type="applicant", subject_id=None, subject=subject)
+    return await finalize_stage_a(session_factory, application_id, partner_client=partner_client)
 
 
 async def find_stuck_ocr_application_ids(session, *, cutoff: datetime) -> list[UUID]:
@@ -499,7 +483,7 @@ async def finalize_stage_a(
                 .limit(1)
             )
         ).scalar_one()
-        ocr_fields = dict((ocr_result.fields or {}).get("fields") or {})
+        ocr_fields = unwrap_ocr_fields(ocr_result.fields)
 
         department_code_check_enabled = config.sources.passport.department_code_check_enabled
         known_department_codes = (

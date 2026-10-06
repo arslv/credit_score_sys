@@ -26,7 +26,7 @@ from app.engine.bki_features import (
 )
 from app.engine.clients import find_or_create_client
 from app.engine.compliance_overrides import suppress_reviewed_false_positive
-from app.engine.external_checks import run_fns_and_fedresurs, submit_fssp
+from app.engine.external_checks import queue_fns_checks
 from app.engine.features import compute_stage_a_features
 from app.engine.freeze import find_active_sanctions_freeze
 from app.engine.goods import compute_goods_features
@@ -55,13 +55,7 @@ from app.models import (
 from app.sources.base import CheckStatus, Subject
 from app.sources.bki import BkiProvider, BkiProviderResult, deserialize_report, serialize_report
 from app.sources.blacklist import BlacklistSource
-from app.sources.factory import (
-    build_bki_provider,
-    build_fedresurs_source,
-    build_fns_source,
-    build_fssp_source,
-)
-from app.sources.fssp import FsspSource
+from app.sources.factory import build_bki_provider
 from app.sources.mvd import MvdSource
 from app.sources.rosfinmon import RosfinmonSource
 from app.sources.runner import run_and_record_check
@@ -131,6 +125,42 @@ async def _latest_checks_for_subject(session, application_id: UUID, subject_type
     )
     rows = (await session.execute(stmt)).scalars().all()
     return {c.source: {"status": c.status, "parsed": c.parsed} for c in rows}
+
+
+async def _fssp_checked_for_decision(session, application: Application) -> bool:
+    """T16, ваше явное указание: approved невозможен без проверки ФССП — по
+    заявителю, и по поручителю тоже, если он использован. "Проверен" —
+    означает "есть хотя бы одна строка checks(source=fssp)" для этого
+    subject, независимо от status (ok/hit/no_data/error — любой из них
+    означает, что оператор реально прошёл капчу и получил ответ; ФССП теперь
+    только по его действию, см. app/api/fssp.py, значит сама строка checks
+    уже доказывает факт попытки)."""
+    applicant_checked = (
+        await session.execute(
+            select(Check.id).where(
+                Check.application_id == application.id, Check.subject_type == "applicant",
+                Check.subject_id.is_(None), Check.source == "fssp",
+            ).limit(1)
+        )
+    ).scalar_one_or_none() is not None
+    if not applicant_checked:
+        return False
+
+    guarantor = (
+        await session.execute(select(Guarantor).where(Guarantor.application_id == application.id))
+    ).scalars().first()
+    if guarantor is None or guarantor.status != "used":
+        return True
+
+    guarantor_checked = (
+        await session.execute(
+            select(Check.id).where(
+                Check.application_id == application.id, Check.subject_type == "guarantor",
+                Check.subject_id == guarantor.id, Check.source == "fssp",
+            ).limit(1)
+        )
+    ).scalar_one_or_none() is not None
+    return guarantor_checked
 
 
 async def _build_checks_features(session, client_id, checks: dict) -> dict[str, dict[str, str]]:
@@ -231,6 +261,10 @@ def _compute_guarantor_passport_features(config, guarantor_payload: dict) -> tup
         birth_date=date.fromisoformat(guarantor_payload["birth_date"]) if guarantor_payload.get("birth_date") else None,
         passport_series=guarantor_payload.get("passport_series"),
         passport_number=guarantor_payload.get("passport_number"),
+        passport_issue_date=(
+            date.fromisoformat(guarantor_payload["issue_date"]) if guarantor_payload.get("issue_date") else None
+        ),
+        registration_address=guarantor_payload.get("registration_address"),
         phone=guarantor_payload.get("phone"),
     )
     return features, subject
@@ -262,13 +296,9 @@ async def _run_guarantor_local_checks(session, config, guarantor: Guarantor, gua
 
 async def run_stage_b(
     session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerClient,
-    fns_source=None, fedresurs_source=None, fssp_source: FsspSource | None = None,
     bki_provider: BkiProvider | None = None,
 ) -> str:
     settings = get_settings()
-    fns_source = fns_source or build_fns_source(settings)
-    fedresurs_source = fedresurs_source or build_fedresurs_source(settings)
-    fssp_source = fssp_source or build_fssp_source(settings)
     bki_provider = bki_provider or build_bki_provider(settings)
 
     async with session_factory() as session:
@@ -383,19 +413,13 @@ async def run_stage_b(
                 await session.commit()
 
                 if guarantor_ok:
-                    await run_fns_and_fedresurs(
-                        session, settings=settings, application_id=application.id,
-                        subject_type="guarantor", subject_id=guarantor.id, subject=guarantor_subject,
-                        fns_source=fns_source, fedresurs_source=fedresurs_source,
+                    # T16: ФНС по поручителю — та же фоновая задача, не ждём.
+                    # ФССП по поручителю — только по действию оператора
+                    # (app/api/fssp.py, subject_type="guarantor").
+                    queue_fns_checks(
+                        application_id=application.id, subject_type="guarantor", subject_id=guarantor.id,
+                        subject=guarantor_subject,
                     )
-                    fssp_settled = await submit_fssp(
-                        session, settings, application_id=application.id, subject_type="guarantor",
-                        subject_id=guarantor.id, stage="B", subject=guarantor_subject, fssp_source=fssp_source,
-                    )
-                    await session.commit()
-                    if not fssp_settled:
-                        logger.info("stage_b_awaiting_guarantor_fssp", application_id=str(application_id))
-                        return application.status
 
         await session.commit()
 
@@ -657,6 +681,16 @@ async def _write_financial_decision(
                 outcome = "manual_review"
                 reason_code = "RISK_TARIFF_DOWN_PAYMENT_REQUIRED"
                 required_down_pay = required
+
+    if outcome == "approve" and config.fssp_required_for_approval:
+        if not await _fssp_checked_for_decision(session, application):
+            # T16, ваше явное указание: без проверки ФССП (заявитель и
+            # поручитель, если используется) approved невозможен — тот же
+            # паттерн, что BKI_NOT_CONFIGURED выше, только на другом шаге
+            # (после расчёта финансового решения, не до него — ФССП не
+            # блокирует сам расчёт, только одобрение по его итогам).
+            outcome = "manual_review"
+            reason_code = "FSSP_NOT_CHECKED"
 
     feature_snapshot = FeatureSnapshot(
         application_id=application.id, stage="B", features=features, feature_set_ver=STAGE_B_FEATURE_SET_VERSION,

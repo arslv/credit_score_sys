@@ -43,6 +43,10 @@ class OcrOutcome:
     below_threshold: bool
     name_mismatch: bool
     min_confidence: float
+    # Уже распакованный плоский словарь ({"last_name": {"value":...}, ...}) —
+    # НЕ то же самое, что OcrResult.fields (колонка БД, обёртка с "fields"/
+    # "flags"/"below_threshold"). Для чтения уже сохранённой строки из БД —
+    # app.engine.pipeline.unwrap_ocr_fields, не напрямую.
     fields: dict[str, dict[str, Any]]
 
 

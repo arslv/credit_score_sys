@@ -18,7 +18,7 @@ from app.models import Application, Decision, ExternalSnapshot, StatusHistory
 from tests._admin_helpers import create_employee, login
 from tests.test_engine_pipeline import active_ruleset  # noqa: F401
 
-_NON_ADMIN_ROLES = ("risk_manager", "viewer", "compliance")
+_NON_ADMIN_ROLES = ("risk_manager", "viewer", "compliance", "operator")
 
 
 @pytest.mark.parametrize("role", _NON_ADMIN_ROLES)
@@ -37,7 +37,7 @@ async def test_admin_gets_system_status_shape(admin_client, session_factory):
     assert response.status_code == 200
     body = response.json()
     for key in (
-        "status", "registries", "ruleset_active_version", "ruleset_matches_file", "fssp_pending", "fssp_overdue",
+        "status", "registries", "ruleset_active_version", "ruleset_matches_file", "fssp_results_after_decision",
         "bki_configured", "bki_paid_requests_this_month", "partner_integration_errors_last_24h",
         "stuck_applications_over_1h", "stuck_in_ocr", "stage_b_reprocessing_loop_applications",
     ):

@@ -240,6 +240,12 @@ class RulesetConfig(BaseModel):
     score_thresholds: ScoreThresholdsConfig
     matrix: list[MatrixEntry] = Field(default_factory=list)
     antifraud: AntifraudConfig
+    # T16, ваше явное указание: без проверки ФССП (заявитель, и поручитель,
+    # если используется) approved невозможен — максимум gray_zone с причиной
+    # FSSP_NOT_CHECKED, тем же путём, что и BKI_NOT_CONFIGURED
+    # (app/engine/stage_b_pipeline.py). По умолчанию true — выключить можно
+    # явно новой версией конфига, не кодом (правило 2 CLAUDE.md).
+    fssp_required_for_approval: bool = True
 
 
 def parse_ruleset(raw: dict[str, Any]) -> RulesetConfig:

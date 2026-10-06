@@ -1,6 +1,6 @@
 """T15: ежедневный пересчёт delinquency_daily (ТЗ: «пересчитывается ежедневной
-задачей из графика и фактических платежей»). По образцу app/tasks/fssp_poll.py —
-свой session_factory/event loop на вызов."""
+задачей из графика и фактических платежей»). По образцу остальных задач
+(app/tasks/stage_a.py и т.п.) — свой session_factory/event loop на вызов."""
 
 import asyncio
 

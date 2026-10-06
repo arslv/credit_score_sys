@@ -1,7 +1,7 @@
 """T12: состояние системы — один эндпоинт для admin (ваше уточнение): свежесть
-реестров, совпадение правил с файлом, ФССП в очереди/просрочено, подключено
-ли БКИ и сколько платных запросов за месяц, ошибки интеграции за сутки, заявки
-без смены статуса дольше часа.
+реестров, совпадение правил с файлом, подключено ли БКИ и сколько платных
+запросов за месяц, ошибки интеграции за сутки, заявки без смены статуса
+дольше часа.
 
 T13c (страховка после расследования петли повторной обработки стадии Б):
 stage_b_reprocessing_loop_applications/status — сигнал, что где-то у заявки
@@ -17,7 +17,12 @@ stuck_in_ocr (ваше явное указание после находки с 
 (app/tasks/stage_a.py::recover_stuck_ocr_applications), так что в норме
 счётчик всегда 0; ненулевое значение означает, что фоновая задача не
 отрабатывает (beat/worker не запущены, упали и т.п.), а не разовый сбой
-одной заявки — это и есть degraded, не просто предупреждающая строка."""
+одной заявки — это и есть degraded, не просто предупреждающая строка.
+
+fssp_results_after_decision (T16, п.3 ваших правок): результат ФССП пришёл,
+когда решение уже принято, и он сработал бы на hard_stop fssp_credit_debt —
+статус не меняем (правило 12 CLAUDE.md), но это видно здесь и в карточке
+заявки (app/models/fssp.py::FsspPostDecisionAlert)."""
 
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -41,7 +46,7 @@ from app.models import (
     Decision,
     Employee,
     ExternalSnapshot,
-    FsspRequest,
+    FsspPostDecisionAlert,
     IntegrationEvent,
     StatusHistory,
 )
@@ -72,8 +77,7 @@ class SystemStatus(BaseModel):
     registries: list[RegistryStatus]
     ruleset_active_version: int | None
     ruleset_matches_file: bool | None
-    fssp_pending: int
-    fssp_overdue: int
+    fssp_results_after_decision: int
     bki_configured: bool
     bki_paid_requests_this_month: int
     partner_integration_errors_last_24h: int
@@ -117,15 +121,8 @@ async def get_system_status(
             stale = await is_registry_stale(session_factory, registry=registry, max_staleness_days=max_staleness_days)
             registries.append(RegistryStatus(registry=registry, stale=stale))
 
-    fssp_pending = (
-        await session.execute(select(func.count()).select_from(FsspRequest).where(FsspRequest.status == "pending"))
-    ).scalar_one()
-    fssp_overdue = (
-        await session.execute(
-            select(func.count())
-            .select_from(FsspRequest)
-            .where(FsspRequest.status == "pending", FsspRequest.deadline < now)
-        )
+    fssp_results_after_decision = (
+        await session.execute(select(func.count()).select_from(FsspPostDecisionAlert))
     ).scalar_one()
 
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -198,8 +195,7 @@ async def get_system_status(
         registries=registries,
         ruleset_active_version=ruleset_active_version,
         ruleset_matches_file=ruleset_matches_file,
-        fssp_pending=fssp_pending,
-        fssp_overdue=fssp_overdue,
+        fssp_results_after_decision=fssp_results_after_decision,
         bki_configured=settings.bki_provider_mode != "not_configured",
         bki_paid_requests_this_month=bki_paid_requests_this_month,
         partner_integration_errors_last_24h=partner_errors,

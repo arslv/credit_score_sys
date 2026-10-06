@@ -72,22 +72,41 @@ export function humanizeFieldPath(path: string): string {
 
 export interface SourceMeta {
   label: string;
-  abbr: string;
   color: string;
 }
 
+// T16: убрали логотипы-боксы (легальный риск использовать чужой бренд-ассет
+// без разрешения, ваше явное указание) — остался только цвет источника,
+// теперь используется для текстовой плашки (SourceBadge: прозрачный фон,
+// тонкая рамка и текст в этом цвете, см. components/SourceBadge.tsx).
+// fns -> fns_inn/fns_npd/fns_egrip (T16, три отдельных проверки вместо одной) —
+// один и тот же зелёный для всей группы ФНС, старые строки checks (fns,
+// fedresurs) остаются читаемыми (правило 1 CLAUDE.md, append-only история).
 const SOURCE_META: Record<string, SourceMeta> = {
-  mvd: { label: "МВД — паспорт", abbr: "МВД", color: "#2952e3" },
-  rosfinmon: { label: "Росфинмониторинг", abbr: "РФМ", color: "#9a2fd6" },
-  blacklist: { label: "Чёрный список", abbr: "ЧС", color: "#d1293d" },
-  fns: { label: "ФНС", abbr: "ФНС", color: "#17824e" },
-  fedresurs: { label: "Федресурс", abbr: "ФР", color: "#c26b00" },
-  fssp: { label: "ФССП", abbr: "ФССП", color: "#0a7ea4" },
-  bki: { label: "БКИ", abbr: "БКИ", color: "#6b46c1" },
+  mvd: { label: "МВД — паспорт", color: "#2952e3" },
+  rosfinmon: { label: "Росфинмониторинг", color: "#9a2fd6" },
+  blacklist: { label: "Чёрный список", color: "#d1293d" },
+  fns: { label: "ФНС", color: "#17824e" },
+  fns_inn: { label: "ФНС — ИНН", color: "#17824e" },
+  fns_npd: { label: "ФНС — самозанятость", color: "#17824e" },
+  fns_egrip: { label: "ФНС — ИП (ЕГРИП)", color: "#17824e" },
+  fedresurs: { label: "Федресурс (историческая проверка)", color: "#c26b00" },
+  fssp: { label: "ФССП", color: "#0a7ea4" },
+  bki: { label: "БКИ", color: "#6b46c1" },
 };
 
 export function sourceMeta(source: string): SourceMeta {
-  return SOURCE_META[source] ?? { label: source, abbr: source.slice(0, 3).toUpperCase(), color: "#667085" };
+  return SOURCE_META[source] ?? { label: source, color: "#667085" };
+}
+
+// "#2952e3" -> "rgba(41, 82, 227, 0.1)" — для фона плашки (8–12% альфы,
+// ваше явное указание), без хардкода отдельной таблицы rgba на каждый цвет.
+export function hexToRgba(hex: string, alpha: number): string {
+  const normalized = hex.replace("#", "");
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 const SUBJECT_TYPE_LABELS: Record<string, string> = {
@@ -170,6 +189,7 @@ const REASON_CODE_LABELS: Record<string, string> = {
   UNKNOWN_TARIFF: "Тариф не найден в конфиге",
   BKI_CONSENT_MISSING_OR_EXPIRED: "Нет согласия на запрос БКИ",
   BKI_NOT_CONFIGURED: "БКИ не подключено",
+  FSSP_NOT_CHECKED: "ФССП не проверено",
   BKI_CLIENT_UNKNOWN: "Клиент не определён однозначно",
   BKI_SOURCE_UNAVAILABLE: "БКИ временно недоступно",
   BKI_ERROR: "Ошибка обращения в БКИ",
