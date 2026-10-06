@@ -79,6 +79,55 @@ class SimulateRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+
+# Типовые поля, которые показывает экран «Скоринг» и которые попадают в
+# человекочитаемый diff версий. Пути — те же, что у формы на фронте.
+_TYPED_FIELD_LABELS: dict[str, str] = {
+    "auto_approve_above": "Порог одобрения (балл БКИ)",
+    "auto_reject_below": "Порог отказа (балл БКИ)",
+    "amount_min": "Мин. сумма",
+    "amount_max": "Макс. сумма",
+    "term_min": "Мин. срок, мес.",
+    "term_max": "Макс. срок, мес.",
+    "pti_max": "ПДН: отказ выше",
+    "pti_high": "ПДН: ручная проверка выше",
+}
+
+
+def _typed_values(config: dict[str, Any] | None) -> dict[str, Any]:
+    cfg = config or {}
+    limits = cfg.get("limits") or {}
+    thresholds = cfg.get("score_thresholds") or {}
+    pti_high = next((r for r in (cfg.get("soft_rules") or []) if isinstance(r, dict) and r.get("id") == "pti_high"), {})
+    return {
+        "auto_approve_above": thresholds.get("auto_approve_above"),
+        "auto_reject_below": thresholds.get("auto_reject_below"),
+        "amount_min": limits.get("amount_min"),
+        "amount_max": limits.get("amount_max"),
+        "term_min": limits.get("term_min"),
+        "term_max": limits.get("term_max"),
+        "pti_max": limits.get("pti_max"),
+        "pti_high": pti_high.get("value"),
+    }
+
+
+def _format_typed_value(key: str, value: Any) -> str:
+    if value is None:
+        return "—"
+    if key in ("pti_max", "pti_high"):
+        return f"{round(float(value) * 100, 1):g}%"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _describe_changes(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
+    return [
+        f"{_TYPED_FIELD_LABELS[key]}: {_format_typed_value(key, before[key])} → {_format_typed_value(key, after[key])}"
+        for key in _TYPED_FIELD_LABELS
+        if before.get(key) != after.get(key)
+    ]
+
 @router.get("/active")
 async def get_active(
     _employee: Employee = Depends(require_roles(*_ROLES)),
@@ -140,6 +189,7 @@ async def simulate(
 class SaveRequest(BaseModel):
     yaml_text: str = Field(alias="yaml")
     simulation_id: UUID
+    comment: str
 
     model_config = {"populate_by_name": True}
 
@@ -151,6 +201,12 @@ async def save(
     employee: Employee = Depends(require_roles(*_ROLES)),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    comment = payload.comment.strip()
+    if not comment:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="комментарий к публикации обязателен — опишите, что и зачем меняете",
+        )
     config = _parse_yaml_or_400(payload.yaml_text)
     config_hash = compute_config_hash(config)
 
@@ -182,6 +238,7 @@ async def save(
         )
 
     row = await save_ruleset_version(session, config, author_id=employee.id, config_hash=config_hash)
+    row.comment = comment
     await record_audit(
         session, employee_id=employee.id, action="change_ruleset", object_type="ruleset_version",
         object_id=row.id, request=request,
@@ -293,6 +350,19 @@ async def list_versions(
         await session.execute(select(RulesetVersion).order_by(RulesetVersion.version.desc()).limit(200))
     ).scalars().all()
 
+    # Изменения считаем между соседними версиями по возрастанию номера — список
+    # приходит по убыванию, поэтому строим карту заранее.
+    ascending = sorted(rows, key=lambda r: r.version)
+    changes_by_id: dict[str, list[str]] = {}
+    previous_values: dict[str, Any] | None = None
+    for r in ascending:
+        values = _typed_values(r.config)
+        if previous_values is None:
+            changes_by_id[str(r.id)] = []
+        else:
+            changes_by_id[str(r.id)] = _describe_changes(previous_values, values)
+        previous_values = values
+
     versions = [
         {
             "id": str(r.id),
@@ -302,6 +372,7 @@ async def list_versions(
             "effective_from": r.effective_from,
             "created_at": r.created_at,
             "is_active": active is not None and r.id == active.id,
+            "changes": changes_by_id.get(str(r.id), []),
         }
         for r in rows
     ]

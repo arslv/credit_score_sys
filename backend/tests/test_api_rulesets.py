@@ -205,7 +205,7 @@ async def test_save_without_matching_simulation_rejected(admin_client, session_f
     config = load_config(active_ruleset)
 
     response = await admin_client.post(
-        "/api/rulesets/save", json={"yaml": _dump_yaml(config), "simulation_id": str(uuid.uuid4())}
+        "/api/rulesets/save", json={"yaml": _dump_yaml(config), "simulation_id": str(uuid.uuid4()), "comment": "тест: публикация для проверки"}
     )
     assert response.status_code == 400
 
@@ -226,7 +226,7 @@ async def test_save_with_changed_yaml_after_simulation_rejected(admin_client, se
     changed_yaml = yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
 
     response = await admin_client.post(
-        "/api/rulesets/save", json={"yaml": changed_yaml, "simulation_id": result["simulation_id"]}
+        "/api/rulesets/save", json={"yaml": changed_yaml, "simulation_id": result["simulation_id"], "comment": "тест: публикация для проверки"}
     )
     assert response.status_code == 400
 
@@ -248,7 +248,7 @@ async def test_save_hash_ignores_comment_and_effective_from(admin_client, sessio
     same_rules_yaml = yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
 
     response = await admin_client.post(
-        "/api/rulesets/save", json={"yaml": same_rules_yaml, "simulation_id": result["simulation_id"]}
+        "/api/rulesets/save", json={"yaml": same_rules_yaml, "simulation_id": result["simulation_id"], "comment": "тест: публикация для проверки"}
     )
     assert response.status_code == 200, response.text
 
@@ -271,7 +271,7 @@ async def test_save_with_stale_active_version_rejected(admin_client, session_fac
         await session.commit()
 
     response = await admin_client.post(
-        "/api/rulesets/save", json={"yaml": _dump_yaml(config), "simulation_id": result["simulation_id"]}
+        "/api/rulesets/save", json={"yaml": _dump_yaml(config), "simulation_id": result["simulation_id"], "comment": "тест: публикация для проверки"}
     )
     assert response.status_code == 409
     assert "повторите симуляцию" in response.json()["detail"]
@@ -290,7 +290,7 @@ async def test_save_with_expired_simulation_rejected(admin_client, session_facto
         await session.commit()
 
     response = await admin_client.post(
-        "/api/rulesets/save", json={"yaml": _dump_yaml(config), "simulation_id": result["simulation_id"]}
+        "/api/rulesets/save", json={"yaml": _dump_yaml(config), "simulation_id": result["simulation_id"], "comment": "тест: публикация для проверки"}
     )
     assert response.status_code == 409
     assert "устарела" in response.json()["detail"]
@@ -311,7 +311,7 @@ async def test_save_creates_new_active_version_and_writes_audit(admin_client, se
     simulation_id = sim_response.json()["simulation_id"]
 
     save_response = await admin_client.post(
-        "/api/rulesets/save", json={"yaml": new_yaml, "simulation_id": simulation_id}
+        "/api/rulesets/save", json={"yaml": new_yaml, "simulation_id": simulation_id, "comment": "тест: публикация для проверки"}
     )
     assert save_response.status_code == 200, save_response.text
     new_version = save_response.json()["version"]
@@ -549,7 +549,7 @@ async def test_admin_forbidden_from_saving(admin_client, session_factory, active
     config = load_config(active_ruleset)
 
     response = await admin_client.post(
-        "/api/rulesets/save", json={"yaml": _dump_yaml(config), "simulation_id": str(uuid.uuid4())}
+        "/api/rulesets/save", json={"yaml": _dump_yaml(config), "simulation_id": str(uuid.uuid4()), "comment": "тест: публикация для проверки"}
     )
     assert response.status_code == 403
 
@@ -570,3 +570,62 @@ async def test_admin_forbidden_from_accepting_file(admin_client, session_factory
 
     response = await admin_client.post("/api/rulesets/accept-file")
     assert response.status_code == 403
+
+
+async def test_save_requires_nonblank_comment(admin_client, session_factory, active_ruleset):
+    await create_employee(session_factory, email="rm9@example.com", role="risk_manager")
+    await login(admin_client, "rm9@example.com")
+    config = load_config(active_ruleset)
+    yaml_text = _dump_yaml(config)
+
+    sim = await admin_client.post("/api/rulesets/simulate", json={"yaml": yaml_text})
+    simulation_id = sim.json()["simulation_id"]
+
+    for bad in ("", "   "):
+        response = await admin_client.post(
+            "/api/rulesets/save", json={"yaml": yaml_text, "simulation_id": simulation_id, "comment": bad}
+        )
+        assert response.status_code == 422, bad
+    missing = await admin_client.post("/api/rulesets/save", json={"yaml": yaml_text, "simulation_id": simulation_id})
+    assert missing.status_code == 422
+
+
+async def test_save_stores_publish_comment_as_version_comment(admin_client, session_factory, active_ruleset):
+    await create_employee(session_factory, email="rm10@example.com", role="risk_manager")
+    await login(admin_client, "rm10@example.com")
+    config = load_config(active_ruleset)
+    raw = config.model_dump(mode="json")
+    raw["comment"] = "в файле другой комментарий"
+    raw["effective_from"] = date.today().isoformat()
+    new_yaml = yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
+
+    sim = await admin_client.post("/api/rulesets/simulate", json={"yaml": new_yaml})
+    save = await admin_client.post(
+        "/api/rulesets/save",
+        json={"yaml": new_yaml, "simulation_id": sim.json()["simulation_id"], "comment": "  Поднял порог отказа  "},
+    )
+    assert save.status_code == 200, save.text
+
+    versions = (await admin_client.get("/api/rulesets/versions")).json()["versions"]
+    assert versions[0]["comment"] == "Поднял порог отказа"
+
+
+async def test_versions_list_describes_typed_changes_between_versions(admin_client, session_factory, active_ruleset):
+    await create_employee(session_factory, email="rm11@example.com", role="risk_manager")
+    await login(admin_client, "rm11@example.com")
+    base = load_config(active_ruleset).model_dump(mode="json")
+    base["effective_from"] = date.today().isoformat()
+    base["score_thresholds"]["auto_reject_below"] = 460
+    new_yaml = yaml.safe_dump(base, sort_keys=False, allow_unicode=True)
+
+    sim = await admin_client.post("/api/rulesets/simulate", json={"yaml": new_yaml})
+    save = await admin_client.post(
+        "/api/rulesets/save",
+        json={"yaml": new_yaml, "simulation_id": sim.json()["simulation_id"], "comment": "подняли порог отказа"},
+    )
+    assert save.status_code == 200, save.text
+
+    versions = (await admin_client.get("/api/rulesets/versions")).json()["versions"]
+    latest = versions[0]
+    assert "Порог отказа (балл БКИ): 450 → 460" in latest["changes"]
+    assert versions[-1]["changes"] == []  # самая ранняя версия — без предыдущей, сравнивать не с чем

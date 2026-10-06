@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Заявка №24 — одобрено (макет)</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; font-size: 13px; }
+  .kv dt { color: var(--text-muted); }
+  .kv dd { margin: 0; }
+  .section-group { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-logo">DIALOG Scoring</div>
+    <a class="sidebar-item active" href="applications-list.html">📋 Заявки</a>
+    <a class="sidebar-item" href="scoring.html">🎚️ Скоринг</a>
+    <a class="sidebar-item" href="analytics.html">📊 Аналитика</a>
+    <a class="sidebar-item" href="#">💼 Портфель</a>
+    <a class="sidebar-item" href="#">⚙️ Настройки</a>
+    <div class="sidebar-foot">Риск-менеджер · Анна К.</div>
+  </nav>
+  <main class="main">
+    <p><a href="applications-list.html">← к списку заявок</a></p>
+
+    <div class="verdict approve">
+      <div>
+        <p class="verdict-title">Одобрено</p>
+        <p class="verdict-reason">Все проверки пройдены, долговая нагрузка в норме, балл БКИ выше порога автоодобрения.</p>
+        <p class="verdict-meta">
+          <span>Заявка №24 (у заказчика APP-9f3a-000024)</span>
+          <span>Стадия Б</span>
+          <span>В работе: 14 мин с момента «Рассмотреть»</span>
+        </p>
+      </div>
+      <div class="verdict-score">
+        <div class="score-value">780 <span class="unit">
+          <span class="term" tabindex="0">баллов БКИ<span class="q">?</span>
+            <span class="tip">Скоринговый балл кредитного бюро (НБКИ/ОКБ — зависит от подключённого бюро), не наш собственный расчёт. Шкала бюро: чем выше, тем надёжнее заёмщик по данным о прошлых кредитах.</span>
+          </span>
+        </span></div>
+        <div class="score-scale"><div class="marker" style="left: 78%;"></div></div>
+        <div class="score-scale-labels"><span>0 — отказ</span><span>450</span><span>700 — автоодобрение</span><span>999</span></div>
+        <p class="faint" style="margin-top:6px;">Порог для этой суммы (72 000 ₽) — 700. Для сделок дороже 200 000 ₽ порог выше (780) — см. «Скоринг».</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Почему такое решение</h2>
+      <p class="muted" style="margin:0 0 10px;">Сработавших стоп-факторов нет. Решение — по баллу БКИ выше порога автоодобрения.</p>
+      <p style="margin:0;font-size:13px;">
+        <span class="term" tabindex="0">ПДН<span class="q">?</span><span class="tip">Показатель долговой нагрузки — доля дохода, уходящая на платежи по долгам. Выше допустимого — повод для отказа или ручной проверки.</span></span>
+        по заявленным данным: 32% (допустимо до 55%) — в норме.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Что проверили</h2>
+      <table class="data">
+        <thead><tr><th>Источник</th><th>Кто</th><th>Результат</th><th>Когда</th></tr></thead>
+        <tbody>
+          <tr><td><span style="color:#d1293d;border:1px solid rgba(209,41,61,.4);background:rgba(209,41,61,.1);padding:2px 8px;border-radius:5px;font-weight:600;">Чёрный список</span></td><td class="muted">заявитель</td><td><span class="pill ok">не найден</span></td><td class="muted">сегодня, 12:34</td></tr>
+          <tr><td><span style="color:#2952e3;border:1px solid rgba(41,82,227,.4);background:rgba(41,82,227,.1);padding:2px 8px;border-radius:5px;font-weight:600;">МВД — паспорт</span></td><td class="muted">заявитель</td><td><span class="pill ok">действителен</span></td><td class="muted">сегодня, 12:34</td></tr>
+          <tr><td><span style="color:#9a2fd6;border:1px solid rgba(154,47,214,.4);background:rgba(154,47,214,.1);padding:2px 8px;border-radius:5px;font-weight:600;">Росфинмониторинг</span></td><td class="muted">заявитель</td><td><span class="pill ok">нет совпадений</span></td><td class="muted">сегодня, 12:34</td></tr>
+          <tr><td><span style="color:#17824e;border:1px solid rgba(23,130,78,.4);background:rgba(23,130,78,.1);padding:2px 8px;border-radius:5px;font-weight:600;">ФНС — ИНН</span></td><td class="muted">заявитель</td><td><span class="pill ok">найден</span></td><td class="muted">сегодня, 12:35 (фоном)</td></tr>
+          <tr><td><span style="color:#0a7ea4;border:1px solid rgba(10,126,164,.4);background:rgba(10,126,164,.1);padding:2px 8px;border-radius:5px;font-weight:600;">ФССП</span></td><td class="muted">заявитель</td><td><span class="pill ok">ничего не найдено</span></td><td class="muted">сегодня, 12:40 (оператор)</td></tr>
+          <tr><td><span style="color:#6b46c1;border:1px solid rgba(107,70,193,.4);background:rgba(107,70,193,.1);padding:2px 8px;border-radius:5px;font-weight:600;">БКИ</span></td><td class="muted">заявитель</td><td><span class="pill ok">отчёт получен, балл 780</span></td><td class="muted">сегодня, 12:41</td></tr>
+        </tbody>
+      </table>
+      <p class="muted" style="margin:10px 0 0;font-size:12px;">Федресурс (банкротство) — не автоматизировано, проверьте вручную на <a href="#">fedresurs.ru</a>.</p>
+    </div>
+
+    <div class="section-group">
+      <div class="card">
+        <h2>Клиент</h2>
+        <dl class="kv">
+          <dt>ФИО</dt><dd>Хороший Антон Петрович</dd>
+          <dt>Дата рождения</dt><dd>12.04.1988 (37 лет)</dd>
+          <dt>Телефон</dt><dd>+7 999 000-00-02</dd>
+          <dt>Адрес регистрации</dt><dd>г. Казань, ул. Примерная, д. 2</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h2>Сделка</h2>
+        <dl class="kv">
+          <dt>Товар</dt><dd>Холодильник, 80 000 ₽</dd>
+          <dt>Первый взнос</dt><dd>8 000 ₽</dd>
+          <dt>Одобрено</dt><dd>72 000 ₽ на 18 мес., тариф «стандартный»</dd>
+          <dt>Доход (заявлено)</dt><dd>95 000 ₽/мес.</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>История</h2>
+      <table class="data">
+        <thead><tr><th>Событие</th><th>Кто</th><th>Когда</th></tr></thead>
+        <tbody>
+          <tr><td>Заявка поступила</td><td class="muted">система</td><td class="muted">сегодня, 12:30</td></tr>
+          <tr><td>Распознан паспорт</td><td class="muted">система</td><td class="muted">сегодня, 12:31</td></tr>
+          <tr><td>Передано оператору</td><td class="muted">система</td><td class="muted">сегодня, 12:32</td></tr>
+          <tr><td>Нажал «Рассмотреть»</td><td class="muted">оператор (система заказчика)</td><td class="muted">сегодня, 12:40</td></tr>
+          <tr><td>Одобрено</td><td class="muted">система</td><td class="muted">сегодня, 12:41</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+</body>
+</html>

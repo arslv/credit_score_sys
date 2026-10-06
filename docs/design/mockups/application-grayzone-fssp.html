@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Заявка №25 — серая зона, ФССП не проверено (макет)</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; font-size: 13px; }
+  .kv dt { color: var(--text-muted); }
+  .kv dd { margin: 0; }
+  .section-group { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-logo">DIALOG Scoring</div>
+    <a class="sidebar-item active" href="applications-list.html">📋 Заявки</a>
+    <a class="sidebar-item" href="scoring.html">🎚️ Скоринг</a>
+    <a class="sidebar-item" href="analytics.html">📊 Аналитика</a>
+    <a class="sidebar-item" href="#">💼 Портфель</a>
+    <a class="sidebar-item" href="#">⚙️ Настройки</a>
+    <div class="sidebar-foot">Оператор · Марат С.</div>
+  </nav>
+  <main class="main">
+    <p><a href="applications-list.html">← к списку заявок</a></p>
+
+    <div class="verdict gray">
+      <div>
+        <p class="verdict-title">
+          <span class="term" tabindex="0">Серая зона<span class="q">?</span><span class="tip">Ни одобрить, ни отказать автоматически нельзя — нужно решение риск-менеджера или оператора вручную.</span></span>
+        </p>
+        <p class="verdict-reason">Балл БКИ выше порога отказа, но ФССП не проверено — без этого одобрить нельзя ни при каком балле.</p>
+        <p class="verdict-meta">
+          <span>Заявка №25 (у заказчика APP-9f3a-000025)</span>
+          <span>Стадия Б</span>
+          <span>В работе: 2 ч 10 мин</span>
+        </p>
+      </div>
+      <div class="verdict-score">
+        <div class="score-value">640 <span class="unit">баллов БКИ</span></div>
+        <div class="score-scale"><div class="marker" style="left: 64%;"></div></div>
+        <div class="score-scale-labels"><span>0</span><span>450</span><span>700</span><span>999</span></div>
+        <p class="faint" style="margin-top:6px;">Балл сам по себе в серой зоне (450–700) — но решение здесь не из-за балла, а из-за непройденной проверки ФССП (см. ниже).</p>
+      </div>
+    </div>
+
+    <div class="action-panel">
+      <h2>Нужно сделать</h2>
+      <div class="action-item">
+        <span><strong>Проверить ФССП</strong> — без этого одобрение недоступно ни при каком балле БКИ</span>
+        <a class="btn primary" href="#">Открыть блок ФССП</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Почему такое решение</h2>
+      <div class="rule-hit">
+        <span class="dot" style="background: var(--decision-gray);"></span>
+        <div class="rule-hit-body">
+          <strong>ФССП не проверено</strong>
+          <span>Проверка исполнительных производств требует капчи, которую вводит человек — без неё система не может ни одобрить, ни отказать по этому основанию, только отправить на ручное решение.</span>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:10px;font-size:13px;">
+        <span class="term" tabindex="0">ПДН<span class="q">?</span><span class="tip">Показатель долговой нагрузки — доля дохода на платежи по долгам.</span></span>
+        по данным БКИ: 41% (допустимо до 55%) — в норме, не является причиной.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Что проверили</h2>
+      <table class="data">
+        <thead><tr><th>Источник</th><th>Кто</th><th>Результат</th><th>Когда</th></tr></thead>
+        <tbody>
+          <tr><td><span style="color:#2952e3;border:1px solid rgba(41,82,227,.4);background:rgba(41,82,227,.1);padding:2px 8px;border-radius:5px;font-weight:600;">МВД — паспорт</span></td><td class="muted">заявитель</td><td><span class="pill ok">действителен</span></td><td class="muted">вчера, 16:02</td></tr>
+          <tr><td><span style="color:#17824e;border:1px solid rgba(23,130,78,.4);background:rgba(23,130,78,.1);padding:2px 8px;border-radius:5px;font-weight:600;">ФНС — ИНН</span></td><td class="muted">заявитель</td><td><span class="pill ok">найден</span></td><td class="muted">вчера, 16:05</td></tr>
+          <tr><td><span style="color:#6b46c1;border:1px solid rgba(107,70,193,.4);background:rgba(107,70,193,.1);padding:2px 8px;border-radius:5px;font-weight:600;">БКИ</span></td><td class="muted">заявитель</td><td><span class="pill ok">отчёт получен, балл 640</span></td><td class="muted">вчера, 16:06</td></tr>
+          <tr><td><span style="color:#0a7ea4;border:1px solid rgba(10,126,164,.4);background:rgba(10,126,164,.1);padding:2px 8px;border-radius:5px;font-weight:600;">ФССП</span></td><td class="muted">заявитель</td><td><span class="pill pending">не проверено</span></td><td class="muted">—</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="border-color: var(--decision-gray);">
+      <h2 style="color: var(--decision-gray);">ФССП — заявитель</h2>
+      <p class="muted" style="margin:0 0 12px;">Регион по адресу регистрации — подсказан, но не выбирается автоматически.</p>
+      <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">Регион (подсказано: Республика Татарстан)</label>
+      <select style="width:280px;padding:8px 10px;border:1px solid var(--border-strong);border-radius:6px;margin-bottom:12px;">
+        <option>Республика Татарстан</option>
+        <option>— выбрать другой —</option>
+      </select><br>
+      <button class="btn primary">Запросить капчу</button>
+    </div>
+  </main>
+</div>
+</body>
+</html>

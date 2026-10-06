@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import { Badge } from "../components/Badge";
+import { checkResultLabel } from "../lib/labels";
 
 // T16: капчу решает только человек (жёсткое правило) — ни авторешения, ни
 // внешних сервисов распознавания здесь нет и быть не может. Два шага вручную:
@@ -151,7 +151,7 @@ export function FsspPanel({
     <div className="card">
       <p style={{ marginTop: 0 }}>
         <strong>ФССП — {subjectLabel}</strong>{" "}
-        {latestCheck ? <Badge value={latestCheck.status} /> : <span className="muted">не проверено</span>}
+        {latestCheck ? checkResultLabel("fssp", latestCheck.status) : <span className="muted">не проверено</span>}
       </p>
 
       {hasPostDecisionAlert && (

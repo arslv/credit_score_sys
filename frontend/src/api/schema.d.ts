@@ -787,6 +787,8 @@ export interface components {
             has_guarantor: boolean;
             /** Guarantor Id */
             guarantor_id: string | null;
+            /** Goods Category */
+            goods_category: string | null;
             /** Fssp Post Decision Alert Subjects */
             fssp_post_decision_alert_subjects: string[];
             /** Profile */
@@ -796,6 +798,10 @@ export interface components {
             ocr_result: components["schemas"]["OcrResultOut"] | null;
             /** External Snapshots */
             external_snapshots: components["schemas"]["ExternalSnapshotOut"][];
+            /** Guarantor Profile */
+            guarantor_profile: {
+                [key: string]: unknown;
+            } | null;
         };
         /** ApplicationListItem */
         ApplicationListItem: {
@@ -1135,6 +1141,8 @@ export interface components {
             }[];
             /** Triggered Rules Text */
             triggered_rules_text: string[];
+            /** Reason Text */
+            reason_text: string | null;
             /** Score */
             score: string | null;
             /** Score Source */
@@ -1157,6 +1165,14 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Score Auto Approve Above */
+            score_auto_approve_above: number | null;
+            /** Score Auto Reject Below */
+            score_auto_reject_below: number | null;
+            /** Pti Max */
+            pti_max: number | null;
+            /** Pti */
+            pti: number | null;
         };
         /** DelinquencyBucketItem */
         DelinquencyBucketItem: {
@@ -1395,6 +1411,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Decision Stage */
+            decision_stage: string | null;
             /** From Outcome */
             from_outcome: string;
             /** To Outcome */
@@ -1634,6 +1652,8 @@ export interface components {
              * Format: uuid
              */
             simulation_id: string;
+            /** Comment */
+            comment: string;
         };
         /** ScheduleItemOut */
         ScheduleItemOut: {

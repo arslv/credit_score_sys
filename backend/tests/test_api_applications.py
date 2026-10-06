@@ -3,14 +3,27 @@ admin/viewer, повтор проверки недоступного источ�
 только ФНС — fns_inn/fns_npd/fns_egrip, T16; ФССП туда не входит вообще, у
 него свой экран с капчей)."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
 from sqlalchemy import select
 
 from app.engine.pipeline import run_stage_a
+from app.engine.stage_b_pipeline import STAGE_B_FEATURE_SET_VERSION
+from app.engine.versions import get_active_ruleset_version
+from app.engine.schema import parse_ruleset
+from app.engine.versions import save_ruleset_version
 from app.integrations.adapter import _content_hash
-from app.models import AuditLog, Check, Decision, ExternalSnapshot, ManualOverride
+from app.models import (
+    Application,
+    AuditLog,
+    Check,
+    Decision,
+    ExternalSnapshot,
+    FeatureSnapshot,
+    GoodsCategory,
+    ManualOverride,
+)
 from app.ocr.fake_provider import FakeOcrProvider, build_ocr_result
 from app.sources.fns import FakeFnsInnSource
 from tests._admin_helpers import create_employee, login
@@ -302,3 +315,129 @@ async def test_discrepancies_only_filter_shows_only_mismatched_overrides(
     ids = {item["id"] for item in response.json()["items"]}
     assert str(mismatch_id) in ids
     assert str(match_id) not in ids
+
+
+async def test_decision_thresholds_come_from_own_ruleset_version_not_current(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """T17, шаг 3 (ваше явное указание): пороги в карточке — из версии
+    правил, по которой ПРИНЯТО решение, а не из текущей активной. Меняем
+    порог ПОСЛЕ решения — старое решение должно по-прежнему показывать
+    старое число."""
+    application_id, _ = await _good_applicant(
+        partner_admin, partner_client, storage, session_factory, active_ruleset,
+    )
+    # active_ruleset — dev.yaml как есть: auto_approve_above=700, pti_max=0.60.
+    original_approve_above = active_ruleset.config["score_thresholds"]["auto_approve_above"]
+    assert original_approve_above == 700
+
+    # Публикуем НОВУЮ версию с другим порогом и более поздним effective_from —
+    # она становится активной, старое решение при этом не трогаем (append-only).
+    raw = dict(active_ruleset.config)
+    raw["score_thresholds"] = {**raw["score_thresholds"], "auto_approve_above": 650}
+    raw["effective_from"] = date.today().isoformat()
+    new_config = parse_ruleset(raw)
+    async with session_factory() as session:
+        await save_ruleset_version(session, new_config)
+        await session.commit()
+
+    await create_employee(session_factory, email="rm6@example.com", role="risk_manager")
+    await login(admin_client, "rm6@example.com")
+
+    response = await admin_client.get(f"/api/applications/{application_id}")
+    assert response.status_code == 200
+    decision = response.json()["decisions"][0]
+    assert decision["score_auto_approve_above"] == 700  # версия решения, не текущая (650)
+    assert decision["pti_max"] == 0.60
+
+
+async def test_card_explains_reject_without_triggered_rules_and_exposes_stage_b_pti(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Карточка не должна писать «стоп-факторов нет» там, где решение —
+    отказ. Повторная заморозка по перечню пишет triggered_rules=[] (см.
+    _reject_for_active_freeze) — причина должна прийти текстом из reason_code.
+    Одобрение стадии Б отдаёт фактический ПДН и порог из ЕГО версии правил,
+    чтобы карточка сравнивала «ПДН против порога», а не пересказывала его."""
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
+    await run_stage_a(session_factory, application_id, ocr_provider=ocr_provider, partner_client=partner_client, storage=storage)
+
+    async with session_factory() as session:
+        ruleset_row = await get_active_ruleset_version(session)
+        session.add(
+            Decision(
+                application_id=application_id, stage="A", outcome="reject", reason_code="SANCTIONS_HIT",
+                freeze=True, triggered_rules=[], ruleset_version_id=ruleset_row.id, feature_snapshot_id=None,
+            )
+        )
+        snapshot = FeatureSnapshot(
+            application_id=application_id, stage="B",
+            features={"score": 780, "features": {"pti": 0.31}}, feature_set_ver=STAGE_B_FEATURE_SET_VERSION,
+        )
+        session.add(snapshot)
+        await session.flush()
+        session.add(
+            Decision(
+                application_id=application_id, stage="B", outcome="approve", reason_code=None,
+                freeze=False, triggered_rules=[], ruleset_version_id=ruleset_row.id,
+                feature_snapshot_id=snapshot.id, score=780, score_source="bki_score",
+            )
+        )
+        await session.commit()
+
+    await create_employee(session_factory, email="rm_pti@example.com", role="risk_manager")
+    await login(admin_client, "rm_pti@example.com")
+
+    response = await admin_client.get(f"/api/applications/{application_id}")
+    assert response.status_code == 200
+    decisions = response.json()["decisions"]
+
+    rejected = next(d for d in decisions if d["reason_code"] == "SANCTIONS_HIT")
+    assert rejected["triggered_rules_text"] == []
+    assert rejected["reason_text"] and "перечн" in rejected["reason_text"]
+    assert "SANCTIONS_HIT" not in rejected["reason_text"]
+
+    approved = next(d for d in decisions if d["outcome"] == "approve")
+    assert approved["reason_text"] is None
+    assert approved["pti"] == 0.31
+    assert approved["pti_max"] is not None
+    assert approved["score_auto_approve_above"] is not None
+
+
+async def test_card_exposes_decision_stage_for_overrides_and_goods_category_name(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Ручной итог хранит этап решения, которое переопределили: «передано
+    оператору» на стадии А и «серая зона» на стадии Б — разные подписи.
+    Категория товара — название из справочника, не код из анкеты."""
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(30)))
+    await run_stage_a(session_factory, application_id, ocr_provider=ocr_provider, partner_client=partner_client, storage=storage)
+
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalars().first()
+        category = (await session.execute(select(GoodsCategory).limit(1))).scalars().first()
+        assert category is not None, "справочник категорий засеян миграцией 0007"
+        application = await session.get(Application, application_id)
+        application.goods_category_id = category.id
+        session.add(
+            ManualOverride(
+                application_id=application_id, decision_id=decision.id,
+                from_outcome="manual_review", to_outcome="approve", reason_code="PARTNER_OPERATOR_OVERRIDE_APPROVE",
+            )
+        )
+        await session.commit()
+        category_name = category.name
+
+    await create_employee(session_factory, email="rm_stage@example.com", role="risk_manager")
+    await login(admin_client, "rm_stage@example.com")
+
+    response = await admin_client.get(f"/api/applications/{application_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["goods_category"] == category_name
+    assert body["manual_overrides"][0]["decision_stage"] == "A"
+

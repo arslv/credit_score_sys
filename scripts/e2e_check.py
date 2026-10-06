@@ -92,11 +92,9 @@ def _dc(*args: str, env: dict[str, str] | None = None, input_bytes: bytes | None
 RUNNER_SERVICE = "api"
 
 
-def _copy_runner() -> None:
-    subprocess.run(
-        ["docker", "compose", "cp", "scripts/_e2e_runner.py", f"{RUNNER_SERVICE}:/app/_e2e_runner.py"],
-        cwd=REPO_ROOT, check=True, capture_output=True,
-    )
+# Раннер передаётся в контейнер текстом (python3 -c), а не копируется внутрь:
+# копии в контейнере переживали правки и давали прогон на старом коде.
+RUNNER_SOURCE = (REPO_ROOT / "scripts" / "_e2e_runner.py").read_text(encoding="utf-8")
 
 
 def _write_fixture(path: str, content: dict) -> None:
@@ -115,14 +113,14 @@ def run_worker_task(task: str, *, bki_mode: str | None = None) -> dict:
     elif bki_mode == "not_configured":
         env["BKI_PROVIDER_MODE"] = "not_configured"
     out = _dc(
-        RUNNER_SERVICE, "python3", "_e2e_runner.py", "run_task",
+        RUNNER_SERVICE, "python3", "-c", RUNNER_SOURCE, "run_task",
         env=env, input_bytes=json.dumps({"task": task}).encode(),
     )
     return json.loads(out)
 
 
 def runner_action(action: str, args: dict) -> dict:
-    out = _dc(RUNNER_SERVICE, "python3", "_e2e_runner.py", action, input_bytes=json.dumps(args).encode())
+    out = _dc(RUNNER_SERVICE, "python3", "-c", RUNNER_SOURCE, action, input_bytes=json.dumps(args).encode())
     return json.loads(out)
 
 
@@ -512,7 +510,14 @@ def main() -> int:
         print("ОШИБКА: fake_partner недоступен на http://localhost:8100 — поднят ли docker compose?")
         return 2
 
-    _copy_runner()
+    # Сброс заглушки перед прогоном: новый префикс external_id, без коллизий с
+    # заявками из прошлых прогонов, уже лежащими в БД (приём идемпотентен по
+    # external_id — повторная заявка молча не обрабатывается).
+    status, _ = _partner_request("POST", "/_test/reset")
+    if status != 204:
+        print(f"ОШИБКА: не удалось сбросить fake_partner (HTTP {status})")
+        return 2
+
 
     # celery beat в постоянно поднятом docker compose сам, по расписанию,
     # гоняет те же задачи — с ДЕФОЛТНЫМ окружением контейнера (реальный

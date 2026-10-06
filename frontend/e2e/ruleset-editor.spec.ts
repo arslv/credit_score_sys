@@ -17,10 +17,13 @@ test("правила и пороги: изменил порог → симуля
   const original = await autoRejectBelow.inputValue();
   await autoRejectBelow.fill(String(Number(original) + 1));
 
-  await page.getByRole("button", { name: "Симулировать" }).click();
+  await page.getByRole("button", { name: "Проверить на истории" }).click();
   await expect(page.getByText(/В выборке \d+/)).toBeVisible({ timeout: 15_000 });
 
-  const saveButton = page.getByRole("button", { name: "Сохранить" });
+  // T17, шаг 3: публикация требует комментарий — без него кнопка неактивна.
+  const saveButton = page.getByRole("button", { name: "Опубликовать" });
+  await expect(saveButton).toBeDisabled();
+  await page.getByLabel("Комментарий к версии (обязательно)").fill("e2e: поднял порог отказа для проверки");
   await expect(saveButton).toBeEnabled();
   await saveButton.click();
 
@@ -75,7 +78,7 @@ test("admin не видит раздел «Правила и пороги» и �
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
 
-  await expect(page.getByRole("link", { name: "Правила и пороги" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Скоринг" })).toHaveCount(0);
 
   await page.goto("/rulesets");
   await expect(page.getByText("Недостаточно прав.")).toBeVisible();

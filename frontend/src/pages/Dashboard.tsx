@@ -166,8 +166,13 @@ export function DashboardPage() {
 
           <div className="card">
             <h2 style={{ marginTop: 0 }}>Недоступность источников</h2>
-            {query.data.source_availability.length === 0 && <p className="muted">Проверок за период нет.</p>}
-            {query.data.source_availability.length > 0 && (
+            {/* T17, шаг 3 (ваше явное указание): МВД не показываем — файл
+                недействительных паспортов отменён в 2023, источник не
+                подключён. */}
+            {(() => {
+              const sources = query.data.source_availability.filter((s) => s.source !== "mvd");
+              if (sources.length === 0) return <p className="muted">Проверок за период нет.</p>;
+              return (
               <table className="table table--compact">
                 <thead>
                   <tr>
@@ -178,7 +183,7 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {query.data.source_availability.map((s) => (
+                  {sources.map((s) => (
                     <tr key={s.source}>
                       <td>
                         <SourceBadge source={s.source} />
@@ -190,7 +195,8 @@ export function DashboardPage() {
                   ))}
                 </tbody>
               </table>
-            )}
+              );
+            })()}
           </div>
 
           <div className="card">

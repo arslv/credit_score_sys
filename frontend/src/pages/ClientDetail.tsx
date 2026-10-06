@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { Badge } from "../components/Badge";
+import { applicationStatusLabel } from "../lib/labels";
 import { formatDate, formatDateTime } from "../lib/format";
 
 export function ClientDetailPage() {
@@ -58,7 +59,7 @@ export function ClientDetailPage() {
                 <td>{a.external_id}</td>
                 <td className="muted">{formatDateTime(a.submitted_at)}</td>
                 <td>
-                  <Badge value={a.status} />
+                  <Badge value={a.status} label={applicationStatusLabel(a.status)} />
                 </td>
               </tr>
             ))}

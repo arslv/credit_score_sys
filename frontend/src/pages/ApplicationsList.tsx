@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { Badge } from "../components/Badge";
 import { formatAmount, formatDateTime } from "../lib/format";
-import { applicationStatusLabel } from "../lib/labels";
+import { applicationStatusLabel, decisionOutcomeLabel } from "../lib/labels";
 
 const PAGE_SIZE = 25;
 
@@ -130,10 +130,10 @@ export function ApplicationsListPage() {
                   <Badge value={item.status} label={applicationStatusLabel(item.status)} />
                 </td>
                 <td>
-                  <Badge value={item.stage_a_outcome} />
+                  <Badge value={item.stage_a_outcome} label={item.stage_a_outcome ? decisionOutcomeLabel("A", item.stage_a_outcome) : undefined} />
                 </td>
                 <td>
-                  <Badge value={item.stage_b_outcome} />
+                  <Badge value={item.stage_b_outcome} label={item.stage_b_outcome ? decisionOutcomeLabel("B", item.stage_b_outcome) : undefined} />
                 </td>
                 <td>{item.score ?? "—"}</td>
                 <td>

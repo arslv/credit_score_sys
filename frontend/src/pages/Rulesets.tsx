@@ -65,6 +65,7 @@ interface VersionRow {
   effective_from: string;
   created_at: string;
   is_active: boolean;
+  changes: string[];
 }
 
 interface VersionsResponse {
@@ -124,8 +125,13 @@ function ofWord(n: number): string {
 interface QuickField {
   key: string;
   label: string;
+  section: "thresholds" | "limits" | "pti";
+  help: string;
+  unit: string;
+  min: number;
+  max: number;
   percent?: boolean;
-  get: (config: any) => number | null | undefined;
+  get: (config: any) => unknown;
   set: (config: any, value: number) => void;
 }
 
@@ -133,41 +139,67 @@ function findRule(config: any, ruleId: string): any {
   return (config?.soft_rules ?? []).find((r: any) => r?.id === ruleId);
 }
 
+// Поля формы «Скоринг». Подписи и подсказки — здесь, а не в YAML: риск-менеджер
+// видит, что именно регулирует каждый порог. Границы — только ввод (не
+// бизнес-правило): значения вне диапазона не уйдут в публикацию. Инварианты
+// между полями (отказ ниже одобрения) проверяются отдельно ниже по тексту.
 const QUICK_FIELDS: QuickField[] = [
   {
-    key: "amount_min", label: "Мин. сумма",
-    get: (c) => c?.limits?.amount_min, set: (c, v) => { c.limits.amount_min = v; },
-  },
-  {
-    key: "amount_max", label: "Макс. сумма",
-    get: (c) => c?.limits?.amount_max, set: (c, v) => { c.limits.amount_max = v; },
-  },
-  {
-    key: "term_min", label: "Мин. срок, мес.",
-    get: (c) => c?.limits?.term_min, set: (c, v) => { c.limits.term_min = v; },
-  },
-  {
-    key: "term_max", label: "Макс. срок, мес.",
-    get: (c) => c?.limits?.term_max, set: (c, v) => { c.limits.term_max = v; },
-  },
-  {
-    key: "pti_max", label: "Долговая нагрузка: отказ выше", percent: true,
-    get: (c) => c?.limits?.pti_max, set: (c, v) => { c.limits.pti_max = v; },
-  },
-  {
-    key: "pti_high", label: "Долговая нагрузка: ручная проверка выше", percent: true,
-    get: (c) => findRule(c, "pti_high")?.value,
-    set: (c, v) => { const r = findRule(c, "pti_high"); if (r) r.value = v; },
-  },
-  {
-    key: "auto_approve_above", label: "Автоодобрение выше",
+    key: "auto_approve_above", label: "Автоодобрение выше", section: "thresholds", unit: "балл",
+    help: "Балл БКИ, выше которого заявка одобряется автоматически (при отсутствии стоп-факторов и пройденной ФССП). Для сделок дороже порога матрицы может действовать свой порог.",
+    min: 0, max: 999,
     get: (c) => c?.score_thresholds?.auto_approve_above, set: (c, v) => { c.score_thresholds.auto_approve_above = v; },
   },
   {
-    key: "auto_reject_below", label: "Автоотказ ниже",
+    key: "auto_reject_below", label: "Автоотказ ниже", section: "thresholds", unit: "балл",
+    help: "Балл БКИ, ниже которого отказ без ручного рассмотрения. Между отказом и одобрением — серая зона, решение за человеком.",
+    min: 0, max: 999,
     get: (c) => c?.score_thresholds?.auto_reject_below, set: (c, v) => { c.score_thresholds.auto_reject_below = v; },
   },
+  {
+    key: "amount_min", label: "Мин. сумма", section: "limits", unit: "₽",
+    help: "Минимальная сумма сделки, которую система рассматривает.",
+    min: 0, max: 100_000_000,
+    get: (c) => c?.limits?.amount_min, set: (c, v) => { c.limits.amount_min = v; },
+  },
+  {
+    key: "amount_max", label: "Макс. сумма", section: "limits", unit: "₽",
+    help: "Максимальная сумма сделки. Выше — заявка не рассматривается автоматически.",
+    min: 0, max: 100_000_000,
+    get: (c) => c?.limits?.amount_max, set: (c, v) => { c.limits.amount_max = v; },
+  },
+  {
+    key: "term_min", label: "Мин. срок, мес.", section: "limits", unit: "мес.",
+    help: "Минимальный срок рассрочки в месяцах.",
+    min: 1, max: 120,
+    get: (c) => c?.limits?.term_min, set: (c, v) => { c.limits.term_min = v; },
+  },
+  {
+    key: "term_max", label: "Макс. срок, мес.", section: "limits", unit: "мес.",
+    help: "Максимальный срок рассрочки в месяцах.",
+    min: 1, max: 120,
+    get: (c) => c?.limits?.term_max, set: (c, v) => { c.limits.term_max = v; },
+  },
+  {
+    key: "pti_max", label: "Долговая нагрузка: отказ выше", percent: true, section: "pti", unit: "%",
+    help: "ПДН — доля дохода, которая уходит на платежи по долгам. Выше этого значения — отказ.",
+    min: 0, max: 100,
+    get: (c) => c?.limits?.pti_max, set: (c, v) => { c.limits.pti_max = v; },
+  },
+  {
+    key: "pti_high", label: "Долговая нагрузка: ручная проверка выше", percent: true, section: "pti", unit: "%",
+    help: "ПДН выше этого значения, но не выше порога отказа — заявка уходит на ручную проверку.",
+    min: 0, max: 100,
+    get: (c) => findRule(c, "pti_high")?.value,
+    set: (c, v) => { const r = findRule(c, "pti_high"); if (r) r.value = v; },
+  },
 ];
+
+const SECTION_TITLES: Record<QuickField["section"], string> = {
+  thresholds: "Пороги решения (балл БКИ)",
+  limits: "Лимиты сделки",
+  pti: "Долговая нагрузка (ПДН)",
+};
 
 function ApplicationRowView({ row }: { row: ApplicationRow }) {
   return (
@@ -220,6 +252,16 @@ function ApplicationsTable({ title, rows, emptyText }: { title: string; rows: Ap
   );
 }
 
+function validateQuickField(f: QuickField, config: any): string | null {
+  const raw = f.get(config);
+  // В YAML числа иногда лежат строками ("0.6") — принимаем любое число-подобное значение.
+  const numeric = raw == null || raw === "" ? NaN : Number(raw);
+  if (Number.isNaN(numeric)) return "значение не задано";
+  const shown = f.percent ? Math.round(numeric * 1000) / 10 : numeric;
+  if (shown < f.min || shown > f.max) return `допустимо от ${f.min} до ${f.max} ${f.unit}`;
+  return null;
+}
+
 export function RulesetsPage() {
   const queryClient = useQueryClient();
   const [yamlText, setYamlText] = useState("");
@@ -230,6 +272,13 @@ export function RulesetsPage() {
   const [rollbackTarget, setRollbackTarget] = useState<number | null>(null);
   const [rollbackReason, setRollbackReason] = useState("");
   const [rollbackError, setRollbackError] = useState<string | null>(null);
+  const [publishComment, setPublishComment] = useState("");
+
+  // Симуляция относится к конкретному тексту конфига: любая правка сбрасывает её,
+  // иначе «Опубликовать» отправило бы устаревший прогон (бэкенд всё равно отклонит).
+  useEffect(() => {
+    setSimulation(null);
+  }, [yamlText]);
 
   const activeQuery = useQuery({
     queryKey: ["ruleset-active"],
@@ -263,6 +312,16 @@ export function RulesetsPage() {
   } catch (e) {
     parseError = e instanceof Error ? e.message : String(e);
   }
+
+  const fieldErrors: Record<string, string | null> = {};
+  for (const f of QUICK_FIELDS) fieldErrors[f.key] = parsed ? validateQuickField(f, parsed) : null;
+  const rejectBelow = parsed?.score_thresholds?.auto_reject_below;
+  const approveAbove = parsed?.score_thresholds?.auto_approve_above;
+  const orderError =
+    typeof rejectBelow === "number" && typeof approveAbove === "number" && rejectBelow >= approveAbove
+      ? "отказ должен быть ниже автоодобрения"
+      : null;
+  const hasInputErrors = !!parseError || !!orderError || Object.values(fieldErrors).some(Boolean);
 
   function updateQuickField(field: QuickField, raw: string) {
     if (!parsed || raw === "") return;
@@ -298,7 +357,7 @@ export function RulesetsPage() {
     mutationFn: async () => {
       if (!simulation) throw new Error("сначала прогоните симуляцию");
       const { data, error } = await api.POST("/api/rulesets/save", {
-        body: { yaml: yamlText, simulation_id: simulation.simulation_id },
+        body: { yaml: yamlText, simulation_id: simulation.simulation_id, comment: publishComment.trim() },
       });
       if (error) throw new Error(typeof (error as any).detail === "string" ? (error as any).detail : "не удалось сохранить");
       return data as unknown as { version: number };
@@ -307,6 +366,7 @@ export function RulesetsPage() {
       setSaveError(null);
       setSaveSuccess(`Сохранено как версия ${data.version}.`);
       setSimulation(null);
+      setPublishComment("");
       void queryClient.invalidateQueries({ queryKey: ["ruleset-versions"] });
       void queryClient.invalidateQueries({ queryKey: ["ruleset-active"] });
     },
@@ -361,7 +421,7 @@ export function RulesetsPage() {
 
   return (
     <section>
-      <h1>Правила и пороги</h1>
+      <h1>Скоринг</h1>
       <p className="muted">
         Активная версия: {activeQuery.data.version}
         {activeQuery.data.comment && ` — ${activeQuery.data.comment}`}
@@ -384,47 +444,72 @@ export function RulesetsPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 16 }}>
         <div>
-          <h2>Типовые пороги</h2>
-          {QUICK_FIELDS.map((f) => {
-            const raw = f.get(parsed);
-            const displayed = raw == null ? "" : f.percent ? Math.round(raw * 1000) / 10 : raw;
-            return (
-              <label className="field" key={f.key}>
-                {f.label}
-                {f.percent ? " (%)" : ""}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={String(displayed)}
-                  onChange={(e) => updateQuickField(f, e.target.value)}
-                />
-              </label>
-            );
-          })}
+          {(["thresholds", "limits", "pti"] as const).map((section) => (
+            <div key={section}>
+              <h2>{SECTION_TITLES[section]}</h2>
+              {QUICK_FIELDS.filter((f) => f.section === section).map((f) => {
+                const raw = parsed ? f.get(parsed) : null;
+                const displayed = raw == null ? "" : f.percent ? Math.round(Number(raw) * 1000) / 10 : (raw as number);
+                const err = fieldErrors[f.key];
+                return (
+                  <label className="field" key={f.key}>
+                    {f.label}
+                    {f.percent ? " (%)" : ""}
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={String(displayed)}
+                      aria-invalid={!!err}
+                      onChange={(e) => updateQuickField(f, e.target.value)}
+                    />
+                    <span className="muted" style={{ display: "block", fontSize: 12, marginTop: 4 }}>{f.help}</span>
+                    {err && <span role="alert" style={{ color: "var(--color-danger)", fontSize: 12 }}>{err}</span>}
+                  </label>
+                );
+              })}
+              {section === "thresholds" && orderError && (
+                <p role="alert" className="alert">{orderError}</p>
+              )}
+            </div>
+          ))}
 
-          <h2 style={{ marginTop: 16 }}>YAML</h2>
-          <textarea
-            value={yamlText}
-            onChange={(e) => setYamlText(e.target.value)}
-            rows={24}
-            style={{ width: "100%", fontFamily: "monospace" }}
-          />
-          {parseError && <p role="alert" className="alert">YAML не читается: {parseError}</p>}
+          <details style={{ marginTop: 16 }}>
+            <summary className="muted" style={{ cursor: "pointer" }}>Экспертный режим — YAML напрямую</summary>
+            <textarea
+              value={yamlText}
+              onChange={(e) => setYamlText(e.target.value)}
+              rows={24}
+              style={{ width: "100%", fontFamily: "monospace", marginTop: 8 }}
+            />
+            {parseError && <p role="alert" className="alert">YAML не читается: {parseError}</p>}
+          </details>
 
+          <div style={{ marginTop: 16 }}>
+            <button
+              className="btn btn-primary"
+              disabled={simulateMutation.isPending || hasInputErrors}
+              onClick={() => simulateMutation.mutate()}
+            >
+              Проверить на истории
+            </button>
+          </div>
+
+          <label className="field" style={{ marginTop: 16 }}>
+            Комментарий к версии (обязательно)
+            <input
+              type="text"
+              value={publishComment}
+              onChange={(e) => setPublishComment(e.target.value)}
+              placeholder="что меняете и зачем"
+            />
+          </label>
           <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
             <button
               className="btn btn-primary"
-              disabled={simulateMutation.isPending || !!parseError}
-              onClick={() => simulateMutation.mutate()}
-            >
-              Симулировать
-            </button>
-            <button
-              className="btn btn-primary"
-              disabled={!simulation || saveMutation.isPending}
+              disabled={!simulation || !publishComment.trim() || saveMutation.isPending}
               onClick={() => saveMutation.mutate()}
             >
-              Сохранить
+              Опубликовать
             </button>
           </div>
           {simulateError && <p role="alert" className="alert">{simulateError}</p>}
@@ -448,6 +533,11 @@ export function RulesetsPage() {
                       обе версии правил дают известный исход, они сравнивались; для {notCompared}{" "}
                       {ofWord(notCompared)} сравнение невозможно (подробности ниже). Симуляция действует до{" "}
                       {formatDateTime(simulation.expires_at)}.
+                    </p>
+                    <p style={{ marginTop: 12 }}>
+                      Новый конфиг одобрил бы{" "}
+                      {s.swap_in.length > 0 ? `ещё ${s.swap_in.length} ${countWord(s.swap_in.length)}` : "никого дополнительно"}
+                      {s.swap_out.length > 0 && `, и не одобрил бы ${s.swap_out.length} ${countWord(s.swap_out.length)}`}.
                     </p>
                     <table className="table table--kv">
                       <tbody>
@@ -566,7 +656,7 @@ export function RulesetsPage() {
               <th>Версия</th>
               <th>Комментарий</th>
               <th>Вступила в силу</th>
-              <th></th>
+              <th>Что изменилось</th>
               <th></th>
             </tr>
           </thead>
@@ -578,6 +668,7 @@ export function RulesetsPage() {
                 </td>
                 <td>{v.comment ?? "—"}</td>
                 <td>{formatDateTime(v.effective_from)}</td>
+                <td className="muted">{v.changes.length > 0 ? v.changes.join("; ") : "—"}</td>
                 <td>
                   {!v.is_active && (
                     <button className="btn btn-small" onClick={() => setRollbackTarget(v.version)}>

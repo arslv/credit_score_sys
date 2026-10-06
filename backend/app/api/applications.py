@@ -10,14 +10,16 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import get_session
 from app.engine.pipeline import _subject_from_ocr, unwrap_ocr_fields
-from app.integrations.status_mapping import _render_rule_text, get_all_reason_notes
+from app.engine.rules import resolve_matrix_overrides
+from app.engine.versions import load_config
+from app.integrations.status_mapping import _render_rule_text, build_operator_comment, get_all_reason_notes
 from app.models import (
     Application,
     BkiReport,
@@ -27,11 +29,13 @@ from app.models import (
     Document,
     Employee,
     ExternalSnapshot,
+    FeatureSnapshot,
     FsspPostDecisionAlert,
     GoodsCategory,
     Guarantor,
     ManualOverride,
     OcrResult,
+    RulesetVersion,
     StatusHistory,
 )
 from app.security.audit import record_audit
@@ -223,6 +227,12 @@ class DecisionOut(BaseModel):
     # переиспользует те же тексты reason_notes, что и комментарий оператору
     # (T11, app.integrations.status_mapping).
     triggered_rules_text: list[str]
+    # Причина целиком, когда сработавших правил в triggered_rules нет, а
+    # reason_code есть (например, повторная заморозка по перечню пишет
+    # triggered_rules=[] — см. _reject_for_active_freeze): без этого карточка
+    # честно не могла бы объяснить отказ. Тот же текст, что в комментарии
+    # оператору (build_operator_comment). None для одобрения.
+    reason_text: str | None
     score: Decimal | None
     score_source: str | None
     approved_amount: Decimal | None
@@ -231,6 +241,19 @@ class DecisionOut(BaseModel):
     required_down_pay: Decimal | None
     ruleset_version_id: UUID
     created_at: datetime
+    # T17, шаг 3 (ваше явное указание): пороги в карточке — ТОЛЬКО из версии
+    # правил, по которой принято ИМЕННО ЭТО решение (ruleset_version_id выше),
+    # не из текущей активной версии — иначе карточка старого решения «врёт»
+    # после правки порогов. auto_approve_above — с учётом матрицы (сумма
+    # сделки), тем же способом, что считает движок на момент решения
+    # (app.engine.rules.resolve_matrix_overrides).
+    score_auto_approve_above: float | None
+    score_auto_reject_below: float | None
+    pti_max: float | None
+    # Фактический ПДН решения (features.pti из снимка признаков стадии Б,
+    # тот же порог pti_max выше из версии правил этого решения) — для
+    # сравнения «ПДН против порога» в карточке.
+    pti: float | None
 
 
 class CheckOut(BaseModel):
@@ -269,6 +292,9 @@ class DocumentOut(BaseModel):
 
 class ManualOverrideOut(BaseModel):
     id: UUID
+    # Этап решения, которое переопределили: «передано оператору» на стадии А
+    # и «серая зона» на стадии Б — разные подписи, поэтому этап нужен фронту.
+    decision_stage: str | None
     from_outcome: str
     to_outcome: str
     reason_code: str
@@ -310,6 +336,9 @@ class ApplicationDetail(BaseModel):
     manual_overrides: list[ManualOverrideOut]
     has_guarantor: bool
     guarantor_id: UUID | None
+    # Категория товара — человекочитаемое название из справочника (код из
+    # анкеты заказчика в карточку не выводим, см. правило «без сырых кодов»).
+    goods_category: str | None
     # T16, п.3 ваших правок: ФССП пришёл ПОСЛЕ уже принятого решения и сработал
     # бы на hard_stop — список субъектов (applicant/guarantor), по которым это
     # случилось, для заметного предупреждения в карточке (fssp_post_decision_alerts).
@@ -397,6 +426,14 @@ async def get_application(
         ).scalars().all()
     )
 
+    goods_category = None
+    if application.goods_category_id is not None:
+        category_row = await session.get(GoodsCategory, application.goods_category_id)
+        if category_row is not None:
+            goods_category = category_row.name
+
+    stage_by_decision_id = {d.id: d.stage for d in decisions}
+
     notes = get_all_reason_notes()
     ocr_result = None
     profile = None
@@ -440,24 +477,65 @@ async def get_application(
         )
         await session.commit()
 
+    # T17, шаг 3: пороги для КАЖДОГО решения — из ЕГО СОБСТВЕННОЙ версии
+    # правил (ruleset_version_id), не из текущей активной — иначе карточка
+    # старого решения показывала бы порог, который на момент решения мог быть
+    # другим. Кэш на запрос — несколько решений часто ссылаются на одну и ту
+    # же версию (та же стадия, без правки правил между попытками).
+    thresholds_cache: dict[UUID, tuple[float | None, float | None, float | None]] = {}
+    decisions_out: list[DecisionOut] = []
+    for d in decisions:
+        thresholds = thresholds_cache.get(d.ruleset_version_id)
+        if thresholds is None:
+            ruleset_row = await session.get(RulesetVersion, d.ruleset_version_id)
+            thresholds = (None, None, None)
+            if ruleset_row is not None:
+                try:
+                    decision_config = load_config(ruleset_row)
+                except ValidationError:
+                    # Битая историческая строка не должна ронять всю карточку: это
+                    # только отображение порогов, решение от него не зависит.
+                    decision_config = None
+                if decision_config is not None:
+                    resolved, _missing = resolve_matrix_overrides(
+                        decision_config, {"amount": float(application.requested_amount)}
+                    )
+                    thresholds = (
+                        resolved.get("auto_approve_above"), resolved.get("auto_reject_below"),
+                        decision_config.limits.pti_max,
+                    )
+            thresholds_cache[d.ruleset_version_id] = thresholds
+        approve_above, reject_below, pti_max = thresholds
+        pti = None
+        if d.feature_snapshot_id is not None:
+            snapshot_row = await session.get(FeatureSnapshot, d.feature_snapshot_id)
+            if snapshot_row is not None:
+                pti = ((snapshot_row.features or {}).get("features") or {}).get("pti")
+        reason_text = None
+        if d.outcome != "approve" and (d.triggered_rules or d.reason_code):
+            reason_text = build_operator_comment(reason_code=d.reason_code, triggered_rules=d.triggered_rules)
+        decisions_out.append(
+            DecisionOut(
+                id=d.id, stage=d.stage, outcome=d.outcome, reason_code=d.reason_code, freeze=d.freeze,
+                triggered_rules=d.triggered_rules,
+                triggered_rules_text=[_render_rule_text(r, notes) for r in d.triggered_rules],
+                reason_text=reason_text,
+                score=d.score, score_source=d.score_source,
+                approved_amount=d.approved_amount, approved_term=d.approved_term,
+                offered_tariff=d.offered_tariff, required_down_pay=d.required_down_pay,
+                ruleset_version_id=d.ruleset_version_id, created_at=d.created_at,
+                score_auto_approve_above=approve_above, score_auto_reject_below=reject_below, pti_max=pti_max,
+                pti=pti,
+            )
+        )
+
     return ApplicationDetail(
         id=application.id, number=application.number, external_id=application.external_id,
         status=application.status, client_name=client_name, goods_name=application.goods_name,
         goods_price=application.goods_price, down_payment=application.down_payment,
         term_months=application.term_months, tariff=application.tariff,
         requested_amount=application.requested_amount, submitted_at=application.submitted_at,
-        decisions=[
-            DecisionOut(
-                id=d.id, stage=d.stage, outcome=d.outcome, reason_code=d.reason_code, freeze=d.freeze,
-                triggered_rules=d.triggered_rules,
-                triggered_rules_text=[_render_rule_text(r, notes) for r in d.triggered_rules],
-                score=d.score, score_source=d.score_source,
-                approved_amount=d.approved_amount, approved_term=d.approved_term,
-                offered_tariff=d.offered_tariff, required_down_pay=d.required_down_pay,
-                ruleset_version_id=d.ruleset_version_id, created_at=d.created_at,
-            )
-            for d in decisions
-        ],
+        decisions=decisions_out,
         checks=[
             CheckOut(
                 id=c.id, subject_type=c.subject_type, subject_id=c.subject_id, source=c.source, status=c.status,
@@ -482,13 +560,15 @@ async def get_application(
         ],
         manual_overrides=[
             ManualOverrideOut(
-                id=o.id, from_outcome=o.from_outcome, to_outcome=o.to_outcome, reason_code=o.reason_code,
+                id=o.id, decision_stage=stage_by_decision_id.get(o.decision_id),
+                from_outcome=o.from_outcome, to_outcome=o.to_outcome, reason_code=o.reason_code,
                 comment=o.comment, created_at=o.created_at,
             )
             for o in overrides
         ],
         has_guarantor=guarantor_id is not None,
         guarantor_id=guarantor_id,
+        goods_category=goods_category,
         guarantor_profile=guarantor_profile,
         fssp_post_decision_alert_subjects=fssp_alert_subjects,
         profile=profile,

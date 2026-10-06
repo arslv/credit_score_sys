@@ -83,7 +83,14 @@ export interface SourceMeta {
 // один и тот же зелёный для всей группы ФНС, старые строки checks (fns,
 // fedresurs) остаются читаемыми (правило 1 CLAUDE.md, append-only история).
 const SOURCE_META: Record<string, SourceMeta> = {
-  mvd: { label: "МВД — паспорт", color: "#2952e3" },
+  // T17, шаг 3 (ваше явное указание): источника МВД по факту нет — файл
+  // недействительных паспортов отменён в 2023, реестр за ним не обновляется.
+  // То, что реально проверяется этим чеком (локально, без внешнего
+  // источника) — формат и срок самого паспорта, не сверка с МВД. Строка
+  // всё равно скрыта из «Что проверили»/здоровья источников (см.
+  // ApplicationDetail.tsx/Dashboard.tsx) — название на случай, если она
+  // где-то всплывёт ещё (история checks и т.п.).
+  mvd: { label: "Паспорт — формат и срок", color: "#2952e3" },
   rosfinmon: { label: "Росфинмониторинг", color: "#9a2fd6" },
   blacklist: { label: "Чёрный список", color: "#d1293d" },
   fns: { label: "ФНС", color: "#17824e" },
@@ -94,6 +101,9 @@ const SOURCE_META: Record<string, SourceMeta> = {
   fssp: { label: "ФССП", color: "#0a7ea4" },
   bki: { label: "БКИ", color: "#6b46c1" },
 };
+
+// Ключи источников, для которых есть подпись и цвет (тест словаря обходит их все).
+export const KNOWN_SOURCE_KEYS: string[] = Object.keys(SOURCE_META);
 
 export function sourceMeta(source: string): SourceMeta {
   return SOURCE_META[source] ?? { label: source, color: "#667085" };
@@ -158,6 +168,18 @@ const APPLICATION_STATUS_LABELS: Record<string, string> = {
   expired: "Одобрение истекло",
 };
 
+const CONTRACT_STATUS_LABELS: Record<string, string> = {
+  active: "Действует",
+  closed: "Закрыт",
+  defaulted: "Дефолт",
+  repossessed: "Товар изъят",
+};
+
+// Статусы договора (app/models/contract.py CONTRACT_STATUSES).
+export function contractStatusLabel(status: string): string {
+  return CONTRACT_STATUS_LABELS[status] ?? status;
+}
+
 export function applicationStatusLabel(status: string): string {
   return APPLICATION_STATUS_LABELS[status] ?? status;
 }
@@ -198,8 +220,96 @@ const REASON_CODE_LABELS: Record<string, string> = {
   SCORE_BELOW_THRESHOLD: "Скоринговый балл ниже порога",
   SCORE_GRAY_ZONE: "Скоринговый балл в серой зоне",
   RISK_TARIFF_DOWN_PAYMENT_REQUIRED: "Требуется больший первый взнос",
+  // Ручной итог оператора (app/integrations/adapter.py) — пишется, когда оператор
+  // в системе заказчика сменил решение нашего сервиса.
+  PARTNER_OPERATOR_OVERRIDE_APPROVE: "Оператор одобрил вручную",
+  PARTNER_OPERATOR_OVERRIDE_REJECT: "Оператор отказал вручную",
 };
 
 export function reasonCodeLabel(reasonCode: string): string {
   return REASON_CODE_LABELS[reasonCode] ?? reasonCode;
 }
+
+// T17, часть 2 (ваше замечание): «одобрено / серая зона / отказ» — не одно и то
+// же на разных стадиях. Исход manual_review стадии А — «передано оператору»
+// (на стадии А серой зоны не бывает, см. CLAUDE.md «Как устроен поток»),
+// на стадии Б — «серая зона». Все подписи решений — здесь, не в страницах.
+export function decisionOutcomeLabel(stage: string | null | undefined, outcome: string): string {
+  if (outcome === "approve") return "Одобрено";
+  if (outcome === "reject") return "Отказ";
+  if (outcome === "manual_review") return stage === "A" ? "Передано оператору" : "Серая зона";
+  return outcome;
+}
+
+// Стадии — кириллицей, как в ТЗ («стадия А», «стадия Б»), не латиницей из кода.
+export function stageLabel(stage: string | null | undefined): string {
+  if (stage === "A") return "А";
+  if (stage === "B") return "Б";
+  return stage ?? "";
+}
+
+// Статусы проверок (app/sources/base.py CheckStatus: ok | hit | no_data |
+// source_unavailable | error) — человеческие формулировки ПО ИСТОЧНИКУ:
+// «ok» у чёрного списка — «не найден», у ФНС — «ИНН найден». Сырой код на
+// экран не выводим; набор статусов и источников покрыт тестом
+// (e2e/labels-dictionary.spec.ts).
+// Зеркало CheckStatus (backend app/sources/base.py): новый статус на бэкенде
+// без подписи здесь ломает e2e/labels-dictionary.spec.ts.
+export const CHECK_STATUSES: string[] = ["ok", "hit", "no_data", "source_unavailable", "error"];
+
+const GENERIC_CHECK_STATUS_LABELS: Record<string, string> = {
+  ok: "пройдена",
+  hit: "найдено",
+  no_data: "нет данных",
+  source_unavailable: "источник недоступен",
+  error: "ошибка проверки",
+};
+
+const CHECK_STATUS_LABELS_BY_SOURCE: Record<string, Record<string, string>> = {
+  blacklist: { ok: "не найден", hit: "найден в чёрном списке", no_data: "нет данных" },
+  rosfinmon: { ok: "нет совпадений", hit: "совпадение с перечнем", no_data: "нет данных" },
+  // МВД не подключено (T17) — строка скрыта в карточке; подпись на случай истории.
+  mvd: { ok: "паспорт действителен", hit: "паспорт недействителен", no_data: "нет данных" },
+  fns: { ok: "ИНН найден", hit: "найдено", no_data: "ИНН не найден" },
+  fns_inn: { ok: "ИНН найден", hit: "найдено", no_data: "ИНН не найден" },
+  fns_npd: { ok: "самозанятость подтверждена", hit: "найдено", no_data: "не самозанятый" },
+  fns_egrip: { ok: "ИП найден", hit: "найдено", no_data: "ИП не найден" },
+  fedresurs: { ok: "банкротства нет", hit: "найдено банкротство", no_data: "нет данных" },
+  fssp: { ok: "ничего не найдено", hit: "найден долг", no_data: "нет данных" },
+  bki: { ok: "отчёт получен", hit: "отчёт получен", no_data: "отчёта нет" },
+};
+
+export function checkResultLabel(source: string, status: string): string {
+  return CHECK_STATUS_LABELS_BY_SOURCE[source]?.[status] ?? GENERIC_CHECK_STATUS_LABELS[status] ?? "—";
+}
+
+// Значения анкеты заказчика и OCR — из сырых данных (пол, занятость, тариф).
+// Неизвестный код — «—» на экране; сам сырой код остаётся в «Подробностях».
+export function genderLabel(value: string | null | undefined): string {
+  const v = (value ?? "").toLowerCase();
+  if (["male", "m", "м", "мужской"].includes(v)) return "Мужской";
+  if (["female", "f", "ж", "женский"].includes(v)) return "Женский";
+  return "—";
+}
+
+const EMPLOYMENT_LABELS: Record<string, string> = {
+  employed: "Работает по найму",
+  self_employed: "Самозанятый",
+  individual_entrepreneur: "Индивидуальный предприниматель",
+  unemployed: "Не работает",
+  pensioner: "Пенсионер",
+  student: "Студент",
+};
+
+export function employmentLabel(value: string | null | undefined): string {
+  return (value && EMPLOYMENT_LABELS[value]) || "—";
+}
+
+const TARIFF_LABELS: Record<string, string> = {
+  standard: "стандартный",
+};
+
+export function tariffLabel(value: string | null | undefined): string {
+  return (value && TARIFF_LABELS[value]) || "—";
+}
+

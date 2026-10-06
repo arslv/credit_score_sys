@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { Badge } from "../components/Badge";
+import { contractStatusLabel } from "../lib/labels";
 import { formatAmount, formatDate } from "../lib/format";
 
 export function ContractDetailPage() {
@@ -32,7 +33,7 @@ export function ContractDetailPage() {
       <header className="card">
         <h1>Договор {contract.external_number ?? contract.id}</h1>
         <p>
-          <Badge value={contract.status} /> · {formatAmount(contract.total_amount)} ₽ на {contract.term_months} мес.
+          <Badge value={contract.status} label={contractStatusLabel(contract.status)} /> · {formatAmount(contract.total_amount)} ₽ на {contract.term_months} мес.
           · выдан {formatDate(contract.issued_at)}
           {contract.closed_at && ` · закрыт ${formatDate(contract.closed_at)}`}
           {contract.closure_reason && ` (${contract.closure_reason})`}

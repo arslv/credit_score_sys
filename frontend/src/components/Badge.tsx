@@ -1,5 +1,5 @@
-const SUCCESS = new Set(["approve", "approved", "ok"]);
-const DANGER = new Set(["reject", "rejected_a", "rejected_b", "source_unavailable", "error", "hit"]);
+const SUCCESS = new Set(["approve", "approved", "ok", "employee_active"]);
+const DANGER = new Set(["reject", "rejected_a", "rejected_b", "source_unavailable", "error", "hit", "employee_inactive"]);
 const WARNING = new Set(["manual_review", "gray_zone", "to_operator", "ocr_failed", "no_data"]);
 
 function variantFor(value: string): string {

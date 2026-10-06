@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Скоринг — пороги и правила (макет)</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .field-row { display: grid; grid-template-columns: 260px 160px 1fr; gap: 16px; align-items: start; padding: 14px 0; border-top: 1px solid var(--border); }
+  .field-row:first-of-type { border-top: none; }
+  .field-row label { font-weight: 600; font-size: 13px; }
+  .field-row input { padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 6px; width: 100%; font-size: 13px; }
+  .field-row .help { font-size: 12px; color: var(--text-muted); }
+  details.expert summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--text-muted); padding: 10px 0; }
+  details.expert textarea { width: 100%; min-height: 160px; font-family: var(--font-mono); font-size: 12px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; }
+  .flow-step { display: flex; align-items: center; gap: 10px; }
+  .flow-step .num { width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .flow-step.done .num { background: var(--decision-approve); }
+  .flow-arrow { color: var(--text-faint); padding: 0 6px; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-logo">DIALOG Scoring</div>
+    <a class="sidebar-item" href="applications-list.html">📋 Заявки</a>
+    <a class="sidebar-item active" href="scoring.html">🎚️ Скоринг</a>
+    <a class="sidebar-item" href="analytics.html">📊 Аналитика</a>
+    <a class="sidebar-item" href="#">💼 Портфель</a>
+    <a class="sidebar-item" href="#">⚙️ Настройки</a>
+    <div class="sidebar-foot">Риск-менеджер · Анна К.</div>
+  </nav>
+  <main class="main">
+    <div class="topbar"><h1>Скоринг</h1><span class="topbar-meta">версия 4 · действует с 01.10.2026</span></div>
+
+    <div class="card">
+      <h2>Порог отказа и одобрения <span class="muted">(балл БКИ)</span></h2>
+      <div class="field-row">
+        <label>Автоматическое одобрение выше</label>
+        <input value="700">
+        <span class="help">Балл кредитного бюро, выше которого заявка одобряется автоматически (если нет стоп-факторов и ФССП проверено). Сейчас: 700.</span>
+      </div>
+      <div class="field-row">
+        <label>Автоматический отказ ниже</label>
+        <input value="450">
+        <span class="help">Ниже этого балла — отказ без ручного рассмотрения. Между 450 и 700 — серая зона, решение за человеком.</span>
+      </div>
+      <div class="field-row">
+        <label>Порог для сделок дороже 200 000 ₽</label>
+        <input value="780">
+        <span class="help">Чем крупнее сумма, тем выше требуемый балл — отдельное правило в матрице порогов (ниже, экспертный режим).</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Стоп-факторы <span class="muted">— жёсткие «нет», скор не считается</span></h2>
+      <div class="field-row">
+        <label>Возраст меньше минимального</label>
+        <input value="18 лет">
+        <span class="help">Проверяется на стадии А, по дате рождения из паспорта.</span>
+      </div>
+      <div class="field-row">
+        <label>Долг по ФССП (кредитный)</label>
+        <input value="50 000 ₽">
+        <span class="help">Сумма производств, классифицированных как «кредитный долг» (не штрафы ГИБДД) — выше этой суммы → отказ, если обнаружено ДО решения.</span>
+      </div>
+      <div class="field-row">
+        <label>ПДН: отказ выше</label>
+        <input value="60%">
+        <span class="help">Показатель долговой нагрузки — доля дохода на все долговые платежи.</span>
+      </div>
+    </div>
+
+    <details class="expert">
+      <summary>Экспертный режим — редактировать YAML напрямую</summary>
+      <textarea readonly>hard_stops:
+  - id: age_below_min
+    field: age
+    op: lt
+    value: 18
+    reason: AGE_BELOW_MIN
+  - id: fssp_credit_debt
+    field: features.fssp_credit_debt_amount
+    op: gt
+    value: 50000
+    reason: FSSP_CREDIT_DEBT
+score_thresholds:
+  auto_approve_above: 700
+  auto_reject_below: 450
+matrix:
+  - when: {amount_gt: 200000}
+    override: {auto_approve_above: 780}</textarea>
+      <p class="faint">Доступно только риск-менеджеру. Форма выше и YAML здесь — один и тот же конфиг, правки синхронны.</p>
+    </details>
+
+    <div class="card">
+      <h2>Проверить изменения перед публикацией</h2>
+      <div class="flow-step done"><span class="num">✓</span><span>Черновик изменён</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><span class="num">2</span><span>Проверить на истории</span></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><span class="num">3</span><span>Опубликовать (с комментарием)</span></div>
+      <div class="card" style="background: var(--surface-sunken); margin-top: 16px; box-shadow: none;">
+        <strong>Результат проверки на последних 500 заявках:</strong>
+        <p style="margin: 8px 0 0;">Одобрений станет больше на <strong style="color:var(--decision-approve);">+12</strong>, отказов меньше на <strong style="color:var(--decision-approve);">−3</strong>. Решение изменится у 15 заявок — <a href="#">посмотреть список</a>.</p>
+      </div>
+      <button class="btn primary" style="margin-top:14px;">Опубликовать</button>
+    </div>
+
+    <div class="card">
+      <h2>История версий</h2>
+      <table class="data">
+        <thead><tr><th>Версия</th><th>Кто</th><th>Что изменилось</th><th>Когда</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><strong>4 (действует)</strong></td><td class="muted">Анна К.</td><td>Порог одобрения: 650 → 700</td><td class="muted">01.10.2026</td><td><a href="#">—</a></td></tr>
+          <tr><td>3</td><td class="muted">Игорь П.</td><td>Добавлен стоп-фактор «долг по ФССП»</td><td class="muted">14.09.2026</td><td><a href="#">откатить</a></td></tr>
+          <tr><td>2</td><td class="muted">Анна К.</td><td>ПДН отказа: 55% → 60%</td><td class="muted">02.09.2026</td><td><a href="#">откатить</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+</body>
+</html>

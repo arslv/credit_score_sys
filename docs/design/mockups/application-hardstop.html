@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Заявка №23 — отказ по стоп-фактору (макет)</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .kv { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; font-size: 13px; }
+  .kv dt { color: var(--text-muted); }
+  .kv dd { margin: 0; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-logo">DIALOG Scoring</div>
+    <a class="sidebar-item active" href="applications-list.html">📋 Заявки</a>
+    <a class="sidebar-item" href="scoring.html">🎚️ Скоринг</a>
+    <a class="sidebar-item" href="analytics.html">📊 Аналитика</a>
+    <a class="sidebar-item" href="#">💼 Портфель</a>
+    <a class="sidebar-item" href="#">⚙️ Настройки</a>
+    <div class="sidebar-foot">Риск-менеджер · Анна К.</div>
+  </nav>
+  <main class="main">
+    <p><a href="applications-list.html">← к списку заявок</a></p>
+
+    <div class="verdict reject">
+      <div>
+        <p class="verdict-title">Отказ</p>
+        <p class="verdict-reason">Совпадение по перечню Росфинмониторинга — передано в комплаенс, клиенту причину не сообщаем.</p>
+        <p class="verdict-meta">
+          <span>Заявка №23 (у заказчика APP-9f3a-000023)</span>
+          <span>Стадия А</span>
+          <span>Решение сразу, без проверки данных и БКИ</span>
+        </p>
+      </div>
+    </div>
+
+    <div class="action-panel">
+      <h2>Нужно сделать</h2>
+      <div class="action-item">
+        <span>Совпадение по перечню ждёт решения комплаенса — заморожено, пока не подтверждено или не снято</span>
+        <a class="btn" href="#">Открыть в разделе «Комплаенс»</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Почему такое решение</h2>
+      <div class="rule-hit">
+        <span class="dot"></span>
+        <div class="rule-hit-body">
+          <strong>Совпадение по перечню Росфинмониторинга</strong>
+          <span>ФИО и дата рождения заявителя совпали с записью в перечне террористов/экстремистов. Заморозка — повторная проверка того же клиента заблокирована до решения комплаенса.</span>
+        </div>
+      </div>
+      <p class="faint" style="margin-top:10px;">Остальные проверки (ФНС, ФССП, БКИ) не запускались — при срабатывании стоп-фактора на стадии А дальше не идём, чтобы не тратить платные запросы и не показывать клиенту лишнего.</p>
+    </div>
+
+    <div class="card">
+      <h2>Что проверили</h2>
+      <table class="data">
+        <thead><tr><th>Источник</th><th>Кто</th><th>Результат</th><th>Когда</th></tr></thead>
+        <tbody>
+          <tr><td><span style="color:#2952e3;border:1px solid rgba(41,82,227,.4);background:rgba(41,82,227,.1);padding:2px 8px;border-radius:5px;font-weight:600;">МВД — паспорт</span></td><td class="muted">заявитель</td><td><span class="pill ok">действителен</span></td><td class="muted">сегодня, 09:12</td></tr>
+          <tr><td><span style="color:#9a2fd6;border:1px solid rgba(154,47,214,.4);background:rgba(154,47,214,.1);padding:2px 8px;border-radius:5px;font-weight:600;">Росфинмониторинг</span></td><td class="muted">заявитель</td><td><span class="pill hit">совпадение</span></td><td class="muted">сегодня, 09:12</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Клиент</h2>
+      <dl class="kv">
+        <dt>ФИО</dt><dd>Санкционов Опасен Опасенович</dd>
+        <dt>Дата рождения</dt><dd>15.06.1985</dd>
+        <dt>Товар</dt><dd>Стиральная машина, 50 000 ₽</dd>
+      </dl>
+    </div>
+  </main>
+</div>
+</body>
+</html>

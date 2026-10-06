@@ -1,24 +1,22 @@
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Досеивает сотрудников и одну заявку с расхождением перед прогоном (см.
-// seed.py — прямые вставки в БД, без гонки реального конвейера). Копирует
-// скрипт в контейнер worker (как scripts/e2e_check.py делает для
-// _e2e_runner.py) и запускает его там — код приложения и доступ к БД есть
-// только внутри контейнера.
+// Досеивает сотрудников и заявки перед прогоном (см. seed.py — прямые вставки в
+// БД, без гонки реального конвейера). Скрипт подаётся в контейнер worker через
+// stdin, без копирования внутрь контейнера: код приложения и доступ к БД есть
+// только там, а копия в контейнере переживает правки и даёт прогон на старом коде.
 export default function globalSetup(): void {
   const repoRoot = path.resolve(__dirname, "../..");
   const seedPath = path.resolve(__dirname, "seed.py");
 
-  execFileSync("docker", ["compose", "cp", seedPath, "worker:/app/_e2e_seed.py"], { cwd: repoRoot });
   const output = execFileSync(
     "docker",
-    ["compose", "exec", "-T", "worker", "python3", "/app/_e2e_seed.py"],
-    { cwd: repoRoot },
+    ["compose", "exec", "-T", "worker", "python3", "-"],
+    { cwd: repoRoot, input: readFileSync(seedPath) },
   );
 
   const seed = JSON.parse(output.toString("utf-8").trim().split("\n").pop()!);

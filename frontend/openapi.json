@@ -2308,6 +2308,17 @@
             ],
             "title": "Guarantor Id"
           },
+          "goods_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goods Category"
+          },
           "fssp_post_decision_alert_subjects": {
             "items": {
               "type": "string"
@@ -2343,6 +2354,18 @@
             },
             "type": "array",
             "title": "External Snapshots"
+          },
+          "guarantor_profile": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guarantor Profile"
           }
         },
         "type": "object",
@@ -2366,10 +2389,12 @@
           "manual_overrides",
           "has_guarantor",
           "guarantor_id",
+          "goods_category",
           "fssp_post_decision_alert_subjects",
           "profile",
           "ocr_result",
-          "external_snapshots"
+          "external_snapshots",
+          "guarantor_profile"
         ],
         "title": "ApplicationDetail"
       },
@@ -3428,6 +3453,17 @@
             "type": "array",
             "title": "Triggered Rules Text"
           },
+          "reason_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Text"
+          },
           "score": {
             "anyOf": [
               {
@@ -3506,6 +3542,50 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "score_auto_approve_above": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score Auto Approve Above"
+          },
+          "score_auto_reject_below": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score Auto Reject Below"
+          },
+          "pti_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pti Max"
+          },
+          "pti": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pti"
           }
         },
         "type": "object",
@@ -3517,6 +3597,7 @@
           "freeze",
           "triggered_rules",
           "triggered_rules_text",
+          "reason_text",
           "score",
           "score_source",
           "approved_amount",
@@ -3524,7 +3605,11 @@
           "offered_tariff",
           "required_down_pay",
           "ruleset_version_id",
-          "created_at"
+          "created_at",
+          "score_auto_approve_above",
+          "score_auto_reject_below",
+          "pti_max",
+          "pti"
         ],
         "title": "DecisionOut"
       },
@@ -4104,6 +4189,17 @@
             "format": "uuid",
             "title": "Id"
           },
+          "decision_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Stage"
+          },
           "from_outcome": {
             "type": "string",
             "title": "From Outcome"
@@ -4136,6 +4232,7 @@
         "type": "object",
         "required": [
           "id",
+          "decision_stage",
           "from_outcome",
           "to_outcome",
           "reason_code",
@@ -4735,12 +4832,17 @@
             "type": "string",
             "format": "uuid",
             "title": "Simulation Id"
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment"
           }
         },
         "type": "object",
         "required": [
           "yaml",
-          "simulation_id"
+          "simulation_id",
+          "comment"
         ],
         "title": "SaveRequest"
       },

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { Badge } from "../components/Badge";
+import { contractStatusLabel } from "../lib/labels";
 import { formatAmount, formatDate } from "../lib/format";
 
 const PAGE_SIZE = 25;
@@ -51,7 +52,7 @@ export function ContractsListPage() {
                 <td>{formatAmount(item.total_amount)}</td>
                 <td>{item.term_months} мес.</td>
                 <td>
-                  <Badge value={item.status} />
+                  <Badge value={item.status} label={contractStatusLabel(item.status)} />
                 </td>
                 <td className="muted">{formatDate(item.issued_at)}</td>
               </tr>

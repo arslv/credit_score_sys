@@ -86,7 +86,11 @@ export function EmployeesPage() {
                   </select>
                 </td>
                 <td>
-                  <Badge value={e.active ? "ok" : "rejected_a"} />
+                  {/* Найденный баг (T17, аудит): раньше здесь был чужой код статуса
+                      заявки ("ok"/"rejected_a") только ради цвета — показывал
+                      буквально слово "rejected_a" для неактивного сотрудника.
+                      Своя пара значений, явная подпись. */}
+                  <Badge value={e.active ? "employee_active" : "employee_inactive"} label={e.active ? "активен" : "неактивен"} />
                 </td>
                 <td>
                   <button

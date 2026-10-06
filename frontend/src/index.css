@@ -17,6 +17,32 @@
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-md: 0 4px 16px rgba(16, 24, 40, 0.08);
   --radius: 8px;
+
+  /* T17, шаг 3: цвета РЕШЕНИЙ — отдельный словарь от цветов источников
+     (lib/labels.ts::SOURCE_META) и статусов проверок (Badge ok/hit/...).
+     Красит вердикт заявки, шкалу балла, панель «нужно сделать» — и больше
+     ничего, чтобы его нельзя было случайно задеть правкой другой палитры. */
+  --decision-approve: #0a7a44;
+  --decision-approve-bg: #e6f6ec;
+  --decision-gray: #a15c00;
+  --decision-gray-bg: #fff3e0;
+  --decision-reject: #b42318;
+  --decision-reject-bg: #fdeceb;
+  --decision-pending: #475467;
+  --decision-pending-bg: #eef0f3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --decision-approve: #3ddc84;
+    --decision-approve-bg: rgba(61, 220, 132, 0.12);
+    --decision-gray: #f0a93b;
+    --decision-gray-bg: rgba(240, 169, 59, 0.12);
+    --decision-reject: #ff6b63;
+    --decision-reject-bg: rgba(255, 107, 99, 0.12);
+    --decision-pending: #9aa3b2;
+    --decision-pending-bg: rgba(154, 163, 178, 0.12);
+  }
 }
 
 * {
@@ -69,60 +95,107 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Layout */
+/* Layout — T17, шаг 3: боковая панель на 5 разделов вместо плоской строки
+   вкладок (навигация+роли, первая часть редизайна). */
 
-.app-shell {
+.app-shell-v2 {
   min-height: 100%;
+  display: flex;
+}
+
+.sidebar {
+  width: 216px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  padding: 18px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-logo {
+  padding: 0 20px 16px;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 20px;
+  color: var(--color-text-muted) !important;
+  font-weight: 500;
+  border-left: 3px solid transparent;
+  text-decoration: none !important;
+}
+
+.sidebar-item:hover {
+  background: var(--color-neutral-bg);
+}
+
+.sidebar-item--active {
+  color: var(--color-text) !important;
+  background: rgba(41, 82, 227, 0.08);
+  border-left-color: var(--color-primary);
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding: 12px 20px 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+}
+
+.app-shell-v2__body {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
-.app-header {
+.subnav {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px;
+  gap: 4px;
+  padding: 10px 24px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
-  box-shadow: var(--shadow-sm);
 }
 
-.app-header__nav {
-  display: flex;
-  gap: 4px;
+.subnav--minimal {
+  justify-content: flex-end;
 }
 
-.app-header__nav a {
+.subnav-item {
   color: var(--color-text-muted);
   padding: 6px 12px;
   border-radius: 6px;
   font-weight: 500;
 }
 
-.app-header__nav a:hover {
+.subnav-item:hover {
   background: var(--color-neutral-bg);
   text-decoration: none;
 }
 
-.app-header__nav-active {
+.subnav-item--active {
   background: var(--color-neutral-bg);
   color: var(--color-text) !important;
 }
 
-.app-header__user {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--color-text-muted);
-  font-size: 13px;
+.subnav-logout {
+  margin-left: auto;
 }
 
-.app-main {
+.app-main-v2 {
   flex: 1;
   padding: 24px;
   max-width: 1180px;
   width: 100%;
-  margin: 0 auto;
 }
 
 /* Cards / surfaces */
@@ -282,6 +355,26 @@ a:hover {
   background: #fafbfc;
 }
 
+/* T17, часть 2: пара «подпись — значение» в блоках карточки (Клиент, Сделка). */
+.kv-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.kv-grid dt {
+  color: var(--color-text-muted);
+}
+
+.kv-grid dd {
+  margin: 0;
+}
+
+.card > h2:first-child {
+  margin-top: 0;
+}
+
 .table--kv td:first-child {
   color: var(--color-text-muted);
   width: 220px;
@@ -402,3 +495,65 @@ a:hover {
   font-size: 13px;
   color: var(--color-text-muted);
 }
+
+/* --- T17, шаг 3: карточка заявки — вердикт, подсказки, панель «нужно
+   сделать», вклад/пороги. --- */
+
+.verdict {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 24px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.verdict--approve { background: var(--decision-approve-bg); }
+.verdict--gray { background: var(--decision-gray-bg); }
+.verdict--reject { background: var(--decision-reject-bg); }
+.verdict--pending { background: var(--decision-pending-bg); }
+.verdict-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+.verdict--approve .verdict-title { color: var(--decision-approve); }
+.verdict--gray .verdict-title { color: var(--decision-gray); }
+.verdict--reject .verdict-title { color: var(--decision-reject); }
+.verdict--pending .verdict-title { color: var(--decision-pending); }
+.verdict-reason { font-size: 14px; color: var(--color-text); margin: 0 0 8px; }
+.verdict-meta { font-size: 12px; color: var(--color-text-muted); display: flex; gap: 14px; flex-wrap: wrap; }
+.verdict-score { min-width: 200px; flex-shrink: 0; }
+.verdict-score-value { font-size: 24px; font-weight: 700; }
+.verdict-score-value .unit { font-size: 13px; font-weight: 400; color: var(--color-text-muted); }
+
+.score-scale { position: relative; height: 7px; border-radius: 4px; background: var(--color-border-strong); margin: 8px 0 4px; }
+.score-scale-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 4px; background: var(--color-border-strong); }
+.score-scale .marker { position: absolute; top: -4px; width: 3px; height: 15px; background: var(--color-text); border-radius: 2px; }
+.score-scale-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--color-text-muted); }
+
+.action-panel {
+  border: 1px solid var(--decision-gray);
+  background: var(--decision-gray-bg);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin-bottom: 12px;
+}
+.action-panel h2 { color: var(--decision-gray); margin: 0 0 8px; font-size: 14px; }
+.action-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 13px; }
+
+.rule-hit { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-top: 1px solid var(--color-border); font-size: 13px; }
+.rule-hit:first-of-type { border-top: none; }
+.rule-hit .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--decision-reject); margin-top: 6px; flex-shrink: 0; }
+
+/* Подсказка-термин — иконка «?» рядом со словом, текст по hover/focus. */
+.term { position: relative; display: inline-flex; align-items: center; gap: 3px; cursor: help; border-bottom: 1px dashed var(--color-text-muted); }
+.term .q {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--color-border-strong); color: var(--color-surface);
+  font-size: 9px; font-weight: 700;
+}
+.term .tip {
+  display: none; position: absolute; bottom: 125%; left: 0; width: 240px;
+  background: var(--color-text); color: var(--color-surface);
+  padding: 8px 10px; border-radius: 6px; font-size: 12px; font-weight: 400; line-height: 1.4;
+  z-index: 10; box-shadow: var(--shadow-md);
+}
+.term:hover .tip, .term:focus .tip { display: block; }

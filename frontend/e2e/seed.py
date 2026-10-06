@@ -141,7 +141,10 @@ async def _seed_frozen_sanctions_match(session) -> dict:
     )
     session.add(decision)
     await session.flush()
-    return {"client_id": str(client.id), "decision_id": str(decision.id), "external_id": application.external_id}
+    return {
+        "application_id": str(application.id), "client_id": str(client.id),
+        "decision_id": str(decision.id), "external_id": application.external_id,
+    }
 
 
 async def main() -> None:

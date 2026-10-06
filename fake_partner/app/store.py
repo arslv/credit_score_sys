@@ -1,5 +1,6 @@
 import random
 import string
+import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 
@@ -68,6 +69,11 @@ def _random_passport_number() -> tuple[str, str]:
     return series, number
 
 
+def _new_run_prefix() -> str:
+    """Случайный префикс external_id на запуск/сброс заглушки (uuid, 8 символов)."""
+    return uuid.uuid4().hex[:8]
+
+
 @dataclass
 class _StoredApplication:
     id: str
@@ -94,7 +100,7 @@ class PartnerStore:
         # обработанными заявками в БД заказчика, и sync принимал бы это за
         # попытку переписать статус, который "оператор уже изменил вручную"
         # (правило 12 CLAUDE.md) — ложный conflict вместо обработки новой заявки.
-        self._run_prefix = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+        self._run_prefix = _new_run_prefix()
 
     def _next_id(self) -> str:
         self._counter += 1
@@ -167,6 +173,11 @@ class PartnerStore:
         pytest без перезапуска сервиса."""
         self._applications.clear()
         self._counter = 0
+        # Новый префикс на каждый сброс: без него после reset счётчик снова
+        # дал бы external_id, уже занятые заявками из прошлых прогонов в БД
+        # заказчика, и приём (идемпотентный по external_id) молча пропускал бы
+        # новые заявки — e2e_check падал без понятной причины.
+        self._run_prefix = _new_run_prefix()
         self.seed(seed_count)
 
     def seed(self, count: int = 10) -> None:

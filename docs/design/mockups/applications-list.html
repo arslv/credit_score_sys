@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Заявки — список (макет)</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  table.data th.num, table.data td.num { text-align: right; }
+  .need-action { color: var(--decision-gray); font-weight: 700; }
+  tr.row-link { cursor: pointer; }
+  tr.row-link:hover { background: var(--surface-sunken); }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-logo">DIALOG Scoring</div>
+    <a class="sidebar-item active" href="applications-list.html">📋 Заявки <span class="badge-count">3</span></a>
+    <a class="sidebar-item" href="scoring.html">🎚️ Скоринг</a>
+    <a class="sidebar-item" href="analytics.html">📊 Аналитика</a>
+    <a class="sidebar-item" href="#">💼 Портфель</a>
+    <a class="sidebar-item" href="#">⚙️ Настройки</a>
+    <div class="sidebar-foot">Оператор · Марат С.</div>
+  </nav>
+  <main class="main">
+    <div class="topbar"><h1>Заявки</h1></div>
+
+    <div class="toolbar">
+      <span class="chip active">Требуют действия · 3</span>
+      <span class="chip">Серая зона · 2</span>
+      <span class="chip">Сегодня · 5</span>
+      <span class="chip">Все · 25</span>
+    </div>
+
+    <div class="card" style="padding:0;">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Клиент</th><th>Сумма/срок</th><th>Решение</th><th>Балл БКИ</th><th></th><th>В работе</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="row-link">
+            <td>Хороший Антон Петрович</td>
+            <td>72 000 ₽ / 18 мес.</td>
+            <td><span class="pill" style="color:var(--decision-gray);background:var(--decision-gray-bg);">Серая зона</span></td>
+            <td class="num">640</td>
+            <td class="need-action" title="Требует действия">● ФССП не проверено</td>
+            <td class="muted num">2 ч 10 мин</td>
+          </tr>
+          <tr class="row-link">
+            <td>Клиентов Сергей Иванович</td>
+            <td>45 000 ₽ / 12 мес.</td>
+            <td><span class="pill" style="color:var(--decision-gray);background:var(--decision-gray-bg);">Серая зона</span></td>
+            <td class="num">510</td>
+            <td class="need-action">● Решение риск-менеджера</td>
+            <td class="muted num">40 мин</td>
+          </tr>
+          <tr class="row-link">
+            <td>Иванова Мария Сергеевна</td>
+            <td>30 000 ₽ / 6 мес.</td>
+            <td><span class="pill" style="color:var(--decision-reject);background:var(--decision-reject-bg);">Отказ</span></td>
+            <td class="num">—</td>
+            <td class="need-action">● Ждёт комплаенс (санкции)</td>
+            <td class="muted num">9 мин</td>
+          </tr>
+          <tr class="row-link">
+            <td>Хороший Антон Петрович</td>
+            <td>72 000 ₽ / 18 мес.</td>
+            <td><span class="pill" style="color:var(--decision-approve);background:var(--decision-approve-bg);">Одобрено</span></td>
+            <td class="num">780</td>
+            <td class="muted">—</td>
+            <td class="muted num">—</td>
+          </tr>
+          <tr class="row-link">
+            <td>Отказников Пётр Фёдорович</td>
+            <td>50 000 ₽ / 12 мес.</td>
+            <td><span class="pill" style="color:var(--decision-reject);background:var(--decision-reject-bg);">Отказ</span></td>
+            <td class="num">—</td>
+            <td class="muted">—</td>
+            <td class="muted num">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="faint">Колонка «решение» — итог, не стадия: если заявка ещё обрабатывается, здесь пусто и пометка «требует действия» показывает, что именно нужно сделать. Пустых столбцов с сырыми кодами стадии А/стадии Б, как сейчас, здесь больше нет.</p>
+  </main>
+</div>
+</body>
+</html>

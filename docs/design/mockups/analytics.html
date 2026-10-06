@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Аналитика (макет)</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .funnel-row { display: grid; grid-template-columns: 160px 1fr 50px; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+  .funnel-bar-track { height: 16px; background: var(--border); border-radius: 4px; }
+  .funnel-bar { height: 16px; background: var(--primary); border-radius: 4px; }
+  .dist-bars { display: flex; align-items: flex-end; gap: 4px; height: 120px; }
+  .dist-bar { flex: 1; background: var(--primary-bg); border-radius: 3px 3px 0 0; position: relative; }
+  .dist-bar.gray { background: var(--decision-gray-bg); }
+  .dist-bar.approve { background: var(--decision-approve-bg); }
+  .threshold-line { position: absolute; top: 0; bottom: -20px; width: 2px; background: var(--text); }
+  .threshold-label { position: absolute; bottom: -34px; font-size: 10px; white-space: nowrap; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-logo">DIALOG Scoring</div>
+    <a class="sidebar-item" href="applications-list.html">📋 Заявки</a>
+    <a class="sidebar-item" href="scoring.html">🎚️ Скоринг</a>
+    <a class="sidebar-item active" href="analytics.html">📊 Аналитика</a>
+    <a class="sidebar-item" href="#">💼 Портфель</a>
+    <a class="sidebar-item" href="#">⚙️ Настройки</a>
+    <div class="sidebar-foot">Наблюдатель</div>
+  </nav>
+  <main class="main">
+    <div class="topbar"><h1>Аналитика</h1><span class="topbar-meta">за последние 30 дней</span></div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>Воронка: до оператора доходит 40% заявок</h2>
+        <div class="funnel-row"><span>Поступило</span><div class="funnel-bar-track"><div class="funnel-bar" style="width:100%;"></div></div><span class="num">320</span></div>
+        <div class="funnel-row"><span>Прошли стадию А</span><div class="funnel-bar-track"><div class="funnel-bar" style="width:62%;"></div></div><span class="num">198</span></div>
+        <div class="funnel-row"><span>Передано оператору</span><div class="funnel-bar-track"><div class="funnel-bar" style="width:40%;"></div></div><span class="num">128</span></div>
+        <div class="funnel-row"><span>Прошли стадию Б</span><div class="funnel-bar-track"><div class="funnel-bar" style="width:34%;"></div></div><span class="num">108</span></div>
+        <div class="funnel-row"><span>Одобрено</span><div class="funnel-bar-track"><div class="funnel-bar" style="width:19%;"></div></div><span class="num">60</span></div>
+      </div>
+
+      <div class="card">
+        <h2>Главная причина отказа — санкционные совпадения (38%)</h2>
+        <div class="funnel-row"><span>Совпадение по перечню</span><div class="funnel-bar-track"><div class="funnel-bar" style="width:100%;background:var(--decision-reject);"></div></div><span class="num">46</span></div>
+        <div class="funnel-row"><span>Паспорт недействителен</span><div class="funnel-bar-track"><div class="funnel-bar" style="width:52%;background:var(--decision-reject);"></div></div><span class="num">24</span></div>
+        <div class="funnel-row"><span>Возраст меньше минимального</span><div class="funnel-bar-track"><div class="funnel-bar" style="width:28%;background:var(--decision-reject);"></div></div><span class="num">13</span></div>
+        <div class="funnel-row"><span>Долг по ФССП</span><div class="funnel-bar-track"><div class="funnel-bar" style="width:15%;background:var(--decision-reject);"></div></div><span class="num">7</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Балл БКИ у половины серой зоны — рядом с порогом 700</h2>
+      <p class="muted" style="margin:0 0 16px;font-size:12px;">Распределение балла по заявкам, дошедшим до БКИ за период. Линии — текущие пороги из «Скоринга».</p>
+      <div class="dist-bars">
+        <div class="dist-bar" style="height:20%;"></div>
+        <div class="dist-bar" style="height:35%;"></div>
+        <div class="dist-bar gray" style="height:55%;"></div>
+        <div class="dist-bar gray" style="height:70%;"></div>
+        <div class="dist-bar gray" style="height:90%;">
+          <div class="threshold-line" style="left:0;"></div>
+          <div class="threshold-label" style="left:-20px;">450 — отказ</div>
+        </div>
+        <div class="dist-bar approve" style="height:65%;">
+          <div class="threshold-line" style="left:0;"></div>
+          <div class="threshold-label" style="left:-24px;">700 — одобрение</div>
+        </div>
+        <div class="dist-bar approve" style="height:40%;"></div>
+        <div class="dist-bar approve" style="height:22%;"></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>Источники работают стабильно — ни один не падал больше 2%</h2>
+        <table class="data">
+          <thead><tr><th>Источник</th><th>Недоступен</th><th>Всего</th><th>Доля</th></tr></thead>
+          <tbody>
+            <tr><td><span style="color:#0a7ea4;">ФССП</span></td><td>2</td><td>140</td><td>1.4%</td></tr>
+            <tr><td><span style="color:#17824e;">ФНС — ИНН</span></td><td>1</td><td>198</td><td>0.5%</td></tr>
+            <tr><td><span style="color:#2952e3;">МВД</span></td><td>0</td><td>320</td><td>0%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>Просрочка портфеля растёт у выдач марта</h2>
+        <div class="chart-placeholder">график просрочки 60+ по поколениям выдачи</div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

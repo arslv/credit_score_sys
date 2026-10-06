@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Будущее (T18) — скоринговая карта по факторам (макет-черновик)</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-logo">DIALOG Scoring</div>
+    <a class="sidebar-item active" href="applications-list.html">📋 Заявки</a>
+    <a class="sidebar-item" href="scoring.html">🎚️ Скоринг</a>
+    <a class="sidebar-item" href="analytics.html">📊 Аналитика</a>
+    <a class="sidebar-item" href="#">💼 Портфель</a>
+    <a class="sidebar-item" href="#">⚙️ Настройки</a>
+    <div class="sidebar-foot">Риск-менеджер · Анна К.</div>
+  </nav>
+  <main class="main">
+    <div class="future-banner">⚠ БУДУЩЕЕ (T18) — этого скора в системе сегодня нет. Сейчас есть только балл БКИ (см. application-approved.html). Этот макет — черновик того, как карточка будет выглядеть, если появится собственная скоринговая карта по факторам.</div>
+
+    <div class="topbar"><h1>Заявка №24 — со скоринговой картой (черновик T18)</h1></div>
+
+    <div class="verdict approve">
+      <div>
+        <p class="verdict-title">Одобрено</p>
+        <p class="verdict-reason">Скор выше порога одобрения, стоп-факторов нет.</p>
+      </div>
+      <div class="verdict-score">
+        <div class="score-value">742 <span class="unit">из 999 (черновик модели)</span></div>
+        <div class="score-scale"><div class="marker" style="left: 74%;"></div></div>
+        <div class="score-scale-labels"><span>0</span><span>450</span><span>700</span><span>999</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Вклад факторов <span class="muted">(черновик — веса не утверждены)</span></h2>
+      <div class="factor-row">
+        <span>Кредитная история (БКИ)</span>
+        <div class="factor-bar-track"><div class="factor-bar pos" style="width:22%;"></div></div>
+        <span class="factor-points pos">+180</span>
+      </div>
+      <div class="factor-row">
+        <span>ПДН — 32%</span>
+        <div class="factor-bar-track"><div class="factor-bar pos" style="width:14%;"></div></div>
+        <span class="factor-points pos">+60</span>
+      </div>
+      <div class="factor-row">
+        <span>ФССП — не найдено</span>
+        <div class="factor-bar-track"><div class="factor-bar pos" style="width:8%;"></div></div>
+        <span class="factor-points pos">+20</span>
+      </div>
+      <div class="factor-row">
+        <span>Возраст — 37 лет</span>
+        <div class="factor-bar-track"><div class="factor-bar pos" style="width:6%;"></div></div>
+        <span class="factor-points pos">+15</span>
+      </div>
+      <div class="factor-row">
+        <span>Занятость — наёмный труд</span>
+        <div class="factor-bar-track"><div class="factor-bar pos" style="width:4%;"></div></div>
+        <span class="factor-points pos">+10</span>
+      </div>
+      <div class="factor-row">
+        <span>Категория товара — бытовая техника</span>
+        <div class="factor-bar-track"><div class="factor-bar neg" style="width:3%;"></div></div>
+        <span class="factor-points neg">−5</span>
+      </div>
+      <p class="faint" style="margin-top:10px;">«Не вычислимо» (например, ФНС ещё не ответил) — 0 баллов по умолчанию, не штраф и не бонус.</p>
+    </div>
+
+    <div class="card">
+      <h2>Стартовая скоринговая карта <span class="muted">— требует утверждения риск-менеджером</span></h2>
+      <table class="data">
+        <thead><tr><th>Фактор</th><th>Диапазон</th><th>Баллы</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="3">Кредитная история (БКИ)</td><td>балл БКИ ≥ 750</td><td class="num">+220</td></tr>
+          <tr><td>балл БКИ 600–749</td><td class="num">+150</td></tr>
+          <tr><td>балл БКИ &lt; 600</td><td class="num">+40</td></tr>
+          <tr><td rowspan="2">ПДН</td><td>до 35%</td><td class="num">+60</td></tr>
+          <tr><td>35–55%</td><td class="num">+20</td></tr>
+          <tr><td>ФССП</td><td>не найдено</td><td class="num">+20</td></tr>
+          <tr><td>ФССП</td><td>найдено (не кредитное)</td><td class="num">−10</td></tr>
+          <tr><td>Возраст</td><td>25–55 лет</td><td class="num">+15</td></tr>
+          <tr><td>Любой фактор</td><td>не вычислимо</td><td class="num">0</td></tr>
+        </tbody>
+      </table>
+      <p class="faint" style="margin-top:10px;">Структура: factors → bins → points в YAML правил, тем же механизмом версий/симуляции, что остальные пороги. Когда появится обученная модель — подставляется вместо карты без переделки этого экрана (сам экран — скор + вклад факторов, источник расчёта меняется под капотом).</p>
+    </div>
+  </main>
+</div>
+</body>
+</html>
