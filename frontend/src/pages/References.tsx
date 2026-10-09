@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { liquidityLabel, reasonCodeKindLabel } from "../lib/labels";
 
 export function ReferencesPage() {
   return (
@@ -80,7 +81,7 @@ function GoodsCategories() {
               <tr key={c.id}>
                 <td>{c.code}</td>
                 <td>{c.name}</td>
-                <td className="muted">{c.liquidity}</td>
+                <td className="muted">{liquidityLabel(c.liquidity)}</td>
                 <td>{c.sharia_allowed ? "да" : "нет"}</td>
                 <td>
                   <span className={`badge ${c.active ? "badge-success" : "badge-neutral"}`}>
@@ -111,9 +112,9 @@ function GoodsCategories() {
           <label>
             Ликвидность
             <select value={form.liquidity} onChange={(e) => setForm({ ...form, liquidity: e.target.value })}>
-              <option value="high">high</option>
-              <option value="medium">medium</option>
-              <option value="low">low</option>
+              <option value="high">{liquidityLabel("high")}</option>
+              <option value="medium">{liquidityLabel("medium")}</option>
+              <option value="low">{liquidityLabel("low")}</option>
             </select>
           </label>
           <label>
@@ -166,7 +167,7 @@ function ReasonCodes() {
             {query.data.items.map((r) => (
               <tr key={r.code}>
                 <td>{r.code}</td>
-                <td className="muted">{r.kind}</td>
+                <td className="muted">{reasonCodeKindLabel(r.kind)}</td>
                 <td>{r.title}</td>
                 <td>{r.active ? "да" : "нет"}</td>
               </tr>

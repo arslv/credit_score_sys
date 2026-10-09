@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { BarList } from "../components/BarList";
 import { SourceBadge } from "../components/SourceBadge";
-import { applicationStatusLabel, reasonCodeLabel } from "../lib/labels";
+import { Term } from "../components/Term";
+import { funnelStepLabel, reasonCodeLabel, sourceMeta } from "../lib/labels";
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -23,6 +24,10 @@ function pct(numerator: number, denominator: number): string {
   return `${Math.round((numerator / denominator) * 100)}%`;
 }
 
+// T17, часть 5 (ваше указание): у каждого графика — заголовок-вывод, не
+// нейтральное название блока. Выводы считаются ниже, из уже пришедших чисел —
+// порогов или констант из конфига тут нет, только арифметика сравнения.
+
 export function DashboardPage() {
   const initial = defaultPeriod();
   const [periodFrom, setPeriodFrom] = useState(initial.from);
@@ -41,7 +46,7 @@ export function DashboardPage() {
 
   return (
     <section>
-      <h1>Дашборд</h1>
+      <h1>Аналитика</h1>
 
       <div className="toolbar">
         <label>
@@ -56,25 +61,53 @@ export function DashboardPage() {
       </div>
 
       {query.isLoading && <p className="muted">Загрузка…</p>}
-      {query.isError && <p role="alert" className="alert">Не удалось загрузить дашборд.</p>}
+      {query.isError && <p role="alert" className="alert">Не удалось загрузить аналитику.</p>}
 
       {query.data && (
         <div className="dashboard-grid">
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>Воронка по состояниям</h2>
-            <BarList
-              emptyText="Нет заявок за период."
-              items={query.data.funnel
-                .slice()
-                .sort((a, b) => b.count - a.count)
-                .map((f) => ({ label: applicationStatusLabel(f.status), value: f.count }))}
-            />
+            {(() => {
+              const d = query.data!;
+              const submitted = d.funnel.find((f) => f.step === "submitted")?.count ?? 0;
+              const approved = d.funnel.find((f) => f.step === "approved")?.count ?? 0;
+              return (
+                <>
+                  <h2 style={{ marginTop: 0 }}>
+                    {submitted === 0
+                      ? "Воронка заявок"
+                      : `До одобрения доходит ${pct(approved, submitted)} поданных заявок`}
+                  </h2>
+                  <BarList
+                    emptyText="Нет заявок за период."
+                    items={d.funnel.map((f) => ({
+                      label: funnelStepLabel(f.step),
+                      value: f.count,
+                      displayValue: `${f.count} (${pct(f.count, submitted)})`,
+                    }))}
+                  />
+                </>
+              );
+            })()}
           </div>
 
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>Доля одобрений по неделям</h2>
+            {(() => {
+              const d = query.data!;
+              const totalApproved = d.weekly_approval.reduce((s, w) => s + w.approved, 0);
+              const totalDecided = d.weekly_approval.reduce((s, w) => s + w.total, 0);
+              return (
+                <h2 style={{ marginTop: 0 }}>
+                  {totalDecided === 0
+                    ? "Доля одобрений по неделям"
+                    : `За период одобрено ${pct(totalApproved, totalDecided)} решений стадии Б`}
+                </h2>
+              );
+            })()}
             {query.data.weekly_approval.length === 0 && (
-              <p className="muted">Нет решений стадии Б за период.</p>
+              <p className="muted">
+                Пока нет решений стадии Б за период — появятся после того, как оператор начнёт нажимать
+                «Рассмотреть».
+              </p>
             )}
             {query.data.weekly_approval.length > 0 && (
               <table className="table table--compact">
@@ -101,18 +134,33 @@ export function DashboardPage() {
           </div>
 
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>Причины отказов</h2>
-            <BarList
-              emptyText="Отказов за период нет."
-              items={query.data.rejection_reasons
-                .slice()
-                .sort((a, b) => b.count - a.count)
-                .map((r) => ({ label: reasonCodeLabel(r.reason_code), value: r.count }))}
-            />
+            {(() => {
+              const d = query.data!;
+              const sorted = d.rejection_reasons.slice().sort((a, b) => b.count - a.count);
+              const totalRejected = sorted.reduce((s, r) => s + r.count, 0);
+              const top = sorted[0];
+              return (
+                <>
+                  <h2 style={{ marginTop: 0 }}>
+                    {!top
+                      ? "Причины отказов"
+                      : `Чаще всего отказывают по причине «${reasonCodeLabel(top.reason_code)}» (${pct(top.count, totalRejected)})`}
+                  </h2>
+                  <BarList
+                    emptyText="Отказов за период нет."
+                    items={sorted.map((r) => ({ label: reasonCodeLabel(r.reason_code), value: r.count }))}
+                  />
+                </>
+              );
+            })()}
           </div>
 
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>Ручные переопределения и расхождения</h2>
+            <h2 style={{ marginTop: 0 }}>
+              {query.data.overrides.applications_total === 0
+                ? "Ручные переопределения и расхождения"
+                : `Оператор меняет решение системы в ${pct(query.data.overrides.overridden, query.data.overrides.applications_total)} заявок`}
+            </h2>
             {query.data.overrides.applications_total === 0 ? (
               <p className="muted">Заявок за период нет.</p>
             ) : (
@@ -140,8 +188,19 @@ export function DashboardPage() {
           </div>
 
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>БКИ по месяцам</h2>
-            {query.data.bki_monthly.length === 0 && <p className="muted">Запросов в БКИ за период нет.</p>}
+            {(() => {
+              const d = query.data!;
+              const attempts = d.bki_monthly.reduce((s, m) => s + m.attempts, 0);
+              const successful = d.bki_monthly.reduce((s, m) => s + m.successful, 0);
+              return (
+                <h2 style={{ marginTop: 0 }}>
+                  {attempts === 0 ? "БКИ по месяцам" : `${pct(successful, attempts)} платных запросов в БКИ возвращают отчёт`}
+                </h2>
+              );
+            })()}
+            {query.data.bki_monthly.length === 0 && (
+              <p className="muted">Запросов в БКИ за период нет — появятся после первых решений стадии Б.</p>
+            )}
             {query.data.bki_monthly.length > 0 && (
               <table className="table table--compact">
                 <thead>
@@ -165,14 +224,20 @@ export function DashboardPage() {
           </div>
 
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>Недоступность источников</h2>
-            {/* T17, шаг 3 (ваше явное указание): МВД не показываем — файл
-                недействительных паспортов отменён в 2023, источник не
-                подключён. */}
             {(() => {
-              const sources = query.data.source_availability.filter((s) => s.source !== "mvd");
-              if (sources.length === 0) return <p className="muted">Проверок за период нет.</p>;
+              const d = query.data!;
+              const sorted = d.source_availability.slice().sort((a, b) => b.unavailable / Math.max(1, b.total) - a.unavailable / Math.max(1, a.total));
+              const worst = sorted.find((s) => s.unavailable > 0);
               return (
+                <h2 style={{ marginTop: 0 }}>
+                  {!worst
+                    ? "Недоступность источников"
+                    : `Чаще всего недоступен источник «${sourceMeta(worst.source).label}» (${pct(worst.unavailable, worst.total)})`}
+                </h2>
+              );
+            })()}
+            {query.data.source_availability.length === 0 && <p className="muted">Проверок за период нет.</p>}
+            {query.data.source_availability.length > 0 && (
               <table className="table table--compact">
                 <thead>
                   <tr>
@@ -183,7 +248,7 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sources.map((s) => (
+                  {query.data.source_availability.map((s) => (
                     <tr key={s.source}>
                       <td>
                         <SourceBadge source={s.source} />
@@ -195,13 +260,57 @@ export function DashboardPage() {
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+
+          <div className="card">
+            {(() => {
+              const d = query.data!;
+              const mature = d.score_distribution.reduce((s, b) => s + b.count, 0);
+              const t = d.score_thresholds;
+              return (
+                <>
+                  <h2 style={{ marginTop: 0 }}>
+                    {mature === 0 ? "Балл БКИ" : "Распределение балла БКИ по решениям стадии Б"}
+                  </h2>
+                  {t && (t.auto_approve_above != null || t.auto_reject_below != null) && (
+                    <p className="muted" style={{ marginTop: -8 }}>
+                      <Term tip="Пороги действующей версии правил, без учёта матрицы по сумме сделки — ориентир по всему портфелю, не порог конкретного решения.">
+                        Пороги сейчас
+                      </Term>
+                      {t.auto_reject_below != null && <>: отказ ниже {Math.round(t.auto_reject_below)}</>}
+                      {t.auto_approve_above != null && <>, одобрение выше {Math.round(t.auto_approve_above)}</>}
+                    </p>
+                  )}
+                  <BarList
+                    emptyText="Нет решений стадии Б с баллом БКИ за период."
+                    items={d.score_distribution.map((b) => ({
+                      label: `${b.bucket_start}–${b.bucket_start + 49}`,
+                      value: b.count,
+                    }))}
+                  />
+                </>
               );
             })()}
           </div>
 
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>Винтажный анализ (просрочка 60+ за 6 мес.)</h2>
-            {query.data.vintage.length === 0 && <p className="muted">Нет выданных договоров.</p>}
+            {(() => {
+              const d = query.data!;
+              const matured = d.vintage.filter((v) => v.mature_contracts > 0);
+              const totalMature = matured.reduce((s, v) => s + v.mature_contracts, 0);
+              const totalBad = matured.reduce((s, v) => s + (v.bad_contracts ?? 0), 0);
+              return (
+                <h2 style={{ marginTop: 0 }}>
+                  {totalMature === 0
+                    ? "Винтажный анализ (просрочка 60+ за 6 мес.)"
+                    : `Среди зрелых когорт просрочку 60+ за 6 мес. допускают ${pct(totalBad, totalMature)} договоров`}
+                </h2>
+              );
+            })()}
+            {query.data.vintage.length === 0 && (
+              <p className="muted">Появится после первых выданных договоров («Портфель» → «Договоры»).</p>
+            )}
             {query.data.vintage.length > 0 && (
               <table className="table table--compact">
                 <thead>
@@ -231,14 +340,28 @@ export function DashboardPage() {
           </div>
 
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>Просрочка сейчас</h2>
-            <BarList
-              emptyText="Нет действующих договоров с данными по платежам."
-              items={query.data.delinquency_buckets.map((b) => ({
-                label: b.bucket === "0" ? "без просрочки" : `${b.bucket} дней`,
-                value: b.contracts,
-              }))}
-            />
+            {(() => {
+              const d = query.data!;
+              const total = d.delinquency_buckets.reduce((s, b) => s + b.contracts, 0);
+              const overdue = d.delinquency_buckets.filter((b) => b.bucket !== "0").reduce((s, b) => s + b.contracts, 0);
+              return (
+                <h2 style={{ marginTop: 0 }}>
+                  {total === 0 ? "Просрочка сейчас" : `С просрочкой сейчас ${pct(overdue, total)} действующих договоров`}
+                </h2>
+              );
+            })()}
+            {query.data.delinquency_buckets.length === 0 && (
+              <p className="muted">Появится после импорта платежей («Портфель» → «Импорт»).</p>
+            )}
+            {query.data.delinquency_buckets.length > 0 && (
+              <BarList
+                emptyText="Нет действующих договоров с данными по платежам."
+                items={query.data.delinquency_buckets.map((b) => ({
+                  label: b.bucket === "0" ? "без просрочки" : `${b.bucket} дней`,
+                  value: b.contracts,
+                }))}
+              />
+            )}
           </div>
         </div>
       )}

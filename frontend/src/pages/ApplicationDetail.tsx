@@ -38,29 +38,45 @@ function decisionVerdictClass(outcome: string | undefined): string {
 // Сравнения решения с порогами ИЗ ВЕРСИИ ПРАВИЛ ЭТОГО РЕШЕНИЯ (бэкенд отдаёт
 // пороги версии decision.ruleset_version_id, не текущей). Здесь — только
 // арифметика сравнения, никаких чисел из конфига в коде фронта.
+interface Comparison {
+  term: string;
+  tip: string;
+  text: string;
+}
+
 function bkiComparison(decision: {
   score: string | null;
   score_auto_approve_above: number | null;
   score_auto_reject_below: number | null;
-}): string | null {
+}): Comparison | null {
   if (decision.score == null || decision.score_auto_approve_above == null || decision.score_auto_reject_below == null) {
     return null;
   }
   const score = Number(decision.score);
   const approve = decision.score_auto_approve_above;
   const reject = decision.score_auto_reject_below;
-  if (score >= approve) return `Балл БКИ ${wholeNumber(score)} — не ниже порога одобрения ${wholeNumber(approve)}`;
-  if (score < reject) return `Балл БКИ ${wholeNumber(score)} — ниже порога отказа ${wholeNumber(reject)}`;
-  return `Балл БКИ ${wholeNumber(score)} — между порогами ${wholeNumber(reject)} и ${wholeNumber(approve)}: серая зона`;
+  const tip =
+    "Скоринговый балл кредитного бюро (БКИ) — не наш собственный расчёт. Шкала бюро: чем выше, тем надёжнее заёмщик по данным о прошлых кредитах.";
+  if (score >= approve) {
+    return { term: "Балл БКИ", tip, text: `${wholeNumber(score)} — не ниже порога одобрения ${wholeNumber(approve)}` };
+  }
+  if (score < reject) {
+    return { term: "Балл БКИ", tip, text: `${wholeNumber(score)} — ниже порога отказа ${wholeNumber(reject)}` };
+  }
+  return {
+    term: "Балл БКИ", tip,
+    text: `${wholeNumber(score)} — между порогами ${wholeNumber(reject)} и ${wholeNumber(approve)}: серая зона`,
+  };
 }
 
-function ptiComparison(decision: { pti: number | null; pti_max: number | null }): string | null {
+function ptiComparison(decision: { pti: number | null; pti_max: number | null }): Comparison | null {
   if (decision.pti == null || decision.pti_max == null) return null;
   const pti = Math.round(decision.pti * 100);
   const max = Math.round(decision.pti_max * 100);
-  return decision.pti > decision.pti_max
-    ? `ПДН ${pti}% — выше порога ${max}%`
-    : `ПДН ${pti}% — в пределах порога ${max}%`;
+  const tip = "ПДН — доля дохода, которая уходит на платежи по долгам. Выше порога — отказ или ручная проверка.";
+  return pti > max
+    ? { term: "ПДН", tip, text: `${pti}% — выше порога ${max}%` }
+    : { term: "ПДН", tip, text: `${pti}% — в пределах порога ${max}%` };
 }
 
 export function ApplicationDetailPage() {
@@ -152,7 +168,9 @@ export function ApplicationDetailPage() {
         : []
     : [];
   const comparisons = latestDecision
-    ? [bkiComparison(latestDecision), ptiComparison(latestDecision)].filter((line): line is string => line !== null)
+    ? [bkiComparison(latestDecision), ptiComparison(latestDecision)].filter(
+        (line): line is Comparison => line !== null,
+      )
     : [];
   const noReasonsText =
     latestDecision?.outcome === "approve"
@@ -276,16 +294,27 @@ export function ApplicationDetailPage() {
         <div className="card">
           <h2>Почему такое решение</h2>
           {reasons.length === 0 && <p className="muted" style={{ margin: 0 }}>{noReasonsText}</p>}
+          {reasons.length > 0 && (
+            <p className="muted" style={{ margin: "0 0 6px", fontSize: 12 }}>
+              Сработавшие{" "}
+              <Term tip="Стоп-фактор — правило, которое само по себе ведёт к отказу или заморозке (например, совпадение по перечню, просроченный паспорт) — не балл и не сравнение порогов.">
+                стоп-факторы
+              </Term>
+              :
+            </p>
+          )}
           {reasons.map((text, i) => (
             <div className="rule-hit" key={i}>
               <span className="dot" />
               <span>{text}</span>
             </div>
           ))}
-          {comparisons.map((line) => (
-            <div className="rule-hit" key={line}>
+          {comparisons.map((c) => (
+            <div className="rule-hit" key={c.term}>
               <span className="dot" />
-              <span>{line}</span>
+              <span>
+                <Term tip={c.tip}>{c.term}</Term> {c.text}
+              </span>
             </div>
           ))}
           {latestDecision.approved_amount != null && (
@@ -408,7 +437,11 @@ export function ApplicationDetailPage() {
         .
       </p>
 
-      <h2 id="fssp">ФССП</h2>
+      <h2 id="fssp">
+        <Term tip="Федеральная служба судебных приставов — проверка на исполнительные производства (долги). Автоматически не вызывается ни на одной стадии: только по ручному действию, капча решается человеком.">
+          ФССП
+        </Term>
+      </h2>
       <FsspPanel
         applicationId={app.id}
         subjectType="applicant"

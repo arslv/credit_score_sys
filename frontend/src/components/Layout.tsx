@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { BarChart3, Briefcase, ClipboardList, Settings, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { BarChart3, Briefcase, ClipboardList, HelpCircle, Settings, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 
 // T17, шаг 3 (навигация+роли): 5 разделов вместо плоского списка из 11
@@ -50,6 +50,17 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/contracts", label: "Договоры", roles: ["risk_manager", "admin", "viewer", "compliance"] },
       { to: "/clients", label: "Клиенты", roles: ["risk_manager", "admin", "viewer", "compliance"] },
       { to: "/imports", label: "Импорт", roles: ["admin", "risk_manager"] },
+    ],
+  },
+  {
+    key: "help",
+    label: "Справка",
+    icon: HelpCircle,
+    items: [
+      {
+        to: "/help", label: "Справка",
+        roles: ["risk_manager", "admin", "viewer", "compliance", "operator"],
+      },
     ],
   },
   {

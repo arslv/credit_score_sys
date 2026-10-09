@@ -19,11 +19,15 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
+from pydantic import ValidationError
+from sqlalchemy import and_, exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.models import Application, BkiReport, Check, Decision, Employee, ManualOverride
+from app.engine.versions import get_active_ruleset_version, load_config
+from app.models import (
+    Application, BkiReport, Check, Decision, Employee, ManualOverride, StatusHistory,
+)
 from app.security.deps import require_roles
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -47,9 +51,24 @@ def _period_filter(column: Any, period_from: date | None, period_to: date | None
     return clauses
 
 
-class FunnelItem(BaseModel):
-    status: str
+# T17, часть 5 (ваше указание): воронка — КОНКРЕТНАЯ последовательность
+# ТЗ/CLAUDE.md «Как устроен поток», а не произвольные статусы. «Прошли
+# стадию А» намеренно нет — на стадии А одобрения не бывает, только отказ или
+# передача оператору. Каждый шаг — отдельный EXISTS (заявка когда-либо дошла
+# до шага), одним запросом с FILTER — не N+1 по заявкам.
+class FunnelStepItem(BaseModel):
+    step: str  # submitted | to_operator | stage_b | approved
     count: int
+
+
+class ScoreBucketItem(BaseModel):
+    bucket_start: int
+    count: int
+
+
+class ScoreThresholds(BaseModel):
+    auto_approve_above: float | None
+    auto_reject_below: float | None
 
 
 class WeeklyApprovalItem(BaseModel):
@@ -100,7 +119,9 @@ class DelinquencyBucketItem(BaseModel):
 class DashboardSummary(BaseModel):
     period_from: date | None
     period_to: date | None
-    funnel: list[FunnelItem]
+    funnel: list[FunnelStepItem]
+    score_distribution: list[ScoreBucketItem]
+    score_thresholds: ScoreThresholds | None
     weekly_approval: list[WeeklyApprovalItem]
     rejection_reasons: list[RejectionReasonItem]
     overrides: OverridesSummary
@@ -117,12 +138,34 @@ async def get_dashboard_summary(
     _employee: Employee = Depends(require_roles(*_VIEW_ROLES)),
     session: AsyncSession = Depends(get_session),
 ) -> DashboardSummary:
-    # --- воронка по состояниям (Application.submitted_at) ---------------------
-    funnel_stmt = select(Application.status, func.count()).group_by(Application.status)
+    # --- воронка: поступило → передано оператору → рассмотрено (стадия Б) →
+    # одобрено. Один запрос, без цикла по заявкам (см. докстринг выше).
+    reached_to_operator = exists(
+        select(StatusHistory.id).where(
+            StatusHistory.application_id == Application.id, StatusHistory.to_status == "to_operator",
+        )
+    )
+    reached_stage_b = exists(
+        select(Decision.id).where(Decision.application_id == Application.id, Decision.stage == "B")
+    )
+    reached_approved = exists(
+        select(Decision.id).where(Decision.application_id == Application.id, Decision.outcome == "approve")
+    )
+    funnel_stmt = select(
+        func.count().label("submitted"),
+        func.count().filter(reached_to_operator).label("to_operator"),
+        func.count().filter(reached_stage_b).label("stage_b"),
+        func.count().filter(reached_approved).label("approved"),
+    ).select_from(Application)
     for clause in _period_filter(Application.submitted_at, period_from, period_to):
         funnel_stmt = funnel_stmt.where(clause)
-    funnel_rows = (await session.execute(funnel_stmt)).all()
-    funnel = [FunnelItem(status=status, count=count) for status, count in funnel_rows]
+    funnel_row = (await session.execute(funnel_stmt)).one()
+    funnel = [
+        FunnelStepItem(step="submitted", count=funnel_row.submitted),
+        FunnelStepItem(step="to_operator", count=funnel_row.to_operator),
+        FunnelStepItem(step="stage_b", count=funnel_row.stage_b),
+        FunnelStepItem(step="approved", count=funnel_row.approved),
+    ]
 
     # --- доля одобрений по неделям (Decision.stage == "B", created_at) --------
     week_col = func.date_trunc("week", _msk(Decision.created_at)).label("week_start")
@@ -159,39 +202,43 @@ async def get_dashboard_summary(
     ]
 
     # --- доля ручных переопределений и расхождений с оператором ---------------
-    apps_stmt = select(Application.id)
+    # Раньше — Python-цикл по application_ids (2 запроса на заявку, тот же
+    # N+1, что был в очереди списка заявок, см. app/api/applications.py).
+    # Теперь — DISTINCT ON (последний override/решение на заявку) и один join.
+    latest_decision_sq = (
+        select(Decision.application_id, Decision.outcome)
+        .distinct(Decision.application_id)
+        .order_by(Decision.application_id, Decision.created_at.desc())
+        .subquery()
+    )
+    latest_override_sq = (
+        select(ManualOverride.application_id, ManualOverride.to_outcome)
+        .distinct(ManualOverride.application_id)
+        .order_by(ManualOverride.application_id, ManualOverride.created_at.desc())
+        .subquery()
+    )
+    overrides_stmt = (
+        select(
+            func.count().label("total"),
+            func.count(latest_override_sq.c.application_id).label("overridden"),
+            func.count().filter(
+                and_(
+                    latest_override_sq.c.application_id.is_not(None),
+                    latest_override_sq.c.to_outcome != latest_decision_sq.c.outcome,
+                )
+            ).label("discrepancies"),
+        )
+        .select_from(Application)
+        .outerjoin(latest_override_sq, latest_override_sq.c.application_id == Application.id)
+        .outerjoin(latest_decision_sq, latest_decision_sq.c.application_id == Application.id)
+    )
     for clause in _period_filter(Application.submitted_at, period_from, period_to):
-        apps_stmt = apps_stmt.where(clause)
-    application_ids = (await session.execute(apps_stmt)).scalars().all()
-
-    overridden = 0
-    discrepancies = 0
-    for application_id in application_ids:
-        override = (
-            await session.execute(
-                select(ManualOverride)
-                .where(ManualOverride.application_id == application_id)
-                .order_by(ManualOverride.created_at.desc())
-                .limit(1)
-            )
-        ).scalars().first()
-        if override is None:
-            continue
-        overridden += 1
-
-        latest_decision = (
-            await session.execute(
-                select(Decision)
-                .where(Decision.application_id == application_id)
-                .order_by(Decision.created_at.desc())
-                .limit(1)
-            )
-        ).scalars().first()
-        if latest_decision is not None and override.to_outcome != latest_decision.outcome:
-            discrepancies += 1
-
+        overrides_stmt = overrides_stmt.where(clause)
+    overrides_row = (await session.execute(overrides_stmt)).one()
     overrides = OverridesSummary(
-        applications_total=len(application_ids), overridden=overridden, discrepancies=discrepancies,
+        applications_total=overrides_row.total,
+        overridden=overrides_row.overridden,
+        discrepancies=overrides_row.discrepancies,
     )
 
     # --- БКИ по месяцам: платные попытки и успешные отчёты отдельно -----------
@@ -214,12 +261,14 @@ async def get_dashboard_summary(
     ]
 
     # --- доля source_unavailable по источнику (Check.started_at) --------------
+    # МВД не в конвейере (T17, шаг 3) — исключаем в самом запросе, не на фронте.
     source_stmt = (
         select(
             Check.source,
             func.count().filter(Check.status == "source_unavailable").label("unavailable"),
             func.count().label("total"),
         )
+        .where(Check.source != "mvd")
         .group_by(Check.source)
         .order_by(Check.source)
     )
@@ -236,6 +285,38 @@ async def get_dashboard_summary(
     # смотрят по всему портфелю, не по "заявкам за период"; contracts.issued_at
     # обычная дата, без UTC/МСК неоднозначности (ваше уточнение — конвертация
     # нужна только для timestamptz-полей, не для date).
+    # --- распределение балла БКИ (стадия Б) с действующими порогами -----------
+    score_bucket = (func.floor(Decision.score / 50) * 50).label("bucket_start")
+    score_stmt = (
+        select(score_bucket, func.count())
+        .where(Decision.stage == "B", Decision.score.is_not(None))
+        .group_by(score_bucket)
+        .order_by(score_bucket)
+    )
+    for clause in _period_filter(Decision.created_at, period_from, period_to):
+        score_stmt = score_stmt.where(clause)
+    score_rows = (await session.execute(score_stmt)).all()
+    score_distribution = [
+        ScoreBucketItem(bucket_start=int(bucket), count=count) for bucket, count in score_rows
+    ]
+
+    # Пороги — из ДЕЙСТВУЮЩЕЙ версии правил (без учёта матрицы по сумме: для
+    # аналитики по всему портфелю это общий ориентир, не порог решения
+    # конкретной заявки — тот в карточке берётся из версии РЕШЕНИЯ, см.
+    # app/api/applications.py). Битый конфиг — не роняем дашборд целиком.
+    score_thresholds = None
+    ruleset_row = await get_active_ruleset_version(session)
+    if ruleset_row is not None:
+        try:
+            config = load_config(ruleset_row)
+        except ValidationError:
+            config = None
+        if config is not None:
+            score_thresholds = ScoreThresholds(
+                auto_approve_above=config.score_thresholds.auto_approve_above,
+                auto_reject_below=config.score_thresholds.auto_reject_below,
+            )
+
     vintage_rows = (
         await session.execute(
             text(
@@ -297,4 +378,5 @@ async def get_dashboard_summary(
         funnel=funnel, weekly_approval=weekly_approval, rejection_reasons=rejection_reasons,
         overrides=overrides, bki_monthly=bki_monthly, source_availability=source_availability,
         vintage=vintage, delinquency_buckets=delinquency_buckets,
+        score_distribution=score_distribution, score_thresholds=score_thresholds,
     )

@@ -39,11 +39,12 @@ async def _application(session, *, external_id: str, status: str, submitted_at: 
 
 async def _decision(
     session, *, application_id, stage: str, outcome: str, reason_code: str | None,
-    created_at: datetime, ruleset_version_id,
+    created_at: datetime, ruleset_version_id, score: Decimal | None = None,
 ) -> Decision:
     decision = Decision(
         application_id=application_id, stage=stage, outcome=outcome, reason_code=reason_code,
         freeze=False, triggered_rules=[], ruleset_version_id=ruleset_version_id, created_at=created_at,
+        score=score, score_source=("bki_score" if score is not None else None),
     )
     session.add(decision)
     await session.flush()
@@ -64,7 +65,7 @@ async def test_dashboard_summary_matches_exact_seeded_numbers(
         )
         await _decision(
             session, application_id=app1.id, stage="B", outcome="approve", reason_code=None,
-            created_at=_utc(2026, 1, 4, 22, 30), ruleset_version_id=active_ruleset.id,
+            created_at=_utc(2026, 1, 4, 22, 30), ruleset_version_id=active_ruleset.id, score=Decimal("780"),
         )
         session.add(ManualOverride(
             application_id=app1.id, from_outcome="approve", to_outcome="approve",
@@ -78,7 +79,7 @@ async def test_dashboard_summary_matches_exact_seeded_numbers(
         )
         await _decision(
             session, application_id=app2.id, stage="B", outcome="reject", reason_code="PTI_HIGH",
-            created_at=_utc(2026, 1, 5, 10, 0), ruleset_version_id=active_ruleset.id,
+            created_at=_utc(2026, 1, 5, 10, 0), ruleset_version_id=active_ruleset.id, score=Decimal("410"),
         )
 
         # App3: одобрена, решение стадии Б approve на следующей неделе (неделя 2).
@@ -88,7 +89,7 @@ async def test_dashboard_summary_matches_exact_seeded_numbers(
         )
         await _decision(
             session, application_id=app3.id, stage="B", outcome="approve", reason_code=None,
-            created_at=_utc(2026, 1, 12, 8, 0), ruleset_version_id=active_ruleset.id,
+            created_at=_utc(2026, 1, 12, 8, 0), ruleset_version_id=active_ruleset.id, score=Decimal("820"),
         )
 
         # App4: отказ стадии А, причина AGE_BELOW_MIN — считается в причинах
@@ -163,11 +164,12 @@ async def test_dashboard_summary_matches_exact_seeded_numbers(
     assert response.status_code == 200
     body = response.json()
 
-    # --- воронка по состояниям -------------------------------------------------
-    funnel = {item["status"]: item["count"] for item in body["funnel"]}
-    assert funnel == {
-        "approved": 2, "rejected_b": 1, "rejected_a": 1, "to_operator": 1, "gray_zone": 1,
-    }
+    # --- воронка: поступило → передано оператору → рассмотрено (Б) → одобрено --
+    # App1/2/3/6 дошли до стадии Б (решение Decision.stage="B") — app2 и app6
+    # не approve, но Б рассмотрена; App4 — отказ стадии А, Б не было; App5 —
+    # только «передано оператору», решения ещё нет.
+    funnel = {item["step"]: item["count"] for item in body["funnel"]}
+    assert funnel == {"submitted": 6, "to_operator": 0, "stage_b": 4, "approved": 2}
 
     # --- доля одобрений по неделям (по Москве, не UTC) --------------------------
     weekly = {item["week_start"]: (item["approved"], item["total"]) for item in body["weekly_approval"]}
@@ -186,9 +188,16 @@ async def test_dashboard_summary_matches_exact_seeded_numbers(
     # --- БКИ по месяцам ------------------------------------------------------------
     assert body["bki_monthly"] == [{"month": "2026-01", "attempts": 3, "successful": 2}]
 
-    # --- доля source_unavailable по источнику --------------------------------------
+    # --- доля source_unavailable по источнику (МВД не в конвейере — исключён) -----
     availability = {item["source"]: (item["unavailable"], item["total"]) for item in body["source_availability"]}
-    assert availability == {"mvd": (1, 3), "fns": (2, 2), "rosfinmon": (0, 1)}
+    assert availability == {"fns": (2, 2), "rosfinmon": (0, 1)}
+    assert "mvd" not in availability
+
+    # --- распределение балла БКИ и действующие пороги ------------------------------
+    distribution = {item["bucket_start"]: item["count"] for item in body["score_distribution"]}
+    assert distribution == {400: 1, 750: 1, 800: 1}  # App2=410, App1=780, App3=820
+    assert body["score_thresholds"]["auto_approve_above"] is not None
+    assert body["score_thresholds"]["auto_reject_below"] is not None
 
 
 async def test_dashboard_forbidden_for_admin_and_compliance(admin_client, session_factory):
@@ -207,7 +216,11 @@ async def test_dashboard_empty_period_returns_empty_blocks(admin_client, session
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["funnel"] == []
+    assert body["funnel"] == [
+        {"step": "submitted", "count": 0}, {"step": "to_operator", "count": 0},
+        {"step": "stage_b", "count": 0}, {"step": "approved", "count": 0},
+    ]
+    assert body["score_distribution"] == []
     assert body["weekly_approval"] == []
     assert body["rejection_reasons"] == []
     assert body["overrides"] == {"applications_total": 0, "overridden": 0, "discrepancies": 0}

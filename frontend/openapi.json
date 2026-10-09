@@ -191,8 +191,7 @@
                   "type": "number"
                 },
                 {
-                  "type": "string",
-                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -211,8 +210,7 @@
                   "type": "number"
                 },
                 {
-                  "type": "string",
-                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -2275,12 +2273,10 @@
           },
           "goods_price": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Goods Price"
           },
           "down_payment": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Down Payment"
           },
           "term_months": {
@@ -2293,7 +2289,6 @@
           },
           "requested_amount": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Requested Amount"
           },
           "submitted_at": {
@@ -2475,7 +2470,6 @@
           },
           "goods_price": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Goods Price"
           },
           "goods_name": {
@@ -2484,7 +2478,6 @@
           },
           "requested_amount": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Requested Amount"
           },
           "term_months": {
@@ -2520,8 +2513,7 @@
           "score": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3171,22 +3163,18 @@
           },
           "principal": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Principal"
           },
           "markup": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Markup"
           },
           "total_amount": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Amount"
           },
           "down_payment": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Down Payment"
           },
           "term_months": {
@@ -3319,7 +3307,6 @@
           },
           "total_amount": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Amount"
           },
           "term_months": {
@@ -3381,8 +3368,7 @@
           "score": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3434,10 +3420,27 @@
           },
           "funnel": {
             "items": {
-              "$ref": "#/components/schemas/FunnelItem"
+              "$ref": "#/components/schemas/FunnelStepItem"
             },
             "type": "array",
             "title": "Funnel"
+          },
+          "score_distribution": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreBucketItem"
+            },
+            "type": "array",
+            "title": "Score Distribution"
+          },
+          "score_thresholds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScoreThresholds"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "weekly_approval": {
             "items": {
@@ -3490,6 +3493,8 @@
           "period_from",
           "period_to",
           "funnel",
+          "score_distribution",
+          "score_thresholds",
           "weekly_approval",
           "rejection_reasons",
           "overrides",
@@ -3559,8 +3564,7 @@
           "score": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3582,8 +3586,7 @@
           "approved_amount": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3616,8 +3619,7 @@
           "required_down_pay": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -3736,7 +3738,6 @@
           },
           "overdue_amount": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Overdue Amount"
           }
         },
@@ -4132,11 +4133,11 @@
         ],
         "title": "FsspSubmitCodeResponse"
       },
-      "FunnelItem": {
+      "FunnelStepItem": {
         "properties": {
-          "status": {
+          "step": {
             "type": "string",
-            "title": "Status"
+            "title": "Step"
           },
           "count": {
             "type": "integer",
@@ -4145,10 +4146,10 @@
         },
         "type": "object",
         "required": [
-          "status",
+          "step",
           "count"
         ],
-        "title": "FunnelItem"
+        "title": "FunnelStepItem"
       },
       "GoodsCategoryIn": {
         "properties": {
@@ -4457,8 +4458,7 @@
           "min_confidence": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4797,7 +4797,6 @@
           },
           "amount": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount"
           },
           "source": {
@@ -4951,7 +4950,6 @@
           },
           "due_amount": {
             "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Due Amount"
           }
         },
@@ -4962,6 +4960,56 @@
           "due_amount"
         ],
         "title": "ScheduleItemOut"
+      },
+      "ScoreBucketItem": {
+        "properties": {
+          "bucket_start": {
+            "type": "integer",
+            "title": "Bucket Start"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bucket_start",
+          "count"
+        ],
+        "title": "ScoreBucketItem"
+      },
+      "ScoreThresholds": {
+        "properties": {
+          "auto_approve_above": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Approve Above"
+          },
+          "auto_reject_below": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reject Below"
+          }
+        },
+        "type": "object",
+        "required": [
+          "auto_approve_above",
+          "auto_reject_below"
+        ],
+        "title": "ScoreThresholds"
       },
       "SimulateRequest": {
         "properties": {

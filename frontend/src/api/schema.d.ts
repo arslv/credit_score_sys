@@ -1137,7 +1137,10 @@ export interface components {
             /** Period To */
             period_to: string | null;
             /** Funnel */
-            funnel: components["schemas"]["FunnelItem"][];
+            funnel: components["schemas"]["FunnelStepItem"][];
+            /** Score Distribution */
+            score_distribution: components["schemas"]["ScoreBucketItem"][];
+            score_thresholds: components["schemas"]["ScoreThresholds"] | null;
             /** Weekly Approval */
             weekly_approval: components["schemas"]["WeeklyApprovalItem"][];
             /** Rejection Reasons */
@@ -1370,10 +1373,10 @@ export interface components {
             /** Message */
             message?: string | null;
         };
-        /** FunnelItem */
-        FunnelItem: {
-            /** Status */
-            status: string;
+        /** FunnelStepItem */
+        FunnelStepItem: {
+            /** Step */
+            step: string;
             /** Count */
             count: number;
         };
@@ -1698,6 +1701,20 @@ export interface components {
             due_date: string;
             /** Due Amount */
             due_amount: string;
+        };
+        /** ScoreBucketItem */
+        ScoreBucketItem: {
+            /** Bucket Start */
+            bucket_start: number;
+            /** Count */
+            count: number;
+        };
+        /** ScoreThresholds */
+        ScoreThresholds: {
+            /** Auto Approve Above */
+            auto_approve_above: number | null;
+            /** Auto Reject Below */
+            auto_reject_below: number | null;
         };
         /** SimulateRequest */
         SimulateRequest: {

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import * as yaml from "js-yaml";
 import { api } from "../api/client";
+import { Term } from "../components/Term";
 import { formatDateTime } from "../lib/format";
 
 // Ответы этих эндпоинтов не типизированы в схеме (обычные dict, не Pydantic
@@ -623,7 +624,12 @@ export function RulesetsPage() {
 
                     {s.not_computable.length > 0 && (
                       <div style={{ marginTop: 12 }}>
-                        <h3>Не вычислимо по старым снимкам</h3>
+                        <h3>
+                          <Term tip="Для старых снимков признаков нет нужного поля (например, правило появилось после снимка) — посчитать правило по ним нельзя. Это не значит, что оно бы не сработало.">
+                            Не вычислимо
+                          </Term>{" "}
+                          по старым снимкам
+                        </h3>
                         <ul>
                           {s.not_computable.map((r) => (
                             <li key={r.rule_id}>

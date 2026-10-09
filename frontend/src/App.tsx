@@ -16,6 +16,7 @@ import { CompliancePage } from "./pages/Compliance";
 import { DashboardPage } from "./pages/Dashboard";
 import { RulesetsPage } from "./pages/Rulesets";
 import { ImportsPage } from "./pages/Imports";
+import { HelpPage } from "./pages/Help";
 
 export function App() {
   return (
@@ -38,6 +39,7 @@ export function App() {
           <Route path="/compliance" element={<CompliancePage />} />
           <Route path="/rulesets" element={<RulesetsPage />} />
           <Route path="/imports" element={<ImportsPage />} />
+          <Route path="/help" element={<HelpPage />} />
         </Route>
       </Route>
     </Routes>

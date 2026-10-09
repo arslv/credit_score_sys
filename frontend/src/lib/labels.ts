@@ -313,3 +313,40 @@ export function tariffLabel(value: string | null | undefined): string {
   return (value && TARIFF_LABELS[value]) || "—";
 }
 
+// T17, часть 5: шаги воронки аналитики (app/api/dashboard.py FunnelStepItem) —
+// «Поступило → Передано оператору → Рассмотрено (стадия Б) → Одобрено» (ваше
+// явное указание; «прошли стадию А» нет — на ней одобрения не бывает).
+const FUNNEL_STEP_LABELS: Record<string, string> = {
+  submitted: "Поступило",
+  to_operator: "Передано оператору",
+  stage_b: "Рассмотрено (стадия Б)",
+  approved: "Одобрено",
+};
+
+export function funnelStepLabel(step: string): string {
+  return FUNNEL_STEP_LABELS[step] ?? step;
+}
+
+// Ликвидность категории товара (app/models/reference.py LIQUIDITY_LEVELS) и вид
+// кода причины (REASON_CODE_KINDS) — справочники Настроек, те же правила: без
+// сырых кодов на экране.
+const LIQUIDITY_LABELS: Record<string, string> = {
+  high: "высокая",
+  medium: "средняя",
+  low: "низкая",
+};
+
+export function liquidityLabel(value: string): string {
+  return LIQUIDITY_LABELS[value] ?? value;
+}
+
+const REASON_CODE_KIND_LABELS: Record<string, string> = {
+  reject: "отказ",
+  override_approve: "ручное одобрение",
+  override_reject: "ручной отказ",
+};
+
+export function reasonCodeKindLabel(value: string): string {
+  return REASON_CODE_KIND_LABELS[value] ?? value;
+}
+
