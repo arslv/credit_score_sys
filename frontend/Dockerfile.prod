@@ -1,0 +1,9 @@
+# T19: сборка статики админки для боя — отдаёт nginx (docker-compose.prod.yml,
+# сервис frontend-build), не dev-сервер Vite (тот — только frontend/Dockerfile).
+FROM node:20-slim AS build
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build

@@ -1,0 +1,40 @@
+# T19: шаблон envsubst (образ nginx:1.27-alpine подставляет переменные из
+# окружения контейнера в файлы /etc/nginx/templates/*.template при старте —
+# см. docker-compose.prod.yml). Переменные: $DOMAIN, $SSL_CERT_PATH, $SSL_KEY_PATH.
+#
+# X-Forwarded-For (T12, docs/deployment.md): перезаписываем значением реального
+# адреса клиента ($remote_addr), не дописываем в заголовок клиента — иначе
+# клиент может подставить в него чужой адрес перед настоящим.
+
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN};
+
+    ssl_certificate     ${SSL_CERT_PATH};
+    ssl_certificate_key ${SSL_KEY_PATH};
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Фото паспортов (base64 в теле вебхука, T18) — больше дефолтного 1m.
+    client_max_body_size 20m;
+
+    location /api/ {
+        proxy_pass http://api:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri /index.html;
+    }
+}

@@ -204,6 +204,39 @@ class Settings(BaseSettings):
     # а CORS не пускает произвольный JS-код с чужого origin ставить его тоже.
     csrf_header_name: str = "X-Requested-With"
 
+    # T19: оповещения в Telegram (бот-токен/chat_id заказчика или нашего
+    # дежурного чата — из env). Пустое значение любого из двух выключает
+    # отправку (app/alerts/telegram.py только логирует warning) — в отличие
+    # от БКИ/OCR, отсутствие алертинга не блокирует работу сервиса и не
+    # проверяется startup_guard: это вспомогательный канал, не бизнес-функция.
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    # Как часто проверяется здоровье (app/tasks/alerts.py) — технический
+    # параметр, не бизнес-порог (правило 2 CLAUDE.md).
+    alerts_check_interval_seconds: int = 300
+    # "Источник недоступен дольше N минут" — считаем источник недоступным, если
+    # ВСЕ checks по нему за последние N минут имеют статус source_unavailable
+    # или error, и хотя бы одна попытка была (нет попыток — нечего алертить).
+    alerts_source_unavailable_minutes: int = 30
+    # "Заявки застряли" — то же определение, что stuck_applications_over_1h
+    # на экране состояния системы (app/api/system.py), но порог отдельно
+    # настраиваемый для алертинга (там — фиксированный час для экрана).
+    alerts_stuck_applications_minutes: int = 60
+    # Не слать то же самое оповещение повторно, пока состояние не изменилось,
+    # чаще чем раз в это число минут (дедуп в Redis, см. app/tasks/alerts.py) —
+    # иначе при затянувшемся сбое чат заваливает одно и то же сообщение каждые
+    # ALERTS_CHECK_INTERVAL_SECONDS.
+    alerts_resend_interval_minutes: int = 60
+    # "Ответы заказчику не доходят" — переиспользует partner_outbox_stuck_minutes
+    # выше (тот же смысл: pending дольше этого в partner_outbox_events),
+    # отдельного ключа не заводим.
+    #
+    # "Бэкап не сделан" — scripts/backup_postgres.sh при успехе обновляет mtime
+    # этого файла (общий volume с worker, см. docker-compose.prod.yml); старше
+    # ALERTS_BACKUP_MAX_AGE_HOURS или отсутствует вовсе — алерт.
+    backup_marker_path: str = "/backups/.last_success"
+    alerts_backup_max_age_hours: int = 26
+
 
 @lru_cache
 def get_settings() -> Settings:

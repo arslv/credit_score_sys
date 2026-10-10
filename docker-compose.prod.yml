@@ -1,0 +1,203 @@
+# T19: боевая конфигурация — для установки на сервер заказчика. Отличия от
+# docker-compose.yml (локальная разработка), см. docs/deployment.md:
+#
+# - нет fake_partner и её образа — заказчик стучится напрямую в nginx/api;
+# - APP_ENV=production фиксирован (не переопределяется из .env) — api/worker/beat
+#   откажутся стартовать с фейковыми провайдерами (app/startup_guard.py);
+# - фронтенд собран статикой (frontend-build, одноразовый) и отдаётся nginx,
+#   не dev-сервером Vite;
+# - nginx спереди: HTTPS (сертификат — с хоста, путь из CERTBOT_CONFIG_DIR),
+#   редирект с 80 на 443, прокси /api на api:8000;
+# - db/redis/api/worker/beat не публикуют портов наружу — только через nginx
+#   или `docker compose -f docker-compose.prod.yml exec`;
+# - ежедневный бэкап Postgres (backup) с ротацией и маркером для алертов.
+#
+# Переменные без значения по умолчанию ниже (с `:?...`) обязательны — compose
+# откажется стартовать, если они не заданы в .env. Полный список и инструкция
+# первого запуска — docs/deployment.md.
+#
+# nginx сидит на статическом адресе внутренней сети (172.28.0.10) — это и есть
+# "адрес прокси", который uvicorn обязан доверять для X-Forwarded-For (T12,
+# docs/deployment.md): конкретный адрес, не маска всей docker-подсети и не "*".
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dialog}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: ${POSTGRES_DB:-dialog}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dialog}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    environment:
+      APP_ENV: production
+      COOKIE_SECURE: "true"
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PARTNER_INBOUND_TOKEN: ${PARTNER_INBOUND_TOKEN:?см. docs/integration_contract.md и docs/deployment.md}
+      PARTNER_IP_ALLOWLIST: ${PARTNER_IP_ALLOWLIST:-}
+      PARTNER_OUTBOUND_URL: ${PARTNER_OUTBOUND_URL:?адрес эндпоинта заказчика, см. docs/deployment.md}
+      PARTNER_OUTBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:?см. docs/deployment.md}
+      STORAGE_DIR: /data/storage
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?нужен для распознавания паспорта, см. docs/deployment.md}
+      OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}
+      OCR_PROVIDER_MODE: ${OCR_PROVIDER_MODE:-anthropic}
+      BKI_PROVIDER_MODE: ${BKI_PROVIDER_MODE:-not_configured}
+      EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-http}
+      REGISTRIES_DOWNLOADER: ${REGISTRIES_DOWNLOADER:-local}
+      MVD_REGISTRY_URL: ${MVD_REGISTRY_URL:-}
+      ROSFINMON_REGISTRY_URL: ${ROSFINMON_REGISTRY_URL:-}
+    volumes:
+      - storage_data:/data/storage
+      - ./config:/app/config:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
+      --proxy-headers --forwarded-allow-ips ${NGINX_INTERNAL_IP:-172.28.0.10}"
+    restart: unless-stopped
+
+  worker:
+    build: ./backend
+    environment:
+      APP_ENV: production
+      COOKIE_SECURE: "true"
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PARTNER_INBOUND_TOKEN: ${PARTNER_INBOUND_TOKEN:?см. docs/deployment.md}
+      PARTNER_IP_ALLOWLIST: ${PARTNER_IP_ALLOWLIST:-}
+      PARTNER_OUTBOUND_URL: ${PARTNER_OUTBOUND_URL:?см. docs/deployment.md}
+      PARTNER_OUTBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:?см. docs/deployment.md}
+      STORAGE_DIR: /data/storage
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?см. docs/deployment.md}
+      OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}
+      OCR_PROVIDER_MODE: ${OCR_PROVIDER_MODE:-anthropic}
+      BKI_PROVIDER_MODE: ${BKI_PROVIDER_MODE:-not_configured}
+      EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-http}
+      REGISTRIES_DOWNLOADER: ${REGISTRIES_DOWNLOADER:-local}
+      MVD_REGISTRY_URL: ${MVD_REGISTRY_URL:-}
+      ROSFINMON_REGISTRY_URL: ${ROSFINMON_REGISTRY_URL:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      BACKUP_MARKER_PATH: /backups/.last_success
+    volumes:
+      - storage_data:/data/storage
+      - ./config:/app/config:ro
+      - ./data/registries:/data/registries:ro
+      - ${BACKUP_DIR:-/var/backups/dialog-scoring}:/backups:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app worker --loglevel=info
+    restart: unless-stopped
+
+  beat:
+    build: ./backend
+    environment:
+      APP_ENV: production
+      COOKIE_SECURE: "true"
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PARTNER_INBOUND_TOKEN: ${PARTNER_INBOUND_TOKEN:?см. docs/deployment.md}
+      PARTNER_IP_ALLOWLIST: ${PARTNER_IP_ALLOWLIST:-}
+      PARTNER_OUTBOUND_URL: ${PARTNER_OUTBOUND_URL:?см. docs/deployment.md}
+      PARTNER_OUTBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:?см. docs/deployment.md}
+      OCR_PROVIDER_MODE: ${OCR_PROVIDER_MODE:-anthropic}
+      BKI_PROVIDER_MODE: ${BKI_PROVIDER_MODE:-not_configured}
+      EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-http}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app beat --loglevel=info
+    restart: unless-stopped
+
+  frontend-build:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - frontend_dist:/output
+    command: ["sh", "-c", "rm -rf /output/* && cp -r /app/dist/. /output/"]
+    restart: "no"
+
+  nginx:
+    image: nginx:1.27-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?домен заказчика не задан, см. docs/deployment.md}
+      SSL_CERT_PATH: /etc/letsencrypt/live/${DOMAIN:?домен заказчика не задан, см. docs/deployment.md}/fullchain.pem
+      SSL_KEY_PATH: /etc/letsencrypt/live/${DOMAIN:?домен заказчика не задан, см. docs/deployment.md}/privkey.pem
+    volumes:
+      - ./deploy/nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - frontend_dist:/usr/share/nginx/html:ro
+      - ${CERTBOT_CONFIG_DIR:-/etc/letsencrypt}:/etc/letsencrypt:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      default:
+        ipv4_address: ${NGINX_INTERNAL_IP:-172.28.0.10}
+    depends_on:
+      api:
+        condition: service_started
+      frontend-build:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  backup:
+    image: postgres:16
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_USER: ${POSTGRES_USER:-dialog}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: ${POSTGRES_DB:-dialog}
+      BACKUP_DIR: /backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_MARKER_PATH: /backups/.last_success
+    volumes:
+      - ./scripts:/scripts:ro
+      - ${BACKUP_DIR:-/var/backups/dialog-scoring}:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["sh", "/scripts/backup_postgres.sh", "loop"]
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  storage_data:
+  frontend_dist:
+
+networks:
+  # Фиксированная подсеть — чтобы адрес nginx (см. NGINX_INTERNAL_IP выше)
+  # был предсказуем между перезапусками и годился для
+  # uvicorn --forwarded-allow-ips (T12).
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

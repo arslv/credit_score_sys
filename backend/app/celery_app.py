@@ -17,6 +17,7 @@ celery_app = Celery(
         "app.tasks.registries",
         "app.tasks.fns_checks",
         "app.tasks.delinquency",
+        "app.tasks.alerts",
     ],
 )
 
@@ -46,6 +47,10 @@ celery_app.conf.update(
         "recompute-delinquency": {
             "task": "delinquency.recompute_daily",
             "schedule": settings.delinquency_recompute_interval_seconds,
+        },
+        "check-health-alerts": {
+            "task": "alerts.check_health",
+            "schedule": settings.alerts_check_interval_seconds,
         },
     },
 )
