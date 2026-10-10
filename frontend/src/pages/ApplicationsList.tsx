@@ -190,7 +190,7 @@ export function ApplicationsListPage() {
               <tr key={item.id}>
                 <td>
                   <Link to={`/applications/${item.id}`}>{item.client_name ?? "—"}</Link>
-                  <div className="muted" style={{ fontSize: 12 }}>
+                  <div className="muted text-xs">
                     №{item.number} · у заказчика {item.external_id} · {item.goods_name}
                   </div>
                 </td>

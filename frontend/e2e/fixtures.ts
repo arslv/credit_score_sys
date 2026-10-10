@@ -12,6 +12,8 @@ export interface Seed {
   operator: { email: string; password: string };
   application: { id: string; external_id: string; number: number; last_name: string };
   frozen_match: { application_id: string; client_id: string; decision_id: string; external_id: string };
+  gray_fssp: { id: string };
+  no_income: { id: string };
 }
 
 export function loadSeed(): Seed {

@@ -7,7 +7,7 @@ compliance; admin и viewer получают обезличенный вид (в
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -502,6 +502,16 @@ class DecisionOut(BaseModel):
     # тот же порог pti_max выше из версии правил этого решения) — для
     # сравнения «ПДН против порога» в карточке.
     pti: float | None
+    # T20: почему ПДН нет — чтобы карточка писала «не вычислимо», а не 0% и
+    # не молчала. Только для стадии Б (на стадии А ПДН не считается вовсе):
+    # "computed" — посчитан (в т.ч. честный 0%, если действующих кредитов в КИ
+    # нет); "no_income" — дохода в анкете нет/нулевой (declared_pti=None в
+    # снимке, см. compute_declared_pti_features); "no_credit_history" — КИ не
+    # получена (решение до/без БКИ), а ПДН по ТЗ — по фактическим обязательствам.
+    pti_status: Literal["computed", "no_income", "no_credit_history"] | None
+    # Число действующих кредитов по КИ (features.bki_active_contracts_count) —
+    # объясняет ПДН 0%: «действующих кредитов нет».
+    bki_active_contracts_count: int | None
 
 
 class CheckOut(BaseModel):
@@ -755,10 +765,22 @@ async def get_application(
             thresholds_cache[d.ruleset_version_id] = thresholds
         approve_above, reject_below, pti_max = thresholds
         pti = None
+        pti_status = None
+        active_contracts = None
         if d.feature_snapshot_id is not None:
             snapshot_row = await session.get(FeatureSnapshot, d.feature_snapshot_id)
             if snapshot_row is not None:
-                pti = ((snapshot_row.features or {}).get("features") or {}).get("pti")
+                snapshot_features = snapshot_row.features or {}
+                bki_features = snapshot_features.get("features") or {}
+                pti = bki_features.get("pti")
+                active_contracts = bki_features.get("bki_active_contracts_count")
+                if d.stage == "B":
+                    if pti is not None:
+                        pti_status = "computed"
+                    elif "declared_pti" in snapshot_features and snapshot_features["declared_pti"] is None:
+                        pti_status = "no_income"
+                    else:
+                        pti_status = "no_credit_history"
         reason_text = None
         if d.outcome != "approve" and (d.triggered_rules or d.reason_code):
             reason_text = build_operator_comment(reason_code=d.reason_code, triggered_rules=d.triggered_rules)
@@ -773,7 +795,7 @@ async def get_application(
                 offered_tariff=d.offered_tariff, required_down_pay=d.required_down_pay,
                 ruleset_version_id=d.ruleset_version_id, created_at=d.created_at,
                 score_auto_approve_above=approve_above, score_auto_reject_below=reject_below, pti_max=pti_max,
-                pti=pti,
+                pti=pti, pti_status=pti_status, bki_active_contracts_count=active_contracts,
             )
         )
 

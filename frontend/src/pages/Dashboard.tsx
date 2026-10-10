@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { BarList } from "../components/BarList";
 import { SourceBadge } from "../components/SourceBadge";
-import { Term } from "../components/Term";
 import { funnelStepLabel, reasonCodeLabel, sourceMeta } from "../lib/labels";
 import { formatDate, formatMonth } from "../lib/format";
 
@@ -78,7 +77,7 @@ export function DashboardPage() {
               const approved = d.funnel.find((f) => f.step === "approved")?.count ?? 0;
               return (
                 <>
-                  <h2 style={{ marginTop: 0 }}>
+                  <h2>
                     {submitted === 0
                       ? "Воронка заявок"
                       : `До одобрения доходит ${pct(approved, submitted)} поданных заявок`}
@@ -102,7 +101,7 @@ export function DashboardPage() {
               const totalApproved = d.weekly_approval.reduce((s, w) => s + w.approved, 0);
               const totalDecided = d.weekly_approval.reduce((s, w) => s + w.total, 0);
               return (
-                <h2 style={{ marginTop: 0 }}>
+                <h2>
                   {totalDecided === 0
                     ? "Доля одобрений по неделям"
                     : `За период одобрено ${pct(totalApproved, totalDecided)} решений стадии Б`}
@@ -147,7 +146,7 @@ export function DashboardPage() {
               const top = sorted[0];
               return (
                 <>
-                  <h2 style={{ marginTop: 0 }}>
+                  <h2>
                     {!top
                       ? "Причины отказов"
                       : `Чаще всего отказывают по причине «${reasonCodeLabel(top.reason_code)}» (${pct(top.count, totalRejected)})`}
@@ -162,7 +161,7 @@ export function DashboardPage() {
           </div>
 
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>
+            <h2>
               {query.data.overrides.applications_total === 0
                 ? "Ручные переопределения и расхождения"
                 : `Оператор меняет решение системы в ${pct(query.data.overrides.overridden, query.data.overrides.applications_total)} заявок`}
@@ -202,7 +201,7 @@ export function DashboardPage() {
               const attempts = d.bki_monthly.reduce((s, m) => s + m.attempts, 0);
               const successful = d.bki_monthly.reduce((s, m) => s + m.successful, 0);
               return (
-                <h2 style={{ marginTop: 0 }}>
+                <h2>
                   {attempts === 0 ? "БКИ по месяцам" : `${pct(successful, attempts)} платных запросов в БКИ возвращают отчёт`}
                 </h2>
               );
@@ -242,7 +241,7 @@ export function DashboardPage() {
               // фронта: ниже него — «стабильно», выше — называем худший источник.
               const worst = sorted.find((s) => s.total > 0 && s.unavailable / s.total >= threshold);
               return (
-                <h2 style={{ marginTop: 0 }}>
+                <h2>
                   {d.source_availability.length === 0
                     ? "Недоступность источников"
                     : !worst
@@ -285,16 +284,16 @@ export function DashboardPage() {
               const t = d.score_thresholds;
               return (
                 <>
-                  <h2 style={{ marginTop: 0 }}>
+                  <h2>
                     {mature === 0 ? "Балл БКИ" : "Распределение балла БКИ по решениям стадии Б"}
                   </h2>
                   {t && (t.auto_approve_above != null || t.auto_reject_below != null) && (
-                    <p className="muted" style={{ marginTop: -8 }}>
-                      <Term tip="Пороги действующей версии правил, без учёта матрицы по сумме сделки — ориентир по всему портфелю, не порог конкретного решения.">
-                        Пороги сейчас
-                      </Term>
+                    <p className="hint">
+                      Пороги сейчас
                       {t.auto_reject_below != null && <>: отказ ниже {Math.round(t.auto_reject_below)}</>}
                       {t.auto_approve_above != null && <>, одобрение выше {Math.round(t.auto_approve_above)}</>}
+                      {" "}— действующая версия правил без учёта матрицы по сумме: ориентир по портфелю, не порог
+                      конкретного решения.
                     </p>
                   )}
                   <BarList
@@ -316,7 +315,7 @@ export function DashboardPage() {
               const totalMature = matured.reduce((s, v) => s + v.mature_contracts, 0);
               const totalBad = matured.reduce((s, v) => s + (v.bad_contracts ?? 0), 0);
               return (
-                <h2 style={{ marginTop: 0 }}>
+                <h2>
                   {totalMature === 0
                     ? "Просрочка по месяцу выдачи (60+ за 6 мес.)"
                     : `Среди зрелых когорт просрочку 60+ за 6 мес. допускают ${pct(totalBad, totalMature)} договоров`}
@@ -360,7 +359,7 @@ export function DashboardPage() {
               const total = d.delinquency_buckets.reduce((s, b) => s + b.contracts, 0);
               const overdue = d.delinquency_buckets.filter((b) => b.bucket !== "0").reduce((s, b) => s + b.contracts, 0);
               return (
-                <h2 style={{ marginTop: 0 }}>
+                <h2>
                   {total === 0 ? "Просрочка сейчас" : `С просрочкой сейчас ${pct(overdue, total)} действующих договоров`}
                 </h2>
               );

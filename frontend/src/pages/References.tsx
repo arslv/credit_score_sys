@@ -99,8 +99,8 @@ function GoodsCategories() {
         </table>
       )}
 
-      <form onSubmit={handleSubmit} className="card" style={{ marginTop: 12 }}>
-        <div className="toolbar" style={{ margin: 0 }}>
+      <form onSubmit={handleSubmit} className="card">
+        <div className="toolbar">
           <label>
             Код
             <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
@@ -240,8 +240,8 @@ function BlacklistSection() {
         </table>
       )}
 
-      <form onSubmit={handleSubmit} className="card" style={{ marginTop: 12 }}>
-        <div className="toolbar" style={{ margin: 0 }}>
+      <form onSubmit={handleSubmit} className="card">
+        <div className="toolbar">
           <label>
             Фамилия
             <input value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />

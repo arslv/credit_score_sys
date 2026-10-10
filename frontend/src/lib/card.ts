@@ -77,18 +77,22 @@ export function dealRows(input: {
   approvedAmount: string | null;
   approvedTerm: number | null;
   approvedTariff: string | null;
+  approvedDownPay?: string | null;
 }): CardRow[] {
+  // T18: параметры сделки приходят только с /review (стадия Б); до этого в
+  // заявке заглушки (цена 0, срок 0, тариф "unknown") — их не показываем.
+  const dealKnown = input.termMonths > 0;
   return present([
-    { label: "Товар", value: `${input.goodsName}, ${formatAmount(input.goodsPrice)} ₽` },
+    { label: "Товар", value: dealKnown ? `${input.goodsName}, ${formatAmount(input.goodsPrice)} ₽` : "" },
     { label: "Категория товара", value: input.goodsCategory ?? "" },
-    { label: "Первый взнос", value: `${formatAmount(input.downPayment)} ₽` },
-    { label: "Срок и тариф", value: `${input.termMonths} мес., тариф «${tariffLabel(input.tariff)}»` },
+    { label: "Первый взнос", value: dealKnown ? `${formatAmount(input.downPayment)} ₽` : "" },
+    { label: "Срок и тариф", value: dealKnown ? `${input.termMonths} мес., тариф «${tariffLabel(input.tariff)}»` : "" },
     input.approvedAmount
       ? {
           label: "Одобрено",
           value: `${formatAmount(input.approvedAmount)} ₽ на ${input.approvedTerm ?? "—"} мес.${
             input.approvedTariff ? `, тариф «${tariffLabel(input.approvedTariff)}»` : ""
-          }`,
+          }${input.approvedDownPay ? `, первый взнос от ${formatAmount(input.approvedDownPay)} ₽` : ""}`,
         }
       : { label: "Одобрено", value: "" },
   ]);

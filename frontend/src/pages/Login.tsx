@@ -44,7 +44,7 @@ export function LoginPage() {
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </label>
         {error && <p role="alert" className="alert">{error}</p>}
-        <button type="submit" disabled={submitting} className="btn btn-primary" style={{ marginTop: 20 }}>
+        <button type="submit" disabled={submitting} className="btn btn-primary stack-lg">
           {submitting ? "Входим…" : "Войти"}
         </button>
       </form>

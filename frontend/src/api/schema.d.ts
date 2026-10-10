@@ -733,6 +733,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/partner/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Receive New Application */
+        post: operations["receive_new_application_api_v1_partner_applications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/partner/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Receive Review */
+        post: operations["receive_review_api_v1_partner_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -889,6 +923,13 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** BkiConsentIn */
+        BkiConsentIn: {
+            /** Given */
+            given: boolean;
+            /** At */
+            at?: string | null;
         };
         /** BkiMonthlyItem */
         BkiMonthlyItem: {
@@ -1210,6 +1251,10 @@ export interface components {
             pti_max: number | null;
             /** Pti */
             pti: number | null;
+            /** Pti Status */
+            pti_status: ("computed" | "no_income" | "no_credit_history") | null;
+            /** Bki Active Contracts Count */
+            bki_active_contracts_count: number | null;
         };
         /** DelinquencyBucketItem */
         DelinquencyBucketItem: {
@@ -1416,6 +1461,27 @@ export interface components {
             /** Active */
             active: boolean;
         };
+        /** GuarantorIn */
+        GuarantorIn: {
+            /** Last Name */
+            last_name?: string | null;
+            /** First Name */
+            first_name?: string | null;
+            /** Middle Name */
+            middle_name?: string | null;
+            /** Birth Date */
+            birth_date?: string | null;
+            /** Passport Series */
+            passport_series?: string | null;
+            /** Passport Number */
+            passport_number?: string | null;
+            /** Issue Date */
+            issue_date?: string | null;
+            /** Registration Address */
+            registration_address?: string | null;
+            /** Phone */
+            phone?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1500,6 +1566,27 @@ export interface components {
             freeze_active: boolean;
             /** Latest Review Verdict */
             latest_review_verdict: string | null;
+        };
+        /** NewApplicationIn */
+        NewApplicationIn: {
+            /** External Id */
+            external_id: string;
+            /** Event Id */
+            event_id: string;
+            /** Last Name */
+            last_name: string;
+            /** First Name */
+            first_name: string;
+            /** Middle Name */
+            middle_name?: string | null;
+            /** Phone */
+            phone: string;
+            photos: components["schemas"]["NewApplicationPhotosIn"];
+        };
+        /** NewApplicationPhotosIn */
+        NewApplicationPhotosIn: {
+            passport_main: components["schemas"]["PhotoRefIn"];
+            passport_reg: components["schemas"]["PhotoRefIn"];
         };
         /** OcrResultOut */
         OcrResultOut: {
@@ -1644,6 +1731,13 @@ export interface components {
             /** Kind */
             kind: string;
         };
+        /** PhotoRefIn */
+        PhotoRefIn: {
+            /** Url */
+            url?: string | null;
+            /** Base64 */
+            base64?: string | null;
+        };
         /** ReasonCodeOut */
         ReasonCodeOut: {
             /** Code */
@@ -1672,6 +1766,45 @@ export interface components {
         /** RetryCheckResult */
         RetryCheckResult: {
             check: components["schemas"]["CheckOut"];
+        };
+        /** ReviewDealIn */
+        ReviewDealIn: {
+            /** Goods Category Code */
+            goods_category_code?: string | null;
+            /** Goods Name */
+            goods_name?: string | null;
+            /** Goods Price */
+            goods_price?: number | string | null;
+            /** Down Payment */
+            down_payment?: number | string | null;
+            /** Term Months */
+            term_months?: number | null;
+            /** Tariff */
+            tariff?: string | null;
+        };
+        /** ReviewIn */
+        ReviewIn: {
+            /** External Id */
+            external_id: string;
+            /** Event Id */
+            event_id: string;
+            /** Status */
+            status: string;
+            deal?: components["schemas"]["ReviewDealIn"];
+            /** Employment */
+            employment?: {
+                [key: string]: unknown;
+            };
+            /** Income */
+            income?: {
+                [key: string]: unknown;
+            };
+            /** Obligations */
+            obligations?: {
+                [key: string]: unknown;
+            };
+            bki_consent: components["schemas"]["BkiConsentIn"];
+            guarantor?: components["schemas"]["GuarantorIn"] | null;
         };
         /** RollbackRequest */
         RollbackRequest: {
@@ -3197,6 +3330,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FsspSubmitCodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    receive_new_application_api_v1_partner_applications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewApplicationIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    receive_review_api_v1_partner_review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

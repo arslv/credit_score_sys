@@ -146,7 +146,7 @@ export function EmployeesPage() {
           />
         </label>
         {formError && <p role="alert" className="alert">{formError}</p>}
-        <button type="submit" className="btn btn-primary" disabled={createMutation.isPending} style={{ marginTop: 16 }}>
+        <button type="submit" className="btn btn-primary" disabled={createMutation.isPending}>
           Создать
         </button>
       </form>

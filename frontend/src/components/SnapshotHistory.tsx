@@ -85,9 +85,9 @@ function GroupRow({
   const repeated = group.count > 1 ? ` · повторно ${group.count - 1} раз, последний ${formatDateTime(group.last.received_at)}` : "";
 
   return (
-    <div className="card" style={{ marginBottom: 6, padding: "8px 12px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+    <div className="snapshot">
+      <div className="row row--between">
+        <p className="muted text-xs">
           {formatDateTime(group.first.received_at)}
           {repeated}
           {changedLabels.length > 0 ? <> · изменено: {changedLabels.join(", ")}</> : <> · первый снимок</>}
@@ -97,7 +97,7 @@ function GroupRow({
         </button>
       </div>
       {expanded && (
-        <div style={{ marginTop: 8 }}>
+        <div className="stack">
           <FieldTable fields={fields} changed={new Set(changedFields)} />
         </div>
       )}
@@ -125,8 +125,8 @@ export function SnapshotHistory({ snapshots }: { snapshots: ExternalSnapshotOut[
         const groups = groupIdentical(list);
         const fieldsOf = (group: SnapshotGroup) => anketaFields(group.first.payload_raw as Record<string, unknown>);
         return (
-          <div key={stage} style={{ marginBottom: 16 }}>
-            <h3 style={{ fontSize: 13, color: "var(--color-text-muted)", margin: "8px 0" }}>
+          <div key={stage} className="subsection">
+            <h3 className="subhead">
               Стадия {stage === "A" ? "А" : stage === "B" ? "Б" : stage}
               {groups.length > 1 && <span className="muted"> ({groups.length} разных снимков)</span>}
             </h3>

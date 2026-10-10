@@ -72,16 +72,13 @@ export function humanizeFieldPath(path: string): string {
 
 export interface SourceMeta {
   label: string;
-  color: string;
 }
 
 // T16: убрали логотипы-боксы (легальный риск использовать чужой бренд-ассет
-// без разрешения, ваше явное указание) — остался только цвет источника,
-// теперь используется для текстовой плашки (SourceBadge: прозрачный фон,
-// тонкая рамка и текст в этом цвете, см. components/SourceBadge.tsx).
-// fns -> fns_inn/fns_npd/fns_egrip (T16, три отдельных проверки вместо одной) —
-// один и тот же зелёный для всей группы ФНС, старые строки checks (fns,
-// fedresurs) остаются читаемыми (правило 1 CLAUDE.md, append-only история).
+// без разрешения, ваше явное указание). T20: убраны и цвета источников —
+// один акцентный цвет на интерфейс, источник показывается просто подписью.
+// fns -> fns_inn/fns_npd/fns_egrip (T16, три отдельных проверки вместо одной);
+// старые строки checks (fns, fedresurs) остаются читаемыми (правило 1 CLAUDE.md, append-only история).
 const SOURCE_META: Record<string, SourceMeta> = {
   // T17, шаг 3 (ваше явное указание): источника МВД по факту нет — файл
   // недействительных паспортов отменён в 2023, реестр за ним не обновляется.
@@ -90,33 +87,23 @@ const SOURCE_META: Record<string, SourceMeta> = {
   // всё равно скрыта из «Что проверили»/здоровья источников (см.
   // ApplicationDetail.tsx/Dashboard.tsx) — название на случай, если она
   // где-то всплывёт ещё (история checks и т.п.).
-  mvd: { label: "Паспорт — формат и срок", color: "#2952e3" },
-  rosfinmon: { label: "Росфинмониторинг", color: "#9a2fd6" },
-  blacklist: { label: "Чёрный список", color: "#d1293d" },
-  fns: { label: "ФНС", color: "#17824e" },
-  fns_inn: { label: "ФНС — ИНН", color: "#17824e" },
-  fns_npd: { label: "ФНС — самозанятость", color: "#17824e" },
-  fns_egrip: { label: "ФНС — ИП (ЕГРИП)", color: "#17824e" },
-  fedresurs: { label: "Федресурс (историческая проверка)", color: "#c26b00" },
-  fssp: { label: "ФССП", color: "#0a7ea4" },
-  bki: { label: "БКИ", color: "#6b46c1" },
+  mvd: { label: "Паспорт — формат и срок" },
+  rosfinmon: { label: "Росфинмониторинг" },
+  blacklist: { label: "Чёрный список" },
+  fns: { label: "ФНС" },
+  fns_inn: { label: "ФНС — ИНН" },
+  fns_npd: { label: "ФНС — самозанятость" },
+  fns_egrip: { label: "ФНС — ИП (ЕГРИП)" },
+  fedresurs: { label: "Федресурс (историческая проверка)" },
+  fssp: { label: "ФССП" },
+  bki: { label: "БКИ" },
 };
 
-// Ключи источников, для которых есть подпись и цвет (тест словаря обходит их все).
+// Ключи источников, для которых есть подпись (тест словаря обходит их все).
 export const KNOWN_SOURCE_KEYS: string[] = Object.keys(SOURCE_META);
 
 export function sourceMeta(source: string): SourceMeta {
-  return SOURCE_META[source] ?? { label: source, color: "#667085" };
-}
-
-// "#2952e3" -> "rgba(41, 82, 227, 0.1)" — для фона плашки (8–12% альфы,
-// ваше явное указание), без хардкода отдельной таблицы rgba на каждый цвет.
-export function hexToRgba(hex: string, alpha: number): string {
-  const normalized = hex.replace("#", "");
-  const r = parseInt(normalized.slice(0, 2), 16);
-  const g = parseInt(normalized.slice(2, 4), 16);
-  const b = parseInt(normalized.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  return SOURCE_META[source] ?? { label: source };
 }
 
 const SUBJECT_TYPE_LABELS: Record<string, string> = {

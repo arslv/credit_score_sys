@@ -1095,3 +1095,87 @@ async def test_dev_ruleset_stage_b_rule_field_paths_all_resolve(
         and get_field(features, parse_matrix_key(key)[0]) is _MISSING
     ]
     assert matrix_unresolved == [], f"matrix.when ссылается на несуществующие в снапшоте поля: {matrix_unresolved}"
+
+
+async def _card_decision(admin_client, session_factory, application_id, email: str) -> dict:
+    from tests._admin_helpers import create_employee, login
+
+    await create_employee(session_factory, email=email, role="risk_manager")
+    await login(admin_client, email)
+    response = await admin_client.get(f"/api/applications/{application_id}")
+    assert response.status_code == 200, response.text
+    return response.json()["decisions"][-1]
+
+
+async def test_review_income_and_obligations_reach_pti_and_card(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """T20, баг «ПДН 0%»: доход и платежи из /review (T18) доходят до расчёта.
+    Заявленные платежи — в declared_pti (фильтр до БКИ), фактический ПДН —
+    по действующим кредитам из КИ (ТЗ: «ПДН по фактическим обязательствам»):
+    34 000 ₽ по трём действующим кредитам / 100 000 ₽ дохода = 34%."""
+    from app.sources.bki import overloaded_report
+
+    payload = {**_DEFAULT_STAGE_B_PAYLOAD, "obligations": {"monthly_payment_total": "15000"}}
+    _external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(overloaded_report()))
+    await run_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=provider)
+
+    async with session_factory() as session:
+        decision = (
+            await session.execute(select(Decision).where(Decision.application_id == application_id))
+        ).scalar_one()
+        snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
+        assert snapshot.features["declared_pti"] == 0.15
+
+    card = await _card_decision(admin_client, session_factory, application_id, "rm_pti_ok@example.com")
+    assert card["pti_status"] == "computed"
+    assert card["pti"] == 0.34
+    assert card["bki_active_contracts_count"] == 3
+
+
+async def test_card_pti_not_computable_without_income(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """T20: нет дохода — ПДН «не вычислимо (нет данных о доходе)», а не 0%.
+    Нулевой доход проходит полноту анкеты (секция income непустая), БКИ
+    запрашивается, но делить не на что: pti=None, и карточка это различает."""
+    payload = {**_DEFAULT_STAGE_B_PAYLOAD, "income": {"declared_monthly": "0"}}
+    _external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(good_history_report()))
+    await run_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=provider)
+
+    card = await _card_decision(admin_client, session_factory, application_id, "rm_pti_none@example.com")
+    assert card["stage"] == "B"
+    assert card["pti"] is None
+    assert card["pti_status"] == "no_income"
+
+
+async def test_card_pti_not_computable_without_credit_history(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """БКИ не подключено — решение без КИ: ПДН не вычислим по другой причине
+    (доход есть), карточка не должна сваливать это в «нет данных о доходе»."""
+    _external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory,
+    )
+    await run_stage_b(
+        session_factory, application_id, partner_client=partner_client, bki_provider=NotConfiguredBkiProvider(),
+    )
+
+    card = await _card_decision(admin_client, session_factory, application_id, "rm_pti_nobki@example.com")
+    assert card["reason_code"] == "BKI_NOT_CONFIGURED"
+    assert card["pti"] is None
+    assert card["pti_status"] == "no_credit_history"

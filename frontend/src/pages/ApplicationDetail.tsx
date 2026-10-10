@@ -7,8 +7,9 @@ import { Badge } from "../components/Badge";
 import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
-import { Term } from "../components/Term";
+import { VerdictTitle } from "../components/VerdictTitle";
 import { clientRows, dealRows, latestStageBPayload } from "../lib/card";
+import { explainDecision } from "../lib/explain";
 import { formatAmount, formatDate, formatDateTime } from "../lib/format";
 import {
   actorTypeLabel,
@@ -20,7 +21,6 @@ import {
   reasonCodeLabel,
   stageLabel,
   subjectTypeLabel,
-  tariffLabel,
 } from "../lib/labels";
 
 // Числа в карточке — без копеек (780, а не 780.00): баллы и пороги целые.
@@ -33,50 +33,6 @@ function decisionVerdictClass(outcome: string | undefined): string {
   if (outcome === "reject") return "verdict--reject";
   if (outcome === "manual_review") return "verdict--gray";
   return "verdict--pending";
-}
-
-// Сравнения решения с порогами ИЗ ВЕРСИИ ПРАВИЛ ЭТОГО РЕШЕНИЯ (бэкенд отдаёт
-// пороги версии decision.ruleset_version_id, не текущей). Здесь — только
-// арифметика сравнения, никаких чисел из конфига в коде фронта.
-interface Comparison {
-  term: string;
-  tip: string;
-  text: string;
-}
-
-function bkiComparison(decision: {
-  score: string | null;
-  score_auto_approve_above: number | null;
-  score_auto_reject_below: number | null;
-}): Comparison | null {
-  if (decision.score == null || decision.score_auto_approve_above == null || decision.score_auto_reject_below == null) {
-    return null;
-  }
-  const score = Number(decision.score);
-  const approve = decision.score_auto_approve_above;
-  const reject = decision.score_auto_reject_below;
-  const tip =
-    "Скоринговый балл кредитного бюро (БКИ) — не наш собственный расчёт. Шкала бюро: чем выше, тем надёжнее заёмщик по данным о прошлых кредитах.";
-  if (score >= approve) {
-    return { term: "Балл БКИ", tip, text: `${wholeNumber(score)} — не ниже порога одобрения ${wholeNumber(approve)}` };
-  }
-  if (score < reject) {
-    return { term: "Балл БКИ", tip, text: `${wholeNumber(score)} — ниже порога отказа ${wholeNumber(reject)}` };
-  }
-  return {
-    term: "Балл БКИ", tip,
-    text: `${wholeNumber(score)} — между порогами ${wholeNumber(reject)} и ${wholeNumber(approve)}: серая зона`,
-  };
-}
-
-function ptiComparison(decision: { pti: number | null; pti_max: number | null }): Comparison | null {
-  if (decision.pti == null || decision.pti_max == null) return null;
-  const pti = Math.round(decision.pti * 100);
-  const max = Math.round(decision.pti_max * 100);
-  const tip = "ПДН — доля дохода, которая уходит на платежи по долгам. Выше порога — отказ или ручная проверка.";
-  return pti > max
-    ? { term: "ПДН", tip, text: `${pti}% — выше порога ${max}%` }
-    : { term: "ПДН", tip, text: `${pti}% — в пределах порога ${max}%` };
 }
 
 export function ApplicationDetailPage() {
@@ -133,13 +89,14 @@ export function ApplicationDetailPage() {
   const stageB = latestStageBPayload(app.external_snapshots);
 
   // «Нужно сделать» — только если что-то реально требуется. Стадия А «передано
-  // оператору» — не действие для нас: ждём звонка и стадии Б.
-  const actionItems: { key: string; text: string; href?: string }[] = [];
+  // оператору» — не действие для нас: ждём звонка и стадии Б. T20: одна строка
+  // с кнопкой сразу под вердиктом, без отдельной рамки.
+  const actionItems: { key: string; text: string; href?: string; button?: string }[] = [];
   if (latestDecision?.outcome === "manual_review" && latestDecision.stage === "B") {
     if (latestDecision.reason_code === "FSSP_NOT_CHECKED") {
-      actionItems.push({ key: "fssp", text: "Проверить ФССП — без этого одобрение недоступно", href: "#fssp" });
+      actionItems.push({ key: "fssp", text: "Проверить ФССП — без этого одобрение недоступно", href: "#fssp", button: "К проверке ФССП" });
     } else {
-      actionItems.push({ key: "gray", text: "Серая зона — нужно решение риск-менеджера или оператора" });
+      actionItems.push({ key: "gray", text: "Нужно решение риск-менеджера или оператора" });
     }
   }
   if (latestDecision?.freeze) {
@@ -147,39 +104,22 @@ export function ApplicationDetailPage() {
       key: "freeze",
       text: "Совпадение по перечню ждёт решения комплаенса",
       href: "/compliance",
+      button: "Открыть комплаенс",
     });
   }
   for (const subject of app.fssp_post_decision_alert_subjects) {
     actionItems.push({
       key: `fssp-late-${subject}`,
-      text: `ФССП (${subjectTypeLabel(subject)}) найдено после того, как решение уже принято — пересмотрите вручную`,
+      text: `ФССП (${subjectTypeLabel(subject)}) найдено после решения — пересмотрите вручную`,
       href: "#fssp",
+      button: "К проверке ФССП",
     });
   }
 
-  // Почему такое решение: сработавшие правила (или, если их нет, причина целиком
-  // — reason_text, например повторная заморозка по перечню), затем сравнения с
-  // порогами. Пустоты «стоп-факторов нет» там, где решение — отказ, быть не может.
-  const reasons = latestDecision
-    ? latestDecision.triggered_rules_text.length > 0
-      ? latestDecision.triggered_rules_text
-      : latestDecision.reason_text
-        ? [latestDecision.reason_text]
-        : []
-    : [];
-  const comparisons = latestDecision
-    ? [bkiComparison(latestDecision), ptiComparison(latestDecision)].filter(
-        (line): line is Comparison => line !== null,
-      )
-    : [];
-  const noReasonsText =
-    latestDecision?.outcome === "approve"
-      ? "Стоп-факторов нет."
-      : latestDecision?.stage === "A" && latestDecision.outcome === "manual_review"
-        ? "Стоп-факторов не сработало — заявка передана оператору для звонка и стадии Б."
-        : "Сработавших стоп-факторов нет.";
-
-  const verdictReason = reasons[0] ?? (latestDecision ? noReasonsText : null);
+  // T20: причина — один раз, в вердикте; «Почему» — только детали: что ещё
+  // привело к решению («Причина») и что пройдено («В норме»). Пройденные
+  // сравнения больше не попадают в список сработавших стоп-факторов.
+  const explanation = latestDecision ? explainDecision(latestDecision) : null;
 
   const clientBlock = clientRows({
     clientName: app.client_name,
@@ -198,59 +138,34 @@ export function ApplicationDetailPage() {
     approvedAmount: latestDecision?.approved_amount ?? null,
     approvedTerm: latestDecision?.approved_term ?? null,
     approvedTariff: latestDecision?.offered_tariff ?? null,
+    approvedDownPay: latestDecision?.required_down_pay ?? null,
   });
 
   return (
     <section>
-      <p>
+      <p className="back-link">
         <Link to="/applications">← к списку заявок</Link>
       </p>
 
       <div className={`verdict ${decisionVerdictClass(latestDecision?.outcome)}`}>
-        <div>
-          <p className="verdict-title">
-            {latestDecision ? (
-              latestDecision.outcome === "manual_review" ? (
-                <Term
-                  tip={
-                    latestDecision.stage === "A"
-                      ? "На стадии А одобрения не бывает: заявка уходит оператору, который звонит клиенту и запускает стадию Б."
-                      : "Ни одобрить, ни отказать автоматически нельзя — нужно решение риск-менеджера или оператора вручную."
-                  }
-                >
-                  {decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome)}
-                </Term>
-              ) : (
-                decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome)
-              )
-            ) : (
-              "В обработке"
-            )}
-          </p>
-          {verdictReason && <p className="verdict-reason">{verdictReason}</p>}
+        <div className="verdict-main">
+          <VerdictTitle
+            title={latestDecision ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome) : "В обработке"}
+            help={explanation?.help ?? null}
+          />
+          {explanation?.reason && <p className="verdict-reason">{explanation.reason}</p>}
           <p className="verdict-meta">
             <span>Заявка №{app.number} (у заказчика {app.external_id})</span>
             <span>{app.client_name ?? "Клиент скрыт"}</span>
-            <span>{formatAmount(app.requested_amount)} ₽ на {app.term_months} мес.</span>
+            {app.term_months > 0 && <span>{formatAmount(app.requested_amount)} ₽ на {app.term_months} мес.</span>}
             <span>подана {formatDateTime(app.submitted_at)}</span>
-            {latestDecision && (
-              <span>
-                <Term tip="Стадия А — сразу после подачи, без кредитной истории, только бесплатные проверки. Стадия Б — после звонка оператора, с запросом в БКИ.">
-                  стадия {stageLabel(latestDecision.stage)}
-                </Term>
-              </span>
-            )}
+            {latestDecision && <span>стадия {stageLabel(latestDecision.stage)}</span>}
           </p>
         </div>
         {latestDecision?.score != null && (
           <div className="verdict-score">
             <div className="verdict-score-value">
-              {wholeNumber(latestDecision.score)}{" "}
-              <span className="unit">
-                <Term tip="Скоринговый балл кредитного бюро (БКИ) — не наш собственный расчёт. Шкала бюро: чем выше, тем надёжнее заёмщик по данным о прошлых кредитах.">
-                  баллов БКИ
-                </Term>
-              </span>
+              {wholeNumber(latestDecision.score)} <span className="unit">баллов БКИ</span>
             </div>
             {latestDecision.score_auto_approve_above != null && latestDecision.score_auto_reject_below != null && (
               <>
@@ -274,270 +189,250 @@ export function ApplicationDetailPage() {
         )}
       </div>
 
-      {actionItems.length > 0 && (
-        <div className="action-panel">
-          <h2>Нужно сделать</h2>
-          {actionItems.map((item) => (
-            <div className="action-item" key={item.key}>
-              <span>{item.text}</span>
-              {item.href && (
-                <a className="btn btn-small" href={item.href}>
-                  Открыть
-                </a>
-              )}
-            </div>
-          ))}
+      {actionItems.map((item) => (
+        <div className="next-step" key={item.key}>
+          <span className="next-step-label">Нужно сделать:</span>
+          <span>{item.text}</span>
+          {item.href && (
+            <a className="btn btn-primary btn-small" href={item.href}>
+              {item.button ?? "Открыть"}
+            </a>
+          )}
         </div>
-      )}
+      ))}
 
-      {latestDecision && (
-        <div className="card">
-          <h2>Почему такое решение</h2>
-          {reasons.length === 0 && <p className="muted" style={{ margin: 0 }}>{noReasonsText}</p>}
-          {reasons.length > 0 && (
-            <p className="muted" style={{ margin: "0 0 6px", fontSize: 12 }}>
-              Сработавшие{" "}
-              <Term tip="Стоп-фактор — правило, которое само по себе ведёт к отказу или заморозке (например, совпадение по перечню, просроченный паспорт) — не балл и не сравнение порогов.">
-                стоп-факторы
-              </Term>
-              :
-            </p>
-          )}
-          {reasons.map((text, i) => (
-            <div className="rule-hit" key={i}>
-              <span className="dot" />
-              <span>{text}</span>
-            </div>
-          ))}
-          {comparisons.map((c) => (
-            <div className="rule-hit" key={c.term}>
-              <span className="dot" />
-              <span>
-                <Term tip={c.tip}>{c.term}</Term> {c.text}
-              </span>
-            </div>
-          ))}
-          {latestDecision.approved_amount != null && (
-            <p className="muted" style={{ marginTop: 10, marginBottom: 0 }}>
-              Одобрено {formatAmount(latestDecision.approved_amount)} ₽ на {latestDecision.approved_term} мес.
-              {latestDecision.offered_tariff && ` · тариф «${tariffLabel(latestDecision.offered_tariff)}»`}
-              {latestDecision.required_down_pay != null &&
-                ` · первый взнос от ${formatAmount(latestDecision.required_down_pay)} ₽`}
-            </p>
-          )}
-        </div>
-      )}
+      {explanation &&
+        (explanation.causes.length > 0 || explanation.passed.length > 0 || explanation.unknown.length > 0) && (
+          <section className="section">
+            <h2>Почему такое решение</h2>
+            {explanation.causes.length > 0 && (
+              <>
+                <h3 className="subhead">Причина</h3>
+                <ul className="reason-list" data-testid="decision-causes">
+                  {explanation.causes.map((text) => (
+                    <li key={text} className="reason-item reason-item--cause">{text}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {explanation.passed.length > 0 && (
+              <>
+                <h3 className="subhead">В норме</h3>
+                <ul className="reason-list reason-list--minor" data-testid="decision-passed">
+                  {explanation.passed.map((text) => (
+                    <li key={text} className="reason-item reason-item--pass">{text}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {explanation.unknown.length > 0 && (
+              <ul className="reason-list reason-list--minor" data-testid="decision-unknown">
+                {explanation.unknown.map((text) => (
+                  <li key={text} className="reason-item">{text}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
 
       {(clientBlock.length > 0 || dealBlock.length > 0) && (
-        <div className="section-group">
+        <div className="section-columns">
           {clientBlock.length > 0 && (
-            <div className="card">
+            <section className="section">
               <h2>Клиент</h2>
-              <dl className="kv-grid">
-                {clientBlock.map((row) => (
-                  <div key={row.label} style={{ display: "contents" }}>
-                    <dt>{row.label}</dt>
-                    <dd>{row.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
+              <KeyValue rows={clientBlock} />
+            </section>
           )}
           {dealBlock.length > 0 && (
-            <div className="card">
+            <section className="section">
               <h2>Сделка</h2>
-              <dl className="kv-grid">
-                {dealBlock.map((row) => (
-                  <div key={row.label} style={{ display: "contents" }}>
-                    <dt>{row.label}</dt>
-                    <dd>{row.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
+              <KeyValue rows={dealBlock} />
+            </section>
           )}
         </div>
       )}
 
       {earlierDecisions.length > 0 && (
-        <div className="card">
+        <section className="section">
           <h2>Предыдущие решения</h2>
-          {earlierDecisions.map((d) => (
-            <p key={d.id} className="muted" style={{ margin: "4px 0" }}>
-              Стадия {stageLabel(d.stage)}: {decisionOutcomeLabel(d.stage, d.outcome)}
-              {d.freeze && " · заморожено"} — {formatDateTime(d.created_at)}
-            </p>
-          ))}
-        </div>
+          <ul className="plain-list">
+            {earlierDecisions.map((d) => (
+              <li key={d.id} className="muted">
+                Стадия {stageLabel(d.stage)}: {decisionOutcomeLabel(d.stage, d.outcome)}
+                {d.freeze && " · заморожено"} — {formatDateTime(d.created_at)}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {app.manual_overrides.length > 0 && (
-        <div className="card">
+        <section className="section">
           <h2>Итог оператора</h2>
-          {app.manual_overrides.map((o) => (
-            <p key={o.id} style={{ margin: "4px 0" }}>
-              {decisionOutcomeLabel(o.decision_stage, o.from_outcome)} →{" "}
-              {decisionOutcomeLabel(o.decision_stage, o.to_outcome)}{" "}
-              <span className="muted">
-                ({reasonCodeLabel(o.reason_code)})
-                {o.comment && `: ${o.comment}`}
-              </span>
-            </p>
-          ))}
-        </div>
+          <ul className="plain-list">
+            {app.manual_overrides.map((o) => (
+              <li key={o.id}>
+                {decisionOutcomeLabel(o.decision_stage, o.from_outcome)} →{" "}
+                {decisionOutcomeLabel(o.decision_stage, o.to_outcome)}{" "}
+                <span className="muted">
+                  ({reasonCodeLabel(o.reason_code)})
+                  {o.comment && `: ${o.comment}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
-      <h2>Что проверили</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Источник</th>
-            <th>Кто</th>
-            <th>Результат</th>
-            <th>Время</th>
-            <th>Ошибка</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {/* T17, шаг 3 (ваше явное указание): МВД не показываем — файл
-              недействительных паспортов отменён в 2023, источник по факту
-              не подключён, строка только вводила бы в заблуждение. */}
-          {app.checks.filter((c) => c.source !== "mvd").map((c) => (
-            <tr key={c.id}>
-              <td>
-                <SourceBadge source={c.source} />
-              </td>
-              <td className="muted">{subjectTypeLabel(c.subject_type)}</td>
-              <td>{checkResultLabel(c.source, c.status)}</td>
-              <td className="muted">{formatDateTime(c.started_at)}</td>
-              <td className="muted">{c.error_text ?? "—"}</td>
-              <td>
-                {c.can_retry && canRetry && (
-                  <button
-                    className="btn btn-small"
-                    disabled={retryMutation.isPending}
-                    onClick={() => retryMutation.mutate(c.id)}
-                  >
-                    Повторить
-                  </button>
-                )}
-              </td>
+      <section className="section">
+        <h2>Что проверили</h2>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Источник</th>
+              <th>Кто</th>
+              <th>Результат</th>
+              <th>Время</th>
+              <th>Ошибка</th>
+              <th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
+          </thead>
+          <tbody>
+            {/* T17, шаг 3 (ваше явное указание): МВД не показываем — файл
+                недействительных паспортов отменён в 2023, источник по факту
+                не подключён, строка только вводила бы в заблуждение. */}
+            {app.checks.filter((c) => c.source !== "mvd").map((c) => (
+              <tr key={c.id}>
+                <td>
+                  <SourceBadge source={c.source} />
+                </td>
+                <td className="muted">{subjectTypeLabel(c.subject_type)}</td>
+                <td>{checkResultLabel(c.source, c.status)}</td>
+                <td className="muted">{formatDateTime(c.started_at)}</td>
+                <td className="muted">{c.error_text ?? "—"}</td>
+                <td>
+                  {c.can_retry && canRetry && (
+                    <button
+                      className="btn btn-small"
+                      disabled={retryMutation.isPending}
+                      onClick={() => retryMutation.mutate(c.id)}
+                    >
+                      Повторить
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
+        <p className="hint">
+          Федресурс (сведения о банкротстве) в автоматический конвейер не входит — проверьте вручную на{" "}
+          <a href="https://fedresurs.ru" target="_blank" rel="noreferrer">
+            fedresurs.ru
+          </a>
+          .
+        </p>
+      </section>
 
-      <p className="muted">
-        Федресурс (сведения о банкротстве) в автоматический конвейер не входит — проверьте вручную на{" "}
-        <a href="https://fedresurs.ru" target="_blank" rel="noreferrer">
-          fedresurs.ru
-        </a>
-        .
-      </p>
-
-      <h2 id="fssp">
-        <Term tip="Федеральная служба судебных приставов — проверка на исполнительные производства (долги). Автоматически не вызывается ни на одной стадии: только по ручному действию, капча решается человеком.">
-          ФССП
-        </Term>
-      </h2>
-      <FsspPanel
-        applicationId={app.id}
-        subjectType="applicant"
-        subjectLabel="заявитель"
-        subjectId={null}
-        latestCheck={findLatestFsspCheck("applicant", null)}
-        canOperate={canOperateFssp}
-        hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("applicant")}
-      />
-      {app.guarantor_profile && (
-        <div className="card">
-          <p style={{ marginTop: 0 }}>
-            <strong>Поручитель</strong>
-          </p>
-          <table className="table table--compact">
-            <tbody>
-              {Object.entries(app.guarantor_profile)
-                .filter(([, value]) => value != null && value !== "")
-                .map(([field, value]) => (
-                  <tr key={field}>
-                    <td>{humanizeFieldPath(field)}</td>
-                    <td>{field.endsWith("_date") ? formatDate(String(value)) : String(value)}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {app.has_guarantor && app.guarantor_id && (
+      <section className="section">
+        <h2 id="fssp">ФССП</h2>
         <FsspPanel
           applicationId={app.id}
-          subjectType="guarantor"
-          subjectLabel="поручитель"
-          subjectId={app.guarantor_id}
-          latestCheck={findLatestFsspCheck("guarantor", app.guarantor_id)}
+          subjectType="applicant"
+          subjectLabel="заявитель"
+          subjectId={null}
+          latestCheck={findLatestFsspCheck("applicant", null)}
           canOperate={canOperateFssp}
-          hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("guarantor")}
+          hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("applicant")}
         />
-      )}
+        {app.guarantor_profile && (
+          <div className="subsection">
+            <h3 className="subhead">Поручитель</h3>
+            <KeyValue
+              rows={Object.entries(app.guarantor_profile)
+                .filter(([, value]) => value != null && value !== "")
+                .map(([field, value]) => ({
+                  label: humanizeFieldPath(field),
+                  value: field.endsWith("_date") ? formatDate(String(value)) : String(value),
+                }))}
+            />
+          </div>
+        )}
+        {app.has_guarantor && app.guarantor_id && (
+          <FsspPanel
+            applicationId={app.id}
+            subjectType="guarantor"
+            subjectLabel="поручитель"
+            subjectId={app.guarantor_id}
+            latestCheck={findLatestFsspCheck("guarantor", app.guarantor_id)}
+            canOperate={canOperateFssp}
+            hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("guarantor")}
+          />
+        )}
+      </section>
 
-      <h2>Документы</h2>
-      {app.documents.length === 0 && <p className="muted">Документов нет.</p>}
-      <ul style={{ listStyle: "none", padding: 0 }}>
-        {app.documents.map((doc) => (
-          <li key={doc.id} className="card">
-            {documentKindLabel(doc.kind)} <span className="muted">· {formatDateTime(doc.uploaded_at)}</span>{" "}
-            <button className="btn btn-small" onClick={() => setOpenDocumentId(doc.id)}>
-              показать
-            </button>
-            {openDocumentId === doc.id && (
-              <div style={{ marginTop: 8 }}>
+      <section className="section">
+        <h2>Документы</h2>
+        {app.documents.length === 0 && <p className="muted">Документов нет.</p>}
+        <ul className="plain-list">
+          {app.documents.map((doc) => (
+            <li key={doc.id}>
+              <div className="row">
+                <span>{documentKindLabel(doc.kind)}</span>
+                <span className="muted">{formatDateTime(doc.uploaded_at)}</span>
+                <button className="btn btn-small" onClick={() => setOpenDocumentId(doc.id)}>
+                  Показать
+                </button>
+              </div>
+              {openDocumentId === doc.id && (
                 <img
+                  className="document-preview"
                   src={`/api/applications/${app.id}/documents/${doc.id}`}
                   alt={documentKindLabel(doc.kind)}
-                  style={{ maxWidth: 320, display: "block", borderRadius: 6, border: "1px solid var(--color-border)" }}
                 />
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-
-      <h2>История</h2>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Из</th>
-            <th>В</th>
-            <th>Кто</th>
-            <th>Когда</th>
-          </tr>
-        </thead>
-        <tbody>
-          {app.status_history.map((h, i) => (
-            <tr key={i}>
-              <td>
-                <Badge value={h.from_status} label={h.from_status ? applicationStatusLabel(h.from_status) : undefined} />
-              </td>
-              <td>
-                <Badge value={h.to_status} label={applicationStatusLabel(h.to_status)} />
-              </td>
-              <td className="muted">{actorTypeLabel(h.actor_type)}</td>
-              <td className="muted">{formatDateTime(h.created_at)}</td>
-            </tr>
+              )}
+            </li>
           ))}
-        </tbody>
-      </table>
+        </ul>
+      </section>
+
+      <section className="section">
+        <h2>История</h2>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Из</th>
+              <th>В</th>
+              <th>Кто</th>
+              <th>Когда</th>
+            </tr>
+          </thead>
+          <tbody>
+            {app.status_history.map((h, i) => (
+              <tr key={i}>
+                <td>
+                  <Badge value={h.from_status} label={h.from_status ? applicationStatusLabel(h.from_status) : undefined} />
+                </td>
+                <td>
+                  <Badge value={h.to_status} label={applicationStatusLabel(h.to_status)} />
+                </td>
+                <td className="muted">{actorTypeLabel(h.actor_type)}</td>
+                <td className="muted">{formatDateTime(h.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
 
       {/* Сырьё — не в основном виде (T17, часть 2): распознанные поля паспорта
           с уверенностью и полные снимки анкеты, для того, кто проверяет
           распознавание или ищет, что именно менял оператор. */}
-      <details className="card" style={{ marginTop: 24 }}>
-        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Подробности</summary>
+      <details className="disclosure">
+        <summary>Подробности</summary>
         {app.ocr_result ? (
           <>
-            <h3 style={{ fontSize: 13, color: "var(--color-text-muted)", margin: "12px 0 6px" }}>
+            <h3 className="subhead">
               Распознавание паспорта · мин. уверенность {app.ocr_result.min_confidence ?? "—"} ·{" "}
               {formatDateTime(app.ocr_result.created_at)}
             </h3>
@@ -566,9 +461,22 @@ export function ApplicationDetailPage() {
             </table>
           </>
         ) : null}
-        <h3 style={{ fontSize: 13, color: "var(--color-text-muted)", margin: "12px 0 6px" }}>Снимки анкеты</h3>
+        <h3 className="subhead">Снимки анкеты</h3>
         <SnapshotHistory snapshots={app.external_snapshots} />
       </details>
     </section>
+  );
+}
+
+function KeyValue({ rows }: { rows: { label: string; value: string }[] }) {
+  return (
+    <dl className="kv-grid">
+      {rows.map((row) => (
+        <div key={row.label} className="kv-row">
+          <dt>{row.label}</dt>
+          <dd>{row.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

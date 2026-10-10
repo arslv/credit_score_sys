@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import * as yaml from "js-yaml";
 import { api } from "../api/client";
-import { Term } from "../components/Term";
 import { formatDateTime } from "../lib/format";
 
 // Ответы этих эндпоинтов не типизированы в схеме (обычные dict, не Pydantic
@@ -227,7 +226,7 @@ function ApplicationRowView({ row }: { row: ApplicationRow }) {
 
 function ApplicationsTable({ title, rows, emptyText }: { title: string; rows: ApplicationRow[]; emptyText: string }) {
   return (
-    <div style={{ marginTop: 12 }}>
+    <div className="stack">
       <h3>{title}</h3>
       {rows.length === 0 ? (
         <p className="muted">{emptyText}</p>
@@ -429,7 +428,7 @@ export function RulesetsPage() {
       </p>
 
       {fileConflict?.conflict && (
-        <div className="alert" role="alert" style={{ marginBottom: 12 }}>
+        <div className="alert" role="alert">
           <p>
             Файл конфига на диске разошёлся с активной версией, сохранённой через админку. Следующий деплой не
             перезапишет её автоматически.
@@ -443,7 +442,7 @@ export function RulesetsPage() {
         <p role="alert" className="alert">Файл конфига на диске не проходит схему: {fileConflict.error}</p>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginTop: 16 }}>
+      <div className="grid-2 stack">
         <div>
           {(["thresholds", "limits", "pti"] as const).map((section) => (
             <div key={section}>
@@ -463,8 +462,8 @@ export function RulesetsPage() {
                       aria-invalid={!!err}
                       onChange={(e) => updateQuickField(f, e.target.value)}
                     />
-                    <span className="muted" style={{ display: "block", fontSize: 12, marginTop: 4 }}>{f.help}</span>
-                    {err && <span role="alert" style={{ color: "var(--color-danger)", fontSize: 12 }}>{err}</span>}
+                    <span className="field-hint">{f.help}</span>
+                    {err && <span role="alert" className="field-error">{err}</span>}
                   </label>
                 );
               })}
@@ -474,18 +473,18 @@ export function RulesetsPage() {
             </div>
           ))}
 
-          <details style={{ marginTop: 16 }}>
-            <summary className="muted" style={{ cursor: "pointer" }}>Экспертный режим — YAML напрямую</summary>
+          <details className="disclosure">
+            <summary>Экспертный режим — YAML напрямую</summary>
             <textarea
               value={yamlText}
               onChange={(e) => setYamlText(e.target.value)}
               rows={24}
-              style={{ width: "100%", fontFamily: "monospace", marginTop: 8 }}
+              className="code-input stack"
             />
             {parseError && <p role="alert" className="alert">YAML не читается: {parseError}</p>}
           </details>
 
-          <div style={{ marginTop: 16 }}>
+          <div className="stack">
             <button
               className="btn btn-primary"
               disabled={simulateMutation.isPending || hasInputErrors}
@@ -495,7 +494,7 @@ export function RulesetsPage() {
             </button>
           </div>
 
-          <label className="field" style={{ marginTop: 16 }}>
+          <label className="field">
             Комментарий к версии (обязательно)
             <input
               type="text"
@@ -504,7 +503,7 @@ export function RulesetsPage() {
               placeholder="что меняете и зачем"
             />
           </label>
-          <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+          <div className="row stack">
             <button
               className="btn btn-primary"
               disabled={!simulation || !publishComment.trim() || saveMutation.isPending}
@@ -535,7 +534,7 @@ export function RulesetsPage() {
                       {ofWord(notCompared)} сравнение невозможно (подробности ниже). Симуляция действует до{" "}
                       {formatDateTime(simulation.expires_at)}.
                     </p>
-                    <p style={{ marginTop: 12 }}>
+                    <p className="stack">
                       Новый конфиг одобрил бы{" "}
                       {s.swap_in.length > 0 ? `ещё ${s.swap_in.length} ${countWord(s.swap_in.length)}` : "никого дополнительно"}
                       {s.swap_out.length > 0 && `, и не одобрил бы ${s.swap_out.length} ${countWord(s.swap_out.length)}`}.
@@ -567,7 +566,7 @@ export function RulesetsPage() {
                     </table>
 
                     {s.defaultness_by_known_outcome.available && (
-                      <div style={{ marginTop: 12 }}>
+                      <div className="stack">
                         <h3>Дефолтность по известным исходам (зрелые договоры)</h3>
                         <table className="table">
                           <thead>
@@ -610,7 +609,7 @@ export function RulesetsPage() {
                       emptyText="Нет заявок."
                     />
 
-                    <div style={{ marginTop: 12 }}>
+                    <div className="stack">
                       <h3>Прошла бы стадию А, дальше решение неизвестно</h3>
                       <p className="muted">
                         Для {s.unknown_after_stage_a_pass_total} {ofWord(s.unknown_after_stage_a_pass_total)} снимка
@@ -623,13 +622,12 @@ export function RulesetsPage() {
                     </div>
 
                     {s.not_computable.length > 0 && (
-                      <div style={{ marginTop: 12 }}>
-                        <h3>
-                          <Term tip="Для старых снимков признаков нет нужного поля (например, правило появилось после снимка) — посчитать правило по ним нельзя. Это не значит, что оно бы не сработало.">
-                            Не вычислимо
-                          </Term>{" "}
-                          по старым снимкам
-                        </h3>
+                      <div className="stack">
+                        <h3>Не вычислимо по старым снимкам</h3>
+                        <p className="hint">
+                          В старых снимках признаков нет нужного поля (например, правило появилось позже) — посчитать
+                          правило по ним нельзя. Это не значит, что оно бы не сработало.
+                        </p>
                         <ul>
                           {s.not_computable.map((r) => (
                             <li key={r.rule_id}>
@@ -641,7 +639,7 @@ export function RulesetsPage() {
                       </div>
                     )}
 
-                    <p className="muted" style={{ marginTop: 12 }}>
+                    <p className="muted stack">
                       Для {s.insufficient_data_count} {ofWord(s.insufficient_data_count)} обе версии правил ещё не
                       дошли до стадии Б (заявка пока ждёт звонка оператора) — рано сравнивать.
                     </p>
@@ -653,7 +651,7 @@ export function RulesetsPage() {
         </div>
       </div>
 
-      <h2 style={{ marginTop: 24 }}>История версий</h2>
+      <h2>История версий</h2>
       {versionsQuery.isLoading && <p className="muted">Загрузка…</p>}
       {versionsQuery.data && (
         <table className="table">
@@ -690,14 +688,14 @@ export function RulesetsPage() {
       )}
 
       {rollbackTarget != null && (
-        <div className="card" style={{ marginTop: 12 }}>
+        <div className="card">
           <p>Откат к версии {rollbackTarget}. Причина обязательна.</p>
           <label className="field">
             Причина
             <input value={rollbackReason} onChange={(e) => setRollbackReason(e.target.value)} />
           </label>
           {rollbackError && <p role="alert" className="alert">{rollbackError}</p>}
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <div className="row stack">
             <button
               className="btn btn-primary btn-small"
               disabled={rollbackMutation.isPending || !rollbackReason.trim()}

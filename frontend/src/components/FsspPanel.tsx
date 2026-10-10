@@ -148,9 +148,9 @@ export function FsspPanel({
   } | null | undefined;
 
   return (
-    <div className="card">
-      <p style={{ marginTop: 0 }}>
-        <strong>ФССП — {subjectLabel}</strong>{" "}
+    <div className="subsection">
+      <p>
+        <strong>{subjectLabel[0]!.toUpperCase() + subjectLabel.slice(1)}:</strong>{" "}
         {latestCheck ? checkResultLabel("fssp", latestCheck.status) : <span className="muted">не проверено</span>}
       </p>
 
@@ -184,7 +184,7 @@ export function FsspPanel({
       )}
 
       {canOperate && open && !captchaBase64 && (
-        <div style={{ marginTop: 8 }}>
+        <div className="stack">
           {latestCheck && (
             <label className="field">
               Причина повторной проверки
@@ -207,28 +207,30 @@ export function FsspPanel({
               ))}
             </select>
           </label>
-          <button
-            className="btn btn-primary btn-small"
-            style={{ marginTop: 10 }}
-            disabled={!regionCode || searchMutation.isPending}
-            onClick={() => searchMutation.mutate()}
-          >
-            Запросить капчу
-          </button>
-          <button className="btn btn-small" style={{ marginLeft: 8 }} onClick={() => setOpen(false)}>
-            Отмена
-          </button>
+          <div className="row stack">
+            <button
+              className="btn btn-primary btn-small"
+              disabled={!regionCode || searchMutation.isPending}
+              onClick={() => searchMutation.mutate()}
+            >
+              Запросить капчу
+            </button>
+            <button className="btn btn-small" onClick={() => setOpen(false)}>
+              Отмена
+            </button>
+          </div>
         </div>
       )}
 
       {canOperate && captchaBase64 && (
-        <div style={{ marginTop: 8 }}>
+        <div className="stack">
           {message && <p className="alert" role="alert">{message}</p>}
           <img
             src={`data:image/png;base64,${captchaBase64}`}
             alt="капча ФССП"
-            style={{ display: "block", minWidth: 220, border: "1px solid var(--color-border)", borderRadius: 6 }}
+            className="captcha-image"
           />
+          <div className="row stack">
           <input
             type="text"
             autoComplete="off"
@@ -241,11 +243,10 @@ export function FsspPanel({
               if (e.key === "Enter" && code.trim() && !submitMutation.isPending) submitMutation.mutate();
             }}
             placeholder="код с картинки"
-            style={{ marginTop: 8, maxWidth: 160 }}
+            className="input input--short"
           />
           <button
             className="btn btn-primary btn-small"
-            style={{ marginLeft: 8 }}
             disabled={!code.trim() || submitMutation.isPending}
             onClick={() => submitMutation.mutate()}
           >
@@ -253,7 +254,6 @@ export function FsspPanel({
           </button>
           <button
             className="btn btn-small"
-            style={{ marginLeft: 8 }}
             onClick={() => {
               setOpen(false);
               setCaptchaBase64(null);
@@ -262,6 +262,7 @@ export function FsspPanel({
           >
             Отмена
           </button>
+          </div>
         </div>
       )}
 

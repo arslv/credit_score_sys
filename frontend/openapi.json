@@ -2213,6 +2213,92 @@
         }
       }
     },
+    "/api/v1/partner/applications": {
+      "post": {
+        "tags": [
+          "partner-webhooks"
+        ],
+        "summary": "Receive New Application",
+        "operationId": "receive_new_application_api_v1_partner_applications_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewApplicationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Receive New Application Api V1 Partner Applications Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/partner/review": {
+      "post": {
+        "tags": [
+          "partner-webhooks"
+        ],
+        "summary": "Receive Review",
+        "operationId": "receive_review_api_v1_partner_review_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Receive Review Api V1 Partner Review Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -2667,6 +2753,31 @@
           "created_at"
         ],
         "title": "AuditLogOut"
+      },
+      "BkiConsentIn": {
+        "properties": {
+          "given": {
+            "type": "boolean",
+            "title": "Given"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "given"
+        ],
+        "title": "BkiConsentIn"
       },
       "BkiMonthlyItem": {
         "properties": {
@@ -3685,6 +3796,33 @@
               }
             ],
             "title": "Pti"
+          },
+          "pti_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "computed",
+                  "no_income",
+                  "no_credit_history"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pti Status"
+          },
+          "bki_active_contracts_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bki Active Contracts Count"
           }
         },
         "type": "object",
@@ -3708,7 +3846,9 @@
           "score_auto_approve_above",
           "score_auto_reject_below",
           "pti_max",
-          "pti"
+          "pti",
+          "pti_status",
+          "bki_active_contracts_count"
         ],
         "title": "DecisionOut"
       },
@@ -4228,6 +4368,111 @@
         ],
         "title": "GoodsCategoryOut"
       },
+      "GuarantorIn": {
+        "properties": {
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Middle Name"
+          },
+          "birth_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
+          },
+          "passport_series": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Series"
+          },
+          "passport_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Number"
+          },
+          "issue_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Date"
+          },
+          "registration_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration Address"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "type": "object",
+        "title": "GuarantorIn"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -4448,6 +4693,70 @@
           "latest_review_verdict"
         ],
         "title": "MatchItem"
+      },
+      "NewApplicationIn": {
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "title": "External Id"
+          },
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Middle Name"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "photos": {
+            "$ref": "#/components/schemas/NewApplicationPhotosIn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "external_id",
+          "event_id",
+          "last_name",
+          "first_name",
+          "phone",
+          "photos"
+        ],
+        "title": "NewApplicationIn"
+      },
+      "NewApplicationPhotosIn": {
+        "properties": {
+          "passport_main": {
+            "$ref": "#/components/schemas/PhotoRefIn"
+          },
+          "passport_reg": {
+            "$ref": "#/components/schemas/PhotoRefIn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "passport_main",
+          "passport_reg"
+        ],
+        "title": "NewApplicationPhotosIn"
       },
       "OcrResultOut": {
         "properties": {
@@ -4823,6 +5132,34 @@
         ],
         "title": "PaymentOut"
       },
+      "PhotoRefIn": {
+        "properties": {
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base64"
+          }
+        },
+        "type": "object",
+        "title": "PhotoRefIn"
+      },
       "ReasonCodeOut": {
         "properties": {
           "code": {
@@ -4898,6 +5235,139 @@
           "check"
         ],
         "title": "RetryCheckResult"
+      },
+      "ReviewDealIn": {
+        "properties": {
+          "goods_category_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goods Category Code"
+          },
+          "goods_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goods Name"
+          },
+          "goods_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goods Price"
+          },
+          "down_payment": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Down Payment"
+          },
+          "term_months": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Months"
+          },
+          "tariff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tariff"
+          }
+        },
+        "type": "object",
+        "title": "ReviewDealIn"
+      },
+      "ReviewIn": {
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "title": "External Id"
+          },
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "deal": {
+            "$ref": "#/components/schemas/ReviewDealIn"
+          },
+          "employment": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Employment"
+          },
+          "income": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Income"
+          },
+          "obligations": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Obligations"
+          },
+          "bki_consent": {
+            "$ref": "#/components/schemas/BkiConsentIn"
+          },
+          "guarantor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuarantorIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "external_id",
+          "event_id",
+          "status",
+          "bki_consent"
+        ],
+        "title": "ReviewIn"
       },
       "RollbackRequest": {
         "properties": {

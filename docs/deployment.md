@@ -114,7 +114,9 @@ docker compose -f docker-compose.prod.yml exec api python -m app.cli.create_admi
 ```
 
 Пароль вводится через `getpass` (не эхается, не остаётся в истории шелла).
-Дальше новые сотрудники заводятся уже из самой админки (роль `admin`).
+Дальше новые сотрудники заводятся уже из самой админки (роль `admin`) —
+или той же командой с флагом `--role` (`risk_manager`, `operator`,
+`compliance`, `viewer`; по умолчанию `admin`).
 
 ## 6. Бэкап и восстановление Postgres
 

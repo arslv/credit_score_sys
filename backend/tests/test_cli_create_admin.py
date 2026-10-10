@@ -105,3 +105,25 @@ async def test_create_admin_reprompts_on_broken_encoding_email(session_factory, 
             await session.execute(select(Employee).where(Employee.email == "cli-admin5@example.com"))
         ).scalar_one()
     assert employee is not None
+
+
+async def test_create_admin_with_role_creates_risk_manager(session_factory, monkeypatch):
+    """T20: --role — тот же путь (getpass, проверки) для любой роли."""
+    inputs = iter(["Риск Менеджеров", "cli-risk@example.com"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    passwords = iter(["a-very-strong-password-123", "a-very-strong-password-123"])
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": next(passwords))
+    _patch_session_factory(monkeypatch, session_factory)
+
+    assert await create_admin_module._run("risk_manager") == 0
+
+    async with session_factory() as session:
+        employee = (
+            await session.execute(select(Employee).where(Employee.email == "cli-risk@example.com"))
+        ).scalar_one()
+    assert employee.role == "risk_manager"
+
+
+async def test_create_admin_rejects_unknown_role(session_factory, monkeypatch):
+    _patch_session_factory(monkeypatch, session_factory)
+    assert await create_admin_module._run("superuser") == 1

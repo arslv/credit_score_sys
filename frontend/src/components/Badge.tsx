@@ -1,6 +1,8 @@
 const SUCCESS = new Set(["approve", "approved", "ok", "employee_active"]);
 const DANGER = new Set(["reject", "rejected_a", "rejected_b", "source_unavailable", "error", "hit", "employee_inactive"]);
-const WARNING = new Set(["manual_review", "gray_zone", "to_operator", "ocr_failed", "no_data"]);
+// T20: янтарный — только серая зона; «передано оператору» — обычный ход
+// процесса (нейтральная точка), как и в списке заявок.
+const WARNING = new Set(["manual_review", "gray_zone", "ocr_failed", "no_data"]);
 
 function variantFor(value: string): string {
   if (SUCCESS.has(value)) return "badge-success";

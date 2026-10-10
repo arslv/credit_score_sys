@@ -75,7 +75,7 @@ export function CompliancePage() {
             {m.latest_review_verdict && ` · разбор: ${m.latest_review_verdict}`}
           </p>
 
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <div className="row stack">
             <button
               className="btn btn-small"
               disabled={reviewMutation.isPending}
@@ -98,15 +98,14 @@ export function CompliancePage() {
           </div>
 
           {openReasonFor === m.decision_id && m.client_id && (
-            <div style={{ marginTop: 8 }}>
-              <label className="field" style={{ marginTop: 8 }}>
+            <div className="stack">
+              <label className="field">
                 Причина снятия (обязательна)
                 <input value={reason} onChange={(e) => setReason(e.target.value)} />
               </label>
               {reasonError && <p role="alert" className="alert">{reasonError}</p>}
               <button
-                className="btn btn-primary btn-small"
-                style={{ marginTop: 8 }}
+                className="btn btn-primary btn-small stack"
                 disabled={liftFreezeMutation.isPending || !reason.trim()}
                 onClick={() => submitLiftFreeze(m.client_id!, m.decision_id)}
               >

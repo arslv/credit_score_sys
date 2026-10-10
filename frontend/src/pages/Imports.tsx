@@ -42,8 +42,8 @@ interface Candidate {
 
 function ResultReport({ result, title }: { result: ImportResult; title: string }) {
   return (
-    <div className="card" style={{ marginTop: 12 }}>
-      <h3 style={{ marginTop: 0 }}>{title}</h3>
+    <div className="card">
+      <h3>{title}</h3>
       {!result.created && <p className="muted">Этот файл уже был загружен раньше — повторно не обработан.</p>}
       {result.created && (
         <p>
@@ -182,14 +182,14 @@ export function ImportsPage() {
       </p>
       {uploadError && <p role="alert" className="alert">{uploadError}</p>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16, marginTop: 16 }}>
+      <div className="grid-4 stack">
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>Договоры</h2>
+          <h2>Договоры</h2>
           <label className="field">
             Дата выгрузки (необязательно)
             <input type="date" value={dataAsOf} onChange={(e) => setDataAsOf(e.target.value)} />
           </label>
-          <p className="muted" style={{ marginTop: 0 }}>
+          <p className="muted">
             Чтобы сработало предупреждение о неполноте выгрузки платежей, дата здесь и дата при загрузке платежей
             должны совпадать.
           </p>
@@ -201,8 +201,8 @@ export function ImportsPage() {
         </div>
 
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>График платежей</h2>
-          <p className="muted" style={{ marginTop: 0 }}>
+          <h2>График платежей</h2>
+          <p className="muted">
             Необязательно — если не загружен, используется график, сгенерированный равными платежами
             (schedule_source = generated).
           </p>
@@ -214,7 +214,7 @@ export function ImportsPage() {
         </div>
 
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>Платежи</h2>
+          <h2>Платежи</h2>
           <label className="field">
             Данные по дату (включительно)
             <input type="date" value={dataAsOf} onChange={(e) => setDataAsOf(e.target.value)} />
@@ -227,7 +227,7 @@ export function ImportsPage() {
         </div>
 
         <div className="card">
-          <h2 style={{ marginTop: 0 }}>Исторические заявки</h2>
+          <h2>Исторические заявки</h2>
           <input
             type="file"
             accept=".csv"
@@ -241,7 +241,7 @@ export function ImportsPage() {
       {paymentsResult && <ResultReport result={paymentsResult} title="Результат загрузки платежей" />}
       {historicalResult && <ResultReport result={historicalResult} title="Результат загрузки исторических заявок" />}
 
-      <h2 style={{ marginTop: 24 }}>Кандидаты на привязку договора к заявке</h2>
+      <h2>Кандидаты на привязку договора к заявке</h2>
       <p className="muted">
         Автоматически договор привязывается только по однозначному идентификатору из выгрузки. Совпадение по
         телефону/ФИО — ниже, подтвердите или отклоните вручную.
@@ -274,7 +274,7 @@ export function ImportsPage() {
                   {c.source_name ?? "—"} / {c.source_phone ?? "—"}
                 </td>
                 <td className="muted">{formatDateTime(c.created_at)}</td>
-                <td style={{ display: "flex", gap: 8 }}>
+                <td className="row">
                   <button
                     className="btn btn-primary btn-small"
                     disabled={confirmMutation.isPending}

@@ -22,7 +22,8 @@ from decimal import Decimal
 from app.config import get_settings
 from app.db import new_sessionmaker
 from app.engine.versions import get_active_ruleset_version
-from app.models import Application, Client, Decision, Employee, ManualOverride
+from app.engine.stage_b_pipeline import STAGE_B_FEATURE_SET_VERSION
+from app.models import Application, Client, Decision, Employee, FeatureSnapshot, ManualOverride
 from app.security.passwords import hash_password
 
 RUN = uuid.uuid4().hex[:8]
@@ -147,6 +148,46 @@ async def _seed_frozen_sanctions_match(session) -> dict:
     }
 
 
+async def _seed_stage_b_decision(session, *, suffix: str, outcome: str, reason_code: str | None, features: dict) -> dict:
+    """T20: решение стадии Б со снимком признаков — для теста блока «Почему»
+    (причина / в норме / не вычислимо). Форма снимка — та же, что пишет
+    stage_b_pipeline: score и declared_pti сверху, БКИ-признаки в features."""
+    ruleset_row = await get_active_ruleset_version(session)
+    now = datetime.now(timezone.utc)
+    last_name = f"Причинов{suffix}{RUN}"
+    client = Client(
+        last_name=last_name, first_name="Тест", middle_name="Тестович",
+        birth_date=date(1990, 1, 1), passport_series=f"{uuid.uuid4().int % 10000:04d}",
+        passport_number=f"{uuid.uuid4().int % 1000000:06d}", phone="+79990000002",
+    )
+    session.add(client)
+    await session.flush()
+    application = Application(
+        client_id=client.id, external_id=f"E2E-{suffix}-{RUN}",
+        status="approved" if outcome == "approve" else "gray_zone",
+        goods_name="Стиральная машина", goods_price=Decimal("50000.00"), down_payment=Decimal("5000.00"),
+        term_months=12, tariff="standard", requested_amount=Decimal("45000.00"),
+        profile={"last_name": last_name, "first_name": "Тест", "middle_name": "Тестович", "phone": "+79990000002"},
+        consent_pd_at=now,
+    )
+    session.add(application)
+    await session.flush()
+    snapshot = FeatureSnapshot(
+        application_id=application.id, stage="B", features=features, feature_set_ver=STAGE_B_FEATURE_SET_VERSION,
+    )
+    session.add(snapshot)
+    await session.flush()
+    session.add(
+        Decision(
+            application_id=application.id, stage="B", outcome=outcome, reason_code=reason_code,
+            freeze=False, triggered_rules=[], ruleset_version_id=ruleset_row.id, feature_snapshot_id=snapshot.id,
+            score=Decimal(str(features["score"])), score_source="bki_score",
+        )
+    )
+    await session.flush()
+    return {"id": str(application.id)}
+
+
 async def main() -> None:
     _refuse_if_production()
 
@@ -160,6 +201,17 @@ async def main() -> None:
             operator = await _seed_employee(session, role="operator")
             application = await _seed_discrepancy_application(session)
             frozen_match = await _seed_frozen_sanctions_match(session)
+            # Балл выше порога одобрения (700 в dev.yaml) и ПДН в норме, но ФССП
+            # не проверено — пример из задания T20.
+            gray_fssp = await _seed_stage_b_decision(
+                session, suffix="GRAY", outcome="manual_review", reason_code="FSSP_NOT_CHECKED",
+                features={"score": 760, "declared_pti": 0.1, "features": {"pti": 0.42, "bki_active_contracts_count": 1}},
+            )
+            # Доход нулевой: declared_pti и pti — None, КИ получена.
+            no_income = await _seed_stage_b_decision(
+                session, suffix="NOINCOME", outcome="manual_review", reason_code="FSSP_NOT_CHECKED",
+                features={"score": 760, "declared_pti": None, "features": {"pti": None, "bki_active_contracts_count": 0}},
+            )
             await session.commit()
     finally:
         await engine.dispose()
@@ -167,6 +219,7 @@ async def main() -> None:
     print(json.dumps({
         "risk_manager": risk_manager, "viewer": viewer, "compliance": compliance, "admin": admin,
         "application": application, "frozen_match": frozen_match, "operator": operator,
+        "gray_fssp": gray_fssp, "no_income": no_income,
     }))
 
 
