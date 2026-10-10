@@ -22,7 +22,7 @@ from app.engine.schema import load_ruleset_from_yaml
 from app.engine.state_machine import transition
 from app.models import Application, Check, Client, Decision, FeatureSnapshot, SanctionsList
 from app.ocr.fake_provider import FakeOcrProvider, build_ocr_result
-from tests.test_engine_pipeline import _age_overrides, _ingest, active_ruleset  # noqa: F401
+from tests.test_engine_pipeline import _age_overrides, _ingest, _last_decision, active_ruleset  # noqa: F401
 from tests.conftest import unique_valid_passport_series
 
 
@@ -179,9 +179,8 @@ async def test_sanctions_hit_persists_freeze_logs_error_and_notes_operator(
         assert decision.reason_code == "SANCTIONS_HIT"
         assert decision.freeze is True
 
-    detail = await partner_client.get_application(external_id)
-    comment = detail.raw["comments"][-1]["text"]
-    assert "комплаенс" in comment.lower()
+    decision_sent = await _last_decision(partner_admin, external_id)
+    assert "комплаенс" in decision_sent["reason"].lower()
 
 
 async def test_repeat_application_of_frozen_passport_is_rejected_without_any_checks(
@@ -250,9 +249,9 @@ async def test_repeat_application_of_frozen_passport_is_rejected_without_any_che
         assert decision_2.freeze is True
         assert decision_2.feature_snapshot_id is None
 
-    detail = await partner_client.get_application(external_id_2)
-    assert detail.status == "rejected"
-    assert "комплаенс" in detail.raw["comments"][-1]["text"].lower()
+    decision_sent_2 = await _last_decision(partner_admin, external_id_2)
+    assert decision_sent_2["status"] == "rejected"
+    assert "комплаенс" in decision_sent_2["reason"].lower()
 
 
 # --- проверка путей полей в dev.yaml против реального снапшота -----------------

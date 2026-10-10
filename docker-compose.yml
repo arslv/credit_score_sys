@@ -40,8 +40,13 @@ services:
       COOKIE_SECURE: "false"
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
-      PARTNER_TOKEN: ${FAKE_PARTNER_TOKEN:-dev-token}
+      # T18: интеграция по новой схеме (push) — заказчик шлёт нам вебхуки,
+      # мы отвечаем на их эндпоинт. Dev-значения указывают на fake_partner,
+      # которая теперь ПРИНИМАЕТ наши исходящие вызовы.
+      PARTNER_INBOUND_TOKEN: ${PARTNER_INBOUND_TOKEN:-dev-inbound-token}
+      PARTNER_IP_ALLOWLIST: ${PARTNER_IP_ALLOWLIST:-}
+      PARTNER_OUTBOUND_URL: ${PARTNER_OUTBOUND_URL:-http://fake_partner:8000/partner/webhook}
+      PARTNER_OUTBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:-dev-outbound-token}
       STORAGE_DIR: /data/storage
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}
@@ -75,8 +80,13 @@ services:
       COOKIE_SECURE: "false"
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
-      PARTNER_TOKEN: ${FAKE_PARTNER_TOKEN:-dev-token}
+      # T18: интеграция по новой схеме (push) — заказчик шлёт нам вебхуки,
+      # мы отвечаем на их эндпоинт. Dev-значения указывают на fake_partner,
+      # которая теперь ПРИНИМАЕТ наши исходящие вызовы.
+      PARTNER_INBOUND_TOKEN: ${PARTNER_INBOUND_TOKEN:-dev-inbound-token}
+      PARTNER_IP_ALLOWLIST: ${PARTNER_IP_ALLOWLIST:-}
+      PARTNER_OUTBOUND_URL: ${PARTNER_OUTBOUND_URL:-http://fake_partner:8000/partner/webhook}
+      PARTNER_OUTBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:-dev-outbound-token}
       STORAGE_DIR: /data/storage
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}
@@ -110,8 +120,13 @@ services:
       COOKIE_SECURE: "false"
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dialog:dialog@db:5432/dialog}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      PARTNER_BASE_URL: ${PARTNER_BASE_URL:-http://fake_partner:8000}
-      PARTNER_TOKEN: ${FAKE_PARTNER_TOKEN:-dev-token}
+      # T18: интеграция по новой схеме (push) — заказчик шлёт нам вебхуки,
+      # мы отвечаем на их эндпоинт. Dev-значения указывают на fake_partner,
+      # которая теперь ПРИНИМАЕТ наши исходящие вызовы.
+      PARTNER_INBOUND_TOKEN: ${PARTNER_INBOUND_TOKEN:-dev-inbound-token}
+      PARTNER_IP_ALLOWLIST: ${PARTNER_IP_ALLOWLIST:-}
+      PARTNER_OUTBOUND_URL: ${PARTNER_OUTBOUND_URL:-http://fake_partner:8000/partner/webhook}
+      PARTNER_OUTBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:-dev-outbound-token}
     depends_on:
       db:
         condition: service_healthy
@@ -140,6 +155,12 @@ services:
     build: ./fake_partner
     environment:
       FAKE_PARTNER_TOKEN: ${FAKE_PARTNER_TOKEN:-dev-token}
+      # Токен, которым МЫ представляемся на её /partner/webhook — должен
+      # совпадать с PARTNER_OUTBOUND_TOKEN выше. Адрес/токен нашего API —
+      # fake_partner сама стучится туда из /_test/trigger-* (имитирует заказчика).
+      EXPECTED_INBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:-dev-outbound-token}
+      DIALOG_API_BASE_URL: http://api:8000
+      DIALOG_API_TOKEN: ${PARTNER_INBOUND_TOKEN:-dev-inbound-token}
     ports:
       - "8100:8000"
     healthcheck:

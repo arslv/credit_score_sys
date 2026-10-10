@@ -11,6 +11,7 @@ from app.models.fssp import FsspCaptchaSession, FsspPostDecisionAlert
 from app.models.imports import ContractLinkCandidate, ImportBatch
 from app.models.integration import ExternalSnapshot, IntegrationEvent, OcrResult
 from app.models.override import ManualOverride
+from app.models.partner_webhook import PartnerInboundEvent, PartnerOutboxEvent
 from app.models.reference import Blacklist, GoodsCategory, ReasonCode
 from app.models.registry import InvalidPassport, RegistrySyncLog, SanctionsList
 from app.models.ruleset import RulesetVersion
@@ -46,6 +47,8 @@ __all__ = [
     "ImportBatch",
     "ContractLinkCandidate",
     "ManualOverride",
+    "PartnerInboundEvent",
+    "PartnerOutboxEvent",
     "Blacklist",
     "GoodsCategory",
     "ReasonCode",

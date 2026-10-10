@@ -13,7 +13,7 @@ from app.engine.stage_b_pipeline import STAGE_B_FEATURE_SET_VERSION
 from app.engine.versions import get_active_ruleset_version
 from app.engine.schema import parse_ruleset
 from app.engine.versions import save_ruleset_version
-from app.integrations.adapter import _content_hash
+from app.integrations.adapter import content_hash as _content_hash
 from app.models import (
     Application,
     AuditLog,

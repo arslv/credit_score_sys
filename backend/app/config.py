@@ -18,12 +18,38 @@ class Settings(BaseSettings):
     # должна тихо означать самый мягкий. dev/test — permissive.
     app_env: Literal["dev", "test", "production"] = "production"
 
-    # Интеграция с системой заказчика (см. fake_partner на этапе, пока их API неизвестен)
-    partner_base_url: str = "http://fake_partner:8000"
-    partner_token: str = "dev-token"
-    partner_poll_interval_seconds: int = 30
+    # T18: интеграция по новой схеме — заказчик сам шлёт нам заявки (вебхуки
+    # ниже), мы отвечаем на их эндпоинт. Старый polling-адаптер (T04,
+    # partner_base_url/partner_poll_interval_seconds) убран целиком.
+    #
+    # Входящие вебхуки (POST .../api/v1/partner/applications, .../review) —
+    # статичный токен в заголовке; allowlist IP — список через запятую,
+    # пустой список выключает проверку (так в dev/test: внутри docker-сети
+    # allowlist не имеет смысла, а в проде его обязаны заполнить).
+    partner_inbound_token: str = "dev-inbound-token"
+    # Только для тестов: токен служебных /_test/* эндпоинтов fake_partner
+    # (require_service_account) — отдельный от partner_inbound_token выше
+    # (тот — для /partner/webhook, этот — для её собственных /_test/*).
+    fake_partner_test_token: str = "dev-token"
+    partner_ip_allowlist: str = ""
+    # Исходящие уведомления — URL и токен ИХ эндпоинта (нам его дадут, когда
+    # согласуют контракт; dev-значение указывает на fake_partner, который
+    # теперь ПРИНИМАЕТ наши вызовы, см. fake_partner/app/main.py).
+    partner_outbound_url: str = "http://fake_partner:8000/partner/webhook"
+    partner_outbound_token: str = "dev-outbound-token"
+    partner_outbound_timeout_seconds: float = 10.0
+    # Повтор неудачной (5xx/таймаут) доставки — экспоненциальный бэкофф с
+    # потолком; «ничего не теряем» (ваше явное указание) — строка остаётся
+    # pending в partner_outbox_events до успеха, не отбрасывается никогда.
+    partner_outbox_base_delay_seconds: float = 5.0
+    partner_outbox_max_delay_seconds: float = 1800.0
+    partner_outbox_sweep_interval_seconds: int = 30
+    # Застрявшая (pending дольше этого) запись — повод для алерта (T19,
+    # «ответы заказчику не доходят»), не для нового поведения доставки.
+    partner_outbox_stuck_minutes: int = 30
 
-    # Повторы обращений к их API при недоступности
+    # Повторы при недоступности (используется исходящей доставкой — одна
+    # немедленная попытка несколькими подряд ретраями до записи в outbox).
     integration_retry_max_attempts: int = 5
     integration_retry_base_delay_seconds: float = 1.0
     integration_retry_max_delay_seconds: float = 30.0

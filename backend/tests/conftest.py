@@ -249,26 +249,17 @@ async def session_factory():
 
 @pytest_asyncio.fixture
 async def partner_admin():
-    """Прямой httpx-клиент к fake_partner для служебных /_test/ эндпоинтов —
-    не часть PartnerClient, только для подготовки данных в тестах.
-
-    Сбрасывает store fake_partner перед каждым тестом (POST /_test/reset):
-    сервис живёт весь docker compose, заявки в нём никогда не удаляются сами
-    по себе, а list_applications там — O(N) по ВСЕМ когда-либо созданным
-    заявкам (не только текущего теста). Без сброса N растёт с каждым
-    прогоном pytest в рамках одного поднятого стека, и sync_applications
-    (используется почти в каждом интеграционном тесте, дважды на вызов)
-    заметно замедляется — это и есть причина деградации полного прогона с
-    ~20 секунд до нескольких минут при повторных запусках без пересоздания
-    контейнера (см. отчёт T11)."""
+    """T18: прямой httpx-клиент к fake_partner — служебные /_test/ эндпоинты:
+    сброс между тестами и чтение того, что МЫ ей отправили (/_test/received),
+    замена старому опросу «а что у вас там» через get_application."""
     import httpx
 
     from app.config import get_settings
 
     settings = get_settings()
     client = httpx.AsyncClient(
-        base_url=settings.partner_base_url,
-        headers={"Authorization": f"Bearer {settings.partner_token}"},
+        base_url="http://fake_partner:8000",
+        headers={"Authorization": f"Bearer {settings.fake_partner_test_token}"},
         timeout=10.0,
     )
     try:
@@ -280,15 +271,33 @@ async def partner_admin():
 
 @pytest_asyncio.fixture
 async def partner_client():
+    """T18: исходящий уведомитель (app/integrations/partner_notifier.py) —
+    шлёт на fake_partner's /partner/webhook, та же роль, что раньше была у
+    опроса их API, но теперь это чистый POST-клиент без состояния их заявок."""
     from app.config import get_settings
-    from app.integrations.fake_partner_client import FakePartnerClient
+    from app.integrations.partner_notifier import PartnerNotifier
 
     settings = get_settings()
-    client = FakePartnerClient(settings.partner_base_url, settings.partner_token)
+    client = PartnerNotifier(
+        settings.partner_outbound_url, settings.partner_outbound_token,
+        timeout_seconds=settings.partner_outbound_timeout_seconds,
+    )
     try:
         yield client
     finally:
         await client.aclose()
+
+
+@pytest_asyncio.fixture
+async def partner_webhook_client():
+    """T18: ASGI-клиент на НАШ собственный app — для POST .../api/v1/partner/*
+    в тестах (та же идея, что admin_client, но для входящих вебхуков, не для
+    сессии сотрудника)."""
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="https://test") as ac:
+        yield ac
 
 
 @pytest.fixture

@@ -29,8 +29,8 @@ from app.engine.rules import TriggeredRule, evaluate_hard_stops
 from app.engine.schema import RulesetConfig
 from app.engine.state_machine import transition
 from app.engine.versions import get_active_ruleset_version, load_config
-from app.integrations.adapter import write_decision_status
-from app.integrations.base import PartnerClient
+from app.integrations.adapter import send_ocr_result, write_decision_status
+from app.integrations.partner_notifier import PartnerNotifier
 from app.integrations.status_mapping import build_operator_comment, get_status_mapping, render_comment
 from app.models import Application, Check, Client, Decision, Document, FeatureSnapshot, OcrResult, StatusHistory
 from app.ocr.base import OcrProvider
@@ -43,11 +43,6 @@ from app.sources.runner import run_and_record_check
 from app.storage.base import Storage
 
 logger = structlog.get_logger()
-
-# Заявка ингестится адаптером из списка «новых» (status_="new"), поэтому на момент
-# первой записи статуса стадии А мы вправе ожидать именно этот статус у партнёра.
-_EXPECTED_PARTNER_STATUS_ON_INGEST = "new"
-
 
 class NoActiveRulesetError(Exception):
     """Нет активной версии конфига правил на текущий момент — решение принять нельзя."""
@@ -234,7 +229,7 @@ async def _build_checks_features(session, client_id, checks: dict[str, dict[str,
 
 async def _write_back(
     session_factory: async_sessionmaker,
-    partner_client: PartnerClient,
+    partner_client: PartnerNotifier,
     application: Application,
     our_status: str,
     *,
@@ -249,7 +244,10 @@ async def _write_back(
         partner_client,
         application_id=application.id,
         external_id=application.external_id,
-        expected_current_status=_EXPECTED_PARTNER_STATUS_ON_INGEST,
+        # T18: prev_status — ИХ статус, каким они его сообщили последним
+        # вебхуком (не захардкоженное "new" из polling-эры — тогда мы сами
+        # его видели при опросе списка, теперь нам его сообщают).
+        expected_current_status=application.partner_last_known_status,
         new_status=mapping.partner_status,
         comment=comment,
     )
@@ -261,7 +259,7 @@ async def _reject_for_active_freeze(
     application: Application,
     ruleset_row,
     reason_code: str,
-    partner_client: PartnerClient,
+    partner_client: PartnerNotifier,
 ) -> str:
     """Заявка того же паспорта, что уже был заморожен раньше (T09, п. «Отдельно —
     заморозка при санкциях»): отказ с тем же reason_code, без единой проверки.
@@ -299,7 +297,7 @@ async def run_stage_a(
     application_id: UUID,
     *,
     ocr_provider: OcrProvider,
-    partner_client: PartnerClient,
+    partner_client: PartnerNotifier,
     storage: Storage,
 ) -> str:
     """Прогоняет заявку через стадию А и сразу финализирует решение по
@@ -342,6 +340,15 @@ async def run_stage_a(
             await _write_back(session_factory, partner_client, application, "ocr_failed", reason_code=None)
             return application.status
         await session.commit()
+
+        # T18: распознанные паспортные поля — сразу после OCR, не дожидаясь
+        # решения стадии А (ТЗ: «после OCR — распознанные паспортные поля»).
+        # Отправляем даже при below_threshold ниже — оператору видно то же,
+        # что и нам, вне зависимости от исхода уверенности.
+        await send_ocr_result(
+            session_factory, partner_client,
+            application_id=application.id, external_id=application.external_id, fields=ocr_outcome.fields,
+        )
 
         if ocr_outcome.below_threshold:
             # Уходит оператору без проверок (ТЗ, «Стадия А, шаг 1. OCR»).
@@ -421,7 +428,7 @@ async def find_stuck_ocr_application_ids(session, *, cutoff: datetime) -> list[U
 
 
 async def recover_stuck_ocr_applications(
-    session_factory: async_sessionmaker, *, partner_client: PartnerClient, stuck_minutes: int,
+    session_factory: async_sessionmaker, *, partner_client: PartnerNotifier, stuck_minutes: int,
 ) -> int:
     """Защита на случай, если даже повторы внутри run_ocr не сработали штатно
     (фоновый процесс убит посреди вызова, сеть зависла без исключения и
@@ -451,7 +458,7 @@ async def recover_stuck_ocr_applications(
 
 
 async def finalize_stage_a(
-    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerClient
+    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerNotifier
 ) -> str:
     """Хвост стадии А: признаки -> движок -> решение -> статус -> запись в
     систему заказчика. Общий для быстрого пути (локальный hard_stop, или ФССП

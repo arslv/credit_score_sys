@@ -88,6 +88,14 @@ class Application(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
+    # T18: статус заявки В ИХ СИСТЕМЕ, каким они его нам сообщили последний раз
+    # (вебхук /applications — всегда "new"; /review — их поле status). Нужен
+    # как prev_status в исходящих уведомлениях и как expected_current_status
+    # при записи решения (замена захардкоженных "new"/"on_review" из T04 —
+    # теперь это не то, что МЫ ожидаем увидеть при опросе, а то, что ОНИ сами
+    # нам сказали). Мутируется на месте — тот же принцип, что client_id выше:
+    # техническое поле синхронизации, не append-only бизнес-факт.
+    partner_last_known_status: Mapped[str | None] = mapped_column(sa.Text)
 
 
 class Guarantor(Base):

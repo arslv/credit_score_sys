@@ -1,168 +1,185 @@
+"""T18: интеграция по новой схеме (push) — вебхуки .../api/v1/partner/*,
+дедупликация по event_id, исходящая доставка с конфликтом/outbox-повтором.
+Замена старого test_integration_adapter.py, который тестировал polling
+(sync_applications) — его больше нет, заявки приходят вебхуками."""
+
 import hashlib
 import uuid
+from datetime import datetime, timezone
 
-import httpx
 from sqlalchemy import select
 
 from app.config import get_settings
-from app.integrations.adapter import sync_applications, write_decision_status
-from app.integrations.fake_partner_client import FakePartnerClient
-from app.models import Application, Document, ExternalSnapshot, IntegrationEvent
+from app.integrations.adapter import write_decision_status
+from app.integrations.partner_notifier import PartnerNotifier
+from app.models import Application, Document, IntegrationEvent, PartnerOutboxEvent
+from tests.test_engine_pipeline import _all_decisions, _ingest
 
 
-def _unique_name() -> str:
-    return f"Тест-{uuid.uuid4().hex[:8]}"
-
-
-async def _create_partner_application(partner_admin: httpx.AsyncClient, **overrides) -> str:
-    payload = {"last_name": _unique_name(), "first_name": "Клиент", **overrides}
-    response = await partner_admin.post("/_test/applications", json=payload)
-    response.raise_for_status()
-    return response.json()["id"]
-
-
-async def test_new_application_creates_snapshot_and_documents(
-    partner_admin, partner_client, storage, session_factory
+async def test_new_application_webhook_creates_application_and_two_documents(
+    partner_admin, partner_client, storage, session_factory,
 ):
-    external_id = await _create_partner_application(partner_admin)
-
-    await sync_applications(session_factory, partner_client, storage)
+    """Селфи не принимаем (ваше явное указание) — ровно 2 документа, не 3."""
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
 
     async with session_factory() as session:
-        application = (
-            await session.execute(select(Application).where(Application.external_id == external_id))
-        ).scalar_one()
+        application = await session.get(Application, application_id)
         assert application.status == "received"
         assert application.client_id is None  # клиент появится только после OCR (T05)
-
-        snapshots = (
-            await session.execute(
-                select(ExternalSnapshot).where(ExternalSnapshot.application_id == application.id)
-            )
-        ).scalars().all()
-        assert len(snapshots) == 1
-        assert snapshots[0].stage == "A"
+        assert application.external_id == external_id
 
         documents = (
-            await session.execute(select(Document).where(Document.application_id == application.id))
+            await session.execute(select(Document).where(Document.application_id == application_id))
         ).scalars().all()
-        assert {d.kind for d in documents} == {"selfie_passport", "passport_main", "passport_reg"}
+        assert {d.kind for d in documents} == {"passport_main", "passport_reg"}
         for document in documents:
             stored = await storage.read(document.storage_key)
             assert hashlib.sha256(stored).hexdigest() == document.sha256
 
 
-async def test_repeated_poll_does_not_duplicate(partner_admin, partner_client, storage, session_factory):
-    external_id = await _create_partner_application(partner_admin)
+async def test_repeated_event_id_does_not_duplicate_application(
+    partner_admin, partner_client, storage, session_factory,
+):
+    """Идемпотентность по event_id (ТЗ T18) — тот же вебхук (их ретрай на
+    таймауте, например) с ТЕМ ЖЕ event_id не создаёт вторую заявку/документы."""
+    from app.main import app as fastapi_app
+    from httpx import ASGITransport, AsyncClient
 
-    await sync_applications(session_factory, partner_client, storage)
-    await sync_applications(session_factory, partner_client, storage)
+    fastapi_app.state.storage = storage
+    external_id = f"EXT-{uuid.uuid4().hex[:10]}"
+    event_id = str(uuid.uuid4())
+    payload = {
+        "external_id": external_id, "event_id": event_id,
+        "last_name": "Тестов", "first_name": "Тест", "middle_name": "Тестович", "phone": "+70000000000",
+        "photos": {
+            "passport_main": {"base64": "ZmFrZS1wYXNzcG9ydC1tYWlu"},
+            "passport_reg": {"base64": "ZmFrZS1wYXNzcG9ydC1yZWc="},
+        },
+    }
+    async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="https://test") as client:
+        headers = {"Authorization": f"Bearer {get_settings().partner_inbound_token}"}
+        first = await client.post("/api/v1/partner/applications", json=payload, headers=headers)
+        assert first.status_code == 202, first.text
+        second = await client.post("/api/v1/partner/applications", json=payload, headers=headers)
+        assert second.status_code == 202, second.text
 
     async with session_factory() as session:
-        application = (
+        applications = (
             await session.execute(select(Application).where(Application.external_id == external_id))
-        ).scalar_one()
-
-        snapshots = (
-            await session.execute(
-                select(ExternalSnapshot).where(ExternalSnapshot.application_id == application.id)
-            )
         ).scalars().all()
-        assert len(snapshots) == 1
+        assert len(applications) == 1
 
         documents = (
-            await session.execute(select(Document).where(Document.application_id == application.id))
+            await session.execute(select(Document).where(Document.application_id == applications[0].id))
         ).scalars().all()
-        assert len(documents) == 3
+        assert len(documents) == 2  # не выросло на второй доставке
 
 
-async def test_manual_status_change_causes_conflict(
-    partner_admin, partner_client, storage, session_factory
+async def test_manual_status_change_causes_conflict_from_409_body(
+    partner_admin, partner_client, storage, session_factory,
 ):
-    external_id = await _create_partner_application(partner_admin)
-    await sync_applications(session_factory, partner_client, storage)
+    """T18: 409 с их стороны — current_status/reason прямо в теле ответа (наш
+    же контракт), без отдельного запроса «а какой у вас статус» (раньше —
+    get_application). Запись решения отменяется, событие conflict (правило 12 CLAUDE.md)."""
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
 
-    # Оператор вручную меняет статус в их системе в обход нашего сервиса.
-    response = await partner_admin.post(
-        f"/_test/applications/{external_id}/manual-status", json={"status": "on_call"}
-    )
-    response.raise_for_status()
+    (await partner_admin.post(
+        "/_test/configure",
+        json={"mode": "conflict", "conflict_current_status": "rejected", "conflict_reason": "оператор отказал сам"},
+    )).raise_for_status()
 
-    async with session_factory() as session:
-        application = (
-            await session.execute(select(Application).where(Application.external_id == external_id))
-        ).scalar_one()
-        application_id = application.id
-
-    # Мы всё ещё думаем, что статус "new" (как было на момент опроса) — и пытаемся
-    # записать своё решение поверх него.
     result = await write_decision_status(
-        session_factory,
-        partner_client,
-        application_id=application_id,
-        external_id=external_id,
-        expected_current_status="new",
-        new_status="rejected",
-        comment="тестовый отказ",
+        session_factory, partner_client,
+        application_id=application_id, external_id=external_id,
+        expected_current_status="new", new_status="approved", comment="тестовое одобрение",
     )
 
     assert result == "conflict"
-
-    detail = await partner_client.get_application(external_id)
-    assert detail.status == "on_call"  # запись отменена, статус не тронут
 
     async with session_factory() as session:
         events = (
             await session.execute(
                 select(IntegrationEvent).where(
-                    IntegrationEvent.application_id == application_id,
-                    IntegrationEvent.operation == "write_status",
+                    IntegrationEvent.application_id == application_id, IntegrationEvent.operation == "write_status",
                 )
             )
         ).scalars().all()
         assert any(e.status == "conflict" for e in events)
 
+        from app.models import ManualOverride
 
-async def test_partner_unavailable_retries_and_application_is_not_lost(
-    partner_admin, storage, session_factory
+        override = (
+            await session.execute(select(ManualOverride).where(ManualOverride.application_id == application_id))
+        ).scalar_one()
+        assert override.to_outcome == "rejected"
+        assert override.comment == "оператор отказал сам"
+
+
+async def test_partner_unavailable_defers_to_outbox_and_drain_delivers_later(
+    partner_admin, partner_client, storage, session_factory,
 ):
-    external_id = await _create_partner_application(partner_admin)
+    """«Ничего не теряем» (ваше явное указание): их эндпоинт недоступен — запись
+    не падает и не теряется, остаётся pending в partner_outbox_events; когда
+    эндпоинт снова доступен, app/tasks/partner_outbox.py её доставляет."""
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
 
-    unreachable_client = FakePartnerClient("http://fake_partner:9", get_settings().partner_token)
-    try:
-        summary = await sync_applications(session_factory, unreachable_client, storage)
-    finally:
-        await unreachable_client.aclose()
+    (await partner_admin.post("/_test/configure", json={"mode": "unavailable"})).raise_for_status()
 
-    assert summary["errors"] >= 1
+    result = await write_decision_status(
+        session_factory, partner_client,
+        application_id=application_id, external_id=external_id,
+        expected_current_status="new", new_status="rejected", comment="тестовый отказ",
+    )
+    assert result == "deferred"
 
     async with session_factory() as session:
-        application = (
-            await session.execute(select(Application).where(Application.external_id == external_id))
-        ).scalar_one_or_none()
-        assert application is None  # ничего не создалось наполовину
-
-        events = (
+        outbox_rows = (
             await session.execute(
-                select(IntegrationEvent).where(
-                    IntegrationEvent.operation == "list_applications:new"
-                )
-                .order_by(IntegrationEvent.created_at.desc())
-                .limit(get_settings().integration_retry_max_attempts)
+                select(PartnerOutboxEvent).where(PartnerOutboxEvent.application_id == application_id)
             )
         ).scalars().all()
-        attempts = sorted(e.attempt for e in events)
-        assert attempts == list(range(1, get_settings().integration_retry_max_attempts + 1))
-        assert events[0].status == "error"  # последняя (самая новая) попытка
+        assert len(outbox_rows) == 1
+        assert outbox_rows[0].status == "pending"
+        assert outbox_rows[0].event_type == "decision"
 
-    working_client = FakePartnerClient(get_settings().partner_base_url, get_settings().partner_token)
-    try:
-        await sync_applications(session_factory, working_client, storage)
-    finally:
-        await working_client.aclose()
+    sent = await _all_decisions(partner_admin, external_id)
+    assert sent == []  # заглушка ничего не получила — недоступна
+
+    # Эндпоинт снова доступен — drain подбирает отложенную запись.
+    (await partner_admin.post("/_test/configure", json={"mode": "ok"})).raise_for_status()
+
+    from app.tasks.partner_outbox import _drain
+
+    summary = await _drain()
+    assert summary["sent"] == 1
 
     async with session_factory() as session:
-        application = (
-            await session.execute(select(Application).where(Application.external_id == external_id))
+        row = (
+            await session.execute(
+                select(PartnerOutboxEvent).where(PartnerOutboxEvent.application_id == application_id)
+            )
         ).scalar_one()
-        assert application.status == "received"
+        assert row.status == "sent"
+        assert row.sent_at is not None
+
+    sent_after = await _all_decisions(partner_admin, external_id)
+    assert len(sent_after) == 1
+    assert sent_after[0]["status"] == "rejected"
+
+
+async def test_ocr_result_sent_after_recognition(partner_admin, partner_client, storage, session_factory):
+    """ТЗ T18: «после OCR — распознанные паспортные поля», отдельно от решения."""
+    from app.integrations.adapter import send_ocr_result
+
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    fields = {"last_name": {"value": "Тестов", "confidence": 0.98}}
+
+    await send_ocr_result(
+        session_factory, partner_client, application_id=application_id, external_id=external_id, fields=fields,
+    )
+
+    response = await partner_admin.get(f"/_test/received/{external_id}")
+    response.raise_for_status()
+    items = [item for item in response.json()["items"] if item["type"] == "ocr_result"]
+    assert len(items) == 1
+    assert items[0]["fields"]["last_name"]["value"] == "Тестов"

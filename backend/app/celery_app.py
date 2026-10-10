@@ -11,7 +11,7 @@ celery_app = Celery(
     broker=settings.redis_url,
     backend=settings.redis_url,
     include=[
-        "app.tasks.integration",
+        "app.tasks.partner_outbox",
         "app.tasks.stage_a",
         "app.tasks.stage_b",
         "app.tasks.registries",
@@ -27,9 +27,9 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     beat_schedule={
-        "sync-partner-applications": {
-            "task": "integration.sync_applications",
-            "schedule": settings.partner_poll_interval_seconds,
+        "drain-partner-outbox": {
+            "task": "partner_outbox.drain",
+            "schedule": settings.partner_outbox_sweep_interval_seconds,
         },
         "process-stage-a": {
             "task": "stage_a.process_new_applications",

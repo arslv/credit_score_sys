@@ -18,7 +18,7 @@ from app.celery_app import celery_app
 from app.config import get_settings
 from app.db import new_sessionmaker
 from app.engine.stage_b_pipeline import finalize_stage_b, run_stage_b
-from app.integrations.fake_partner_client import FakePartnerClient
+from app.integrations.partner_notifier import PartnerNotifier
 from app.models import Application, ExternalSnapshot
 
 logger = structlog.get_logger()
@@ -29,7 +29,10 @@ _PICKUP_STATUSES = ("to_operator", "gray_zone", "stage_b")
 async def _run() -> dict[str, int]:
     settings = get_settings()
     engine, session_factory = new_sessionmaker()
-    partner_client = FakePartnerClient(settings.partner_base_url, settings.partner_token)
+    partner_client = PartnerNotifier(
+        settings.partner_outbound_url, settings.partner_outbound_token,
+        timeout_seconds=settings.partner_outbound_timeout_seconds,
+    )
 
     summary = {"processed": 0, "errors": 0}
     try:
@@ -65,3 +68,27 @@ async def _run() -> dict[str, int]:
 @celery_app.task(name="stage_b.process_reviewed_applications")
 def process_reviewed_applications_task() -> dict[str, int]:
     return asyncio.run(_run())
+
+
+async def _run_one(application_id: str) -> None:
+    settings = get_settings()
+    engine, session_factory = new_sessionmaker()
+    partner_client = PartnerNotifier(
+        settings.partner_outbound_url, settings.partner_outbound_token,
+        timeout_seconds=settings.partner_outbound_timeout_seconds,
+    )
+    try:
+        await run_stage_b(session_factory, application_id, partner_client=partner_client)
+    finally:
+        await partner_client.aclose()
+        await engine.dispose()
+
+
+@celery_app.task(name="stage_b.process_single_application")
+def process_single_application_task(application_id: str) -> None:
+    """T18: диспетчер вебхука POST /api/v1/partner/review ставит эту задачу
+    сразу после сохранения снимка анкеты (.delay()) — не ждём следующего
+    тика process_reviewed_applications. Всегда run_stage_b (не
+    finalize_stage_b) — свежий снимок, тот же путь, что и в sweep выше для
+    статусов, отличных от "stage_b" (см. докстринг модуля)."""
+    asyncio.run(_run_one(application_id))

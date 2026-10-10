@@ -42,10 +42,12 @@ from app.models import (  # noqa: E402
 
 
 async def _run_task(args: dict) -> dict:
+    # T18: "sync" (app.tasks.integration — polling-адаптер) убран целиком —
+    # заявки приходят вебхуками (app/api/partner_webhooks.py), опрашивать
+    # больше нечего. stage_a/stage_b — те же sweep-задачи, что и раньше,
+    # подбирают заявки по status, независимо от того, как они туда попали.
     name = args["task"]
-    if name == "sync":
-        from app.tasks.integration import _run as run
-    elif name == "stage_a":
+    if name == "stage_a":
         from app.tasks.stage_a import _run as run
     elif name == "stage_b":
         from app.tasks.stage_b import _run as run

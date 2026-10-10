@@ -2,10 +2,17 @@
 """Сквозная проверка DIALOG Scoring через настоящие Celery-задачи и заглушку
 заказчика (fake_partner) — не вызовами app.engine.* функций напрямую.
 
+T18: интеграция по новой схеме (push) — fake_partner теперь САМА шлёт нам
+вебхуки (.../api/v1/partner/applications, .../review), имитируя заказчика, и
+принимает наши исходящие уведомления на /partner/webhook. Опроса их API
+(polling) больше нет — скрипт просит fake_partner запустить вебхук
+(/_test/trigger-*) и смотрит, что мы ей потом отправили (/_test/received).
+
 Как это работает:
-- Заявки создаются через HTTP fake_partner (порт 8100, host), как это сделал
-  бы их сайт/CRM — скрипт после этого только НАБЛЮДАЕТ за fake_partner и
-  дожидается, пока обработку сделают фоновые задачи.
+- Заявки создаются через fake_partner (порт 8100, host) — скрипт просит её
+  POST .../api/v1/partner/applications нам, как сделал бы их сайт/CRM, затем
+  только НАБЛЮДАЕТ (/_test/received) и дожидается, пока обработку сделают
+  фоновые задачи.
 - "Фоновые задачи" — это те же самые функции, что зарегистрированы через
   @celery_app.task (app/tasks/*.py): process_new_applications_task,
   process_reviewed_applications_task, sync_applications_task. Скрипт вызывает
@@ -21,7 +28,9 @@
   JSON-фикстуру, app/ocr/fixture_provider.py) и BKI_PROVIDER_MODE=fake
   (app/sources/bki.FakeBkiProvider, отчёты из JSON-фикстуры). Сценарий
   выбирается заявкой через то, какая фикстура лежит в контейнере api на
-  момент конкретного тика — между сценариями скрипт её переписывает.
+  момент конкретного тика — между сценариями скрипт её переписывает. Сами
+  ФИО/фото, которые fake_partner шлёт нам вебхуком, на выбор сценария не
+  влияют — решение целиком определяется содержимым фикстуры OCR/БКИ.
 - Операции с БД (проверка итогового решения, посев санкционного перечня для
   сценария 2) идут через _e2e_runner.py — тот же принцип: не прямые вызовы
   Python-функций движка из ЭТОГО процесса, а отдельный вызов внутри
@@ -49,7 +58,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PARTNER_BASE_URL = "http://localhost:8100"
+PARTNER_BASE_URL = "http://localhost:8100"  # fake_partner — её собственные /_test/* эндпоинты
 PARTNER_TOKEN = "dev-token"  # см. FAKE_PARTNER_TOKEN в docker-compose.yml (дефолт для дев)
 POLL_INTERVAL_SECONDS = 1.0
 POLL_TIMEOUT_SECONDS = 30.0
@@ -140,35 +149,42 @@ def _partner_request(method: str, path: str, body: dict | None = None) -> tuple[
 
 
 def partner_create_application(**overrides) -> str:
-    status, body = _partner_request("POST", "/_test/applications", overrides)
-    if status != 201:
-        raise RuntimeError(f"fake_partner create application failed: {status} {body}")
-    return body["id"]
-
-
-def partner_get(external_id: str) -> dict:
-    status, body = _partner_request("GET", f"/applications/{external_id}")
+    """T18: просит fake_partner отправить нам POST .../api/v1/partner/applications
+    (имитирует заказчика) — возвращает external_id, под которым заявка у нас
+    появится."""
+    status, body = _partner_request("POST", "/_test/trigger-new-application", overrides)
     if status != 200:
-        raise RuntimeError(f"fake_partner get application failed: {status} {body}")
+        raise RuntimeError(f"fake_partner trigger-new-application failed: {status} {body}")
+    return body["external_id"]
+
+
+def partner_received(external_id: str) -> dict:
+    """Всё, что МЫ отправили по этой заявке на /partner/webhook, плюс
+    current_status — статус, в который её перевёл наш последний POST
+    (замена опросу GET /applications/{id} из polling-эры)."""
+    status, body = _partner_request("GET", f"/_test/received/{external_id}")
+    if status != 200:
+        raise RuntimeError(f"fake_partner received lookup failed: {status} {body}")
     return body
 
 
-def partner_fill_stage_b(external_id: str, fields: dict) -> None:
-    status, body = _partner_request("POST", f"/_test/applications/{external_id}/stage-b-fields", fields)
-    if status != 200:
-        raise RuntimeError(f"fake_partner stage-b-fields failed: {status} {body}")
+def partner_status(external_id: str) -> str | None:
+    return partner_received(external_id)["current_status"]
 
 
-def partner_press_review(external_id: str) -> None:
-    status, body = _partner_request("POST", f"/_test/applications/{external_id}/review")
+def partner_trigger_review(external_id: str, **overrides) -> None:
+    """T18: просит fake_partner отправить нам POST .../api/v1/partner/review
+    (имитирует «Принять на рассмотрение») — разумные дефолты уже заданы в
+    fake_partner (TriggerReviewRequest: товар, доход, занятость, согласие на
+    БКИ), overrides нужны только сценариям с особыми условиями."""
+    status, body = _partner_request("POST", f"/_test/trigger-review/{external_id}", overrides)
     if status != 200:
-        raise RuntimeError(f"fake_partner press review failed: {status} {body}")
+        raise RuntimeError(f"fake_partner trigger-review failed: {status} {body}")
 
 
 def partner_last_comment(external_id: str) -> str:
-    detail = partner_get(external_id)
-    comments = detail.get("comments") or []
-    return comments[-1]["text"] if comments else ""
+    items = [item for item in partner_received(external_id)["items"] if item["type"] == "decision"]
+    return items[-1]["reason"] if items else ""
 
 
 # --- сценарии --------------------------------------------------------------------
@@ -202,31 +218,24 @@ def _poll_until(check, *, timeout: float = POLL_TIMEOUT_SECONDS) -> bool:
 
 
 def _wait_for_stage_a(external_id: str, bki_mode: str | None = None) -> None:
-    """Тик за тиком дёргает sync + stage_a, пока заявка не покинет 'new'/'received'."""
+    """T18: заявка уже создана вебхуком (её ставит в очередь сам наш API,
+    .delay()) — но worker/beat на время прогона остановлены (см. main()),
+    поэтому тик за тиком вызываем ту же sweep-задачу напрямую, пока заявка
+    не покинет 'new'/'received'."""
     def _done() -> bool:
-        run_worker_task("sync")
         run_worker_task("stage_a")
-        return partner_get(external_id)["status"] != "new"
+        return partner_status(external_id) != "new"
 
     _poll_until(_done)
 
 
 def _wait_for_stage_b(external_id: str, bki_mode: str) -> None:
     def _done() -> bool:
-        run_worker_task("sync")
         run_worker_task("stage_b", bki_mode=bki_mode)
-        status = partner_get(external_id)["status"]
+        status = partner_status(external_id)
         return status in ("rejected", "manual_decision", "approved")
 
     _poll_until(_done)
-
-
-_DEFAULT_STAGE_B = {
-    "deal": {"goods_category_code": "household_appliances"},
-    "employment": {"type": "employed"},
-    "income": {"declared_monthly": "100000"},
-    "address": {"registration": "г. Тестоград"},
-}
 
 
 def scenario_good_client() -> ScenarioResult:
@@ -251,7 +260,7 @@ def scenario_good_client() -> ScenarioResult:
         result.path.append(f"created ({external_id})")
 
         _wait_for_stage_a(external_id)
-        status_after_a = partner_get(external_id)["status"]
+        status_after_a = partner_status(external_id)
         result.path.append(f"stage_a -> partner:{status_after_a}")
         if status_after_a != "on_call":
             result.errors.append(f"после стадии А ожидался статус 'on_call', получили {status_after_a!r}")
@@ -261,13 +270,11 @@ def scenario_good_client() -> ScenarioResult:
         # человек), поэтому результат пишем напрямую (см. _mark_fssp_checked).
         runner_action("mark_fssp_checked", {"external_id": external_id})
 
-        partner_fill_stage_b(external_id, _DEFAULT_STAGE_B)
-        partner_press_review(external_id)
-        result.path.append("operator filled stage B + pressed «Рассмотреть»")
+        partner_trigger_review(external_id)
+        result.path.append("вебхук /review (заказчик «Принял на рассмотрение»)")
 
         _wait_for_stage_b(external_id, bki_mode="fake")
-        detail = partner_get(external_id)
-        result.partner_status = detail["status"]
+        result.partner_status = partner_status(external_id)
         result.partner_comment = partner_last_comment(external_id)
         result.path.append(f"stage_b -> partner:{result.partner_status}")
 
@@ -317,8 +324,7 @@ def scenario_sanctions_hit() -> ScenarioResult:
         result.path.append(f"created ({external_id})")
 
         _wait_for_stage_a(external_id)
-        detail = partner_get(external_id)
-        result.partner_status = detail["status"]
+        result.partner_status = partner_status(external_id)
         result.partner_comment = partner_last_comment(external_id)
         result.path.append(f"stage_a -> partner:{result.partner_status}")
 
@@ -362,15 +368,13 @@ def scenario_bki_not_configured() -> ScenarioResult:
         result.path.append(f"created ({external_id})")
 
         _wait_for_stage_a(external_id)
-        result.path.append(f"stage_a -> partner:{partner_get(external_id)['status']}")
+        result.path.append(f"stage_a -> partner:{partner_status(external_id)}")
 
-        partner_fill_stage_b(external_id, _DEFAULT_STAGE_B)
-        partner_press_review(external_id)
-        result.path.append("operator filled stage B + pressed «Рассмотреть»")
+        partner_trigger_review(external_id)
+        result.path.append("вебхук /review (заказчик «Принял на рассмотрение»)")
 
         _wait_for_stage_b(external_id, bki_mode="not_configured")
-        detail = partner_get(external_id)
-        result.partner_status = detail["status"]
+        result.partner_status = partner_status(external_id)
         result.partner_comment = partner_last_comment(external_id)
         result.path.append(f"stage_b -> partner:{result.partner_status}")
 
@@ -419,15 +423,13 @@ def scenario_credit_overload() -> ScenarioResult:
         result.path.append(f"created ({external_id})")
 
         _wait_for_stage_a(external_id)
-        result.path.append(f"stage_a -> partner:{partner_get(external_id)['status']}")
+        result.path.append(f"stage_a -> partner:{partner_status(external_id)}")
 
-        partner_fill_stage_b(external_id, _DEFAULT_STAGE_B)
-        partner_press_review(external_id)
-        result.path.append("operator filled stage B + pressed «Рассмотреть»")
+        partner_trigger_review(external_id)
+        result.path.append("вебхук /review (заказчик «Принял на рассмотрение»)")
 
         _wait_for_stage_b(external_id, bki_mode="fake")
-        detail = partner_get(external_id)
-        result.partner_status = detail["status"]
+        result.partner_status = partner_status(external_id)
         result.partner_comment = partner_last_comment(external_id)
         result.path.append(f"stage_b -> partner:{result.partner_status}")
 
@@ -459,17 +461,15 @@ def scenario_repeat_client_uses_cache() -> ScenarioResult:
 
         first_id = partner_create_application(last_name=last_name, first_name="Повторный")
         _wait_for_stage_a(first_id)
-        partner_fill_stage_b(first_id, _DEFAULT_STAGE_B)
-        partner_press_review(first_id)
+        partner_trigger_review(first_id)
         _wait_for_stage_b(first_id, bki_mode="fake")
-        result.path.append(f"первая заявка ({first_id}) -> partner:{partner_get(first_id)['status']}")
+        result.path.append(f"первая заявка ({first_id}) -> partner:{partner_status(first_id)}")
 
         second_id = partner_create_application(last_name=last_name, first_name="Повторный")
         _wait_for_stage_a(second_id)
-        partner_fill_stage_b(second_id, _DEFAULT_STAGE_B)
-        partner_press_review(second_id)
+        partner_trigger_review(second_id)
         _wait_for_stage_b(second_id, bki_mode="fake")
-        result.partner_status = partner_get(second_id)["status"]
+        result.partner_status = partner_status(second_id)
         result.partner_comment = partner_last_comment(second_id)
         result.path.append(f"вторая заявка ({second_id}) -> partner:{result.partner_status}")
 

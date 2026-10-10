@@ -10,7 +10,6 @@ from app.config import get_settings
 from app.engine.pipeline import DocumentNotFoundError, run_stage_a
 from app.engine.schema import parse_ruleset
 from app.engine.versions import save_ruleset_version
-from app.integrations.adapter import sync_applications
 from app.models import Application, Decision, FeatureSnapshot, InvalidPassport, SanctionsList
 from app.ocr.fake_provider import FakeOcrProvider, build_ocr_result
 from app.registries.sync import is_registry_stale
@@ -22,21 +21,86 @@ def _unique_name() -> str:
     return f"Тест-{uuid.uuid4().hex[:8]}"
 
 
-async def _create_partner_application(partner_admin, **overrides) -> str:
-    payload = {"last_name": _unique_name(), "first_name": "Клиент", **overrides}
-    response = await partner_admin.post("/_test/applications", json=payload)
-    response.raise_for_status()
-    return response.json()["id"]
+async def _ingest(
+    partner_admin, partner_client, storage, session_factory, partner_webhook_client=None, **overrides,
+) -> tuple[str, "uuid.UUID"]:
+    """T18: имитирует POST .../api/v1/partner/applications (новая схема —
+    заказчик сам шлёт нам заявку). partner_webhook_client — ASGI-клиент на
+    наш app; если не передан, строится здесь же (большинство вызывающих
+    тестов его не просят явно, им важен только результат)."""
+    from app.config import get_settings
 
+    from app.main import app as fastapi_app
 
-async def _ingest(partner_admin, partner_client, storage, session_factory, **overrides) -> tuple[str, "uuid.UUID"]:
-    external_id = await _create_partner_application(partner_admin, **overrides)
-    await sync_applications(session_factory, partner_client, storage)
+    # Вебхук идёт через настоящий ASGI-стек (app.main.app) и сохраняет фото
+    # через app.state.storage — у теста своё изолированное хранилище
+    # (tmp_path), подменяем на него, иначе run_stage_a ниже не найдёт файл.
+    fastapi_app.state.storage = storage
+
+    if partner_webhook_client is None:
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="https://test") as client:
+            return await _ingest(
+                partner_admin, partner_client, storage, session_factory, partner_webhook_client=client, **overrides,
+            )
+
+    external_id = overrides.pop("external_id", f"EXT-{uuid.uuid4().hex[:10]}")
+    payload = {
+        "external_id": external_id,
+        "event_id": str(uuid.uuid4()),
+        "last_name": overrides.pop("last_name", _unique_name()),
+        "first_name": overrides.pop("first_name", "Клиент"),
+        "middle_name": overrides.pop("middle_name", "Клиентович"),
+        "phone": overrides.pop("phone", "+70000000000"),
+        "photos": {
+            "passport_main": {"base64": "ZmFrZS1wYXNzcG9ydC1tYWlu"},
+            "passport_reg": {"base64": "ZmFrZS1wYXNzcG9ydC1yZWc="},
+        },
+        **overrides,
+    }
+    response = await partner_webhook_client.post(
+        "/api/v1/partner/applications", json=payload,
+        headers={"Authorization": f"Bearer {get_settings().partner_inbound_token}"},
+    )
+    assert response.status_code == 202, response.text  # правило 14 CLAUDE.md
+
     async with session_factory() as session:
         application = (
             await session.execute(select(Application).where(Application.external_id == external_id))
         ).scalar_one()
         return external_id, application.id
+
+
+async def _all_received(partner_admin, external_id: str) -> list[dict]:
+    """T18: вообще всё, что мы отправили по этой заявке на /partner/webhook —
+    решения, распознанные поля, отдельные комментарии (tariff_offer и т.п.)."""
+    response = await partner_admin.get(f"/_test/received/{external_id}")
+    response.raise_for_status()
+    return response.json()["items"]
+
+
+async def _all_decisions(partner_admin, external_id: str) -> list[dict]:
+    """T18: все решения, отправленные по этой заявке на /partner/webhook, по
+    порядку (замена счётчику len(detail.raw["comments"]) из polling-эры)."""
+    return [item for item in await _all_received(partner_admin, external_id) if item["type"] == "decision"]
+
+
+async def _all_sent_texts(partner_admin, external_id: str) -> str:
+    """T18: замена "comments" из polling-эры — склеивает reason (решения) и
+    text (отдельные комментарии вроде предложения тарифа) из всего, что
+    отправлено по заявке, одной строкой, как раньше join по comments."""
+    items = await _all_received(partner_admin, external_id)
+    return " ".join(item.get("reason") or item.get("text") or "" for item in items)
+
+
+async def _last_decision(partner_admin, external_id: str) -> dict:
+    """T18: что мы последним отправили на их эндпоинт по этой заявке (замена
+    partner_client.get_application(...).status/comments из polling-эры) —
+    fake_partner отдаёт всё, что получила на /partner/webhook."""
+    items = await _all_decisions(partner_admin, external_id)
+    assert items, f"не было ни одного решения, отправленного по {external_id}"
+    return items[-1]
 
 
 def _age_overrides(age: int) -> dict:
@@ -90,12 +154,11 @@ async def test_stage_a_rejects_underage_applicant(
         snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
         assert snapshot.features["age"] == 19
 
-    detail = await partner_client.get_application(external_id)
-    assert detail.status == "rejected"
-    comment = detail.raw["comments"][-1]["text"]
+    decision = await _last_decision(partner_admin, external_id)
+    assert decision["status"] == "rejected"
     # T11: комментарий — человеческим языком с фактическим значением и порогом,
     # без служебного кода (оператор не программист).
-    assert "AGE_BELOW_MIN" not in comment
+    assert "AGE_BELOW_MIN" not in decision["reason"]
 
 
 async def test_stage_a_does_not_reprocess_after_decision(
@@ -193,8 +256,8 @@ async def test_stage_a_sends_adult_applicant_to_operator(
             "blacklist": {"status": "ok"},
         }
 
-    detail = await partner_client.get_application(external_id)
-    assert detail.status == "on_call"
+    decision = await _last_decision(partner_admin, external_id)
+    assert decision["status"] == "on_call"
 
 
 async def test_stage_a_ocr_failed_goes_to_operator_with_note(
@@ -222,9 +285,9 @@ async def test_stage_a_ocr_failed_goes_to_operator_with_note(
         ).scalars().all()
         assert decisions == []
 
-    detail = await partner_client.get_application(external_id)
-    assert detail.status == "on_call"
-    assert "распознать" in detail.raw["comments"][-1]["text"]
+    decision = await _last_decision(partner_admin, external_id)
+    assert decision["status"] == "on_call"
+    assert "распознать" in decision["reason"]
 
 
 async def test_recover_stuck_ocr_applications_moves_old_ones_to_operator(
@@ -265,8 +328,8 @@ async def test_recover_stuck_ocr_applications_moves_old_ones_to_operator(
         assert stuck_application.status == "to_operator"
         assert fresh_application.status == "ocr"  # недавняя — не трогаем, обработка в разгаре
 
-    stuck_detail = await partner_client.get_application(stuck_external_id)
-    assert stuck_detail.status == "on_call"
+    stuck_decision = await _last_decision(partner_admin, stuck_external_id)
+    assert stuck_decision["status"] == "on_call"
 
 
 async def test_stage_a_ocr_provider_failure_goes_to_operator_not_stuck(
@@ -297,9 +360,9 @@ async def test_stage_a_ocr_provider_failure_goes_to_operator_not_stuck(
         ).scalars().all()
         assert decisions == []
 
-    detail = await partner_client.get_application(external_id)
-    assert detail.status == "on_call"
-    assert "распознать" in detail.raw["comments"][-1]["text"]
+    decision = await _last_decision(partner_admin, external_id)
+    assert decision["status"] == "on_call"
+    assert "распознать" in decision["reason"]
 
 
 async def test_stage_a_missing_document_raises(session_factory, storage, active_ruleset):
@@ -376,8 +439,8 @@ async def test_stage_a_mvd_hit_rejects(
         snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
         assert snapshot.features["checks"]["mvd"]["status"] == "hit"
 
-    detail = await partner_client.get_application(external_id)
-    assert detail.status == "rejected"
+    decision = await _last_decision(partner_admin, external_id)
+    assert decision["status"] == "rejected"
 
 
 async def test_stage_a_rosfinmon_hit_rejects(
@@ -432,8 +495,8 @@ async def test_stage_a_rosfinmon_hit_rejects(
         snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
         assert snapshot.features["checks"]["rosfinmon"]["status"] == "hit"
 
-    detail = await partner_client.get_application(external_id)
-    assert detail.status == "rejected"
+    decision = await _last_decision(partner_admin, external_id)
+    assert decision["status"] == "rejected"
 
 
 async def test_stale_registry_does_not_cause_auto_reject(

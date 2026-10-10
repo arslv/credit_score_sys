@@ -135,7 +135,11 @@ tariffs:
 stage_b_completeness:
   # Верхнеуровневые секции анкеты (ТЗ, «Анкета»), без которых дешёвые проверки
   # стадии Б не запускаются. "guarantor"/"family"/"contact" не обязательны.
-  required_sections: [deal, employment, income, address]
+  # T18: "address" убран — в новой схеме вебхука POST /review отдельной секции
+  # адреса нет (ваше указание «формат определяем мы»), адрес заявителя уже
+  # есть из OCR (registration_address, стадия А); для поручителя адрес по-
+  # прежнему приходит внутри guarantor, если поручитель используется.
+  required_sections: [deal, employment, income]
 
 bki:
   cache_days: 30

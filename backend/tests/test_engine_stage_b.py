@@ -36,13 +36,24 @@ from app.sources.bki import (
     overdue_history_report,
 )
 from tests.conftest import unique_valid_passport_series
-from tests.test_engine_pipeline import _create_partner_application, active_ruleset  # noqa: F401
+from tests.test_engine_pipeline import _all_decisions, _all_sent_texts, _ingest, _last_decision, active_ruleset  # noqa: F401
 
 _DEFAULT_STAGE_B_PAYLOAD = {
-    "deal": {"goods_category_code": "household_appliances"},
+    # T18: /applications больше не несёт параметры сделки (это теперь поле
+    # /review) — дефолты здесь те же, что раньше были в CreateApplicationRequest
+    # на стороне fake_partner (goods_price=60000, down_payment=6000, term=12,
+    # tariff="standard"), чтобы тесты, не указывающие их явно, не ловили
+    # TERM_OUT_OF_RANGE/лимиты на плейсхолдерах 0/"unknown" из /applications.
+    "deal": {
+        "goods_category_code": "household_appliances",
+        "goods_name": "Стиральная машина",
+        "goods_price": 60000.0,
+        "down_payment": 6000.0,
+        "term_months": 12,
+        "tariff": "standard",
+    },
     "employment": {"type": "employed"},
     "income": {"declared_monthly": "100000"},
-    "address": {"registration": "г. Тестоград"},
 }
 
 
@@ -86,36 +97,76 @@ async def _mark_fssp_checked(session_factory, application_id, *, subject_type: s
 async def _prepare_application_at_stage_b(
     partner_admin, partner_client, storage, session_factory, *, stage_b_payload=None, **create_overrides
 ):
-    from app.integrations.adapter import _content_hash, sync_applications
+    """T18: два вебхука, как сделал бы заказчик в новой схеме — /applications
+    (через _ingest), затем /review с готовым снимком анкеты стадии Б (та же
+    форма deal/employment/income/obligations/guarantor, что раньше писали
+    напрямую в ExternalSnapshot). Заявка после review остаётся to_operator —
+    тем же путём её подбирают run_stage_b/finalize_stage_b ниже, как и раньше."""
+    from httpx import ASGITransport, AsyncClient
 
-    external_id = await _create_partner_application(partner_admin, **create_overrides)
-    # fake_partner: new -> on_review напрямую запрещён (ALLOWED_TRANSITIONS в
-    # store.py) — сначала on_call (как сделала бы наша же стадия А), потом
-    # "Рассмотреть". raise_for_status ловит тихий провал перехода сразу, а не
-    # через непонятную ошибку по ходу теста (см. отчёт T10).
-    (await partner_admin.post(f"/applications/{external_id}/status", json={"status": "on_call"})).raise_for_status()
-    (await partner_admin.post(f"/_test/applications/{external_id}/review")).raise_for_status()
-    await sync_applications(session_factory, partner_client, storage)
+    from app.config import get_settings
+    from app.main import app as fastapi_app
 
-    payload = {"stage_b": stage_b_payload or _DEFAULT_STAGE_B_PAYLOAD}
+    consent_bki = create_overrides.pop("consent_bki", True)
+    # T18: цена/взнос/срок/тариф/название товара — теперь поля /review (deal),
+    # не /applications: раньше шли в create_overrides заявки, здесь перенаправляем
+    # их в deal, иначе Pydantic молча отбросит неизвестные поля в NewApplicationIn.
+    deal_overrides = {
+        key: create_overrides.pop(key)
+        for key in ("goods_price", "down_payment", "term_months", "tariff", "goods_name")
+        if key in create_overrides
+    }
+    fastapi_app.state.storage = storage
+    external_id, application_id = await _ingest(
+        partner_admin, partner_client, storage, session_factory, **create_overrides,
+    )
+
+    payload = stage_b_payload or _DEFAULT_STAGE_B_PAYLOAD
+    # Дефолты сделки — даже если конкретный тест переопределил "deal" частично
+    # (например, только goods_category_code), остальное не улетает на
+    # плейсхолдеры /applications (0/"unknown") — см. докстрайк _DEFAULT_STAGE_B_PAYLOAD.
+    deal = {**_DEFAULT_STAGE_B_PAYLOAD["deal"], **(payload.get("deal") or {}), **deal_overrides}
+    review_body = {
+        "external_id": external_id,
+        "event_id": str(uuid.uuid4()),
+        "status": "on_review",
+        "deal": {
+            "goods_category_code": deal.get("goods_category_code"),
+            "goods_name": deal.get("goods_name"),
+            "goods_price": deal.get("goods_price"),
+            "down_payment": deal.get("down_payment"),
+            "term_months": deal.get("term_months"),
+            "tariff": deal.get("tariff"),
+        },
+        "employment": payload.get("employment") or {},
+        "income": payload.get("income") or {},
+        "obligations": payload.get("obligations") or {},
+        "bki_consent": {
+            "given": consent_bki,
+            "at": datetime.now(timezone.utc).isoformat() if consent_bki else None,
+        },
+        "guarantor": payload.get("guarantor"),
+    }
+    async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="https://test") as client:
+        response = await client.post(
+            "/api/v1/partner/review", json=review_body,
+            headers={"Authorization": f"Bearer {get_settings().partner_inbound_token}"},
+        )
+    assert response.status_code == 202, response.text  # правило 14 CLAUDE.md
+
+    # Этот хелпер намеренно пропускает стадию А (тесты файла — про стадию Б/БКИ
+    # саму по себе) — вебхук /review не трогает application.status (его меняет
+    # сама стадия Б), а run_stage_b подбирает заявки по статусу to_operator/
+    # gray_zone/stage_b. Выставляем то же, что раньше реально дала бы стадия А.
     async with session_factory() as session:
-        application = (
-            await session.execute(select(Application).where(Application.external_id == external_id))
-        ).scalar_one()
+        application = await session.get(Application, application_id)
         application.status = "to_operator"
         session.add(
             StatusHistory(
-                application_id=application.id, from_status="received", to_status="to_operator", actor_type="system"
-            )
-        )
-        session.add(
-            ExternalSnapshot(
-                application_id=application.id, stage="B",
-                payload_raw=payload, content_hash=_content_hash(payload),
+                application_id=application_id, from_status="received", to_status="to_operator", actor_type="system",
             )
         )
         await session.commit()
-        application_id = application.id
 
     return external_id, application_id
 
@@ -146,8 +197,8 @@ async def test_all_checks_pass_bki_not_configured_is_gray_zone(
         snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
         assert snapshot.features["goods"]["sharia_allowed"] is True
 
-    detail = await partner_client.get_application(external_id)
-    assert "БКИ не подключено" in detail.raw["comments"][-1]["text"]
+    decision_sent = await _last_decision(partner_admin, external_id)
+    assert "БКИ не подключено" in decision_sent["reason"]
 
 
 async def test_stage_b_run_ten_times_without_new_snapshot_makes_exactly_one_decision(
@@ -157,8 +208,6 @@ async def test_stage_b_run_ten_times_without_new_snapshot_makes_exactly_one_deci
     заявка ВОЗВРАЩАЕТСЯ после решения (в отличие от "received" у стадии А,
     откуда только уходят), а run_stage_b подбирается по статусу — без клейма
     снимка celery beat решал бы тот же снимок заново на каждом тике."""
-    from app.integrations.adapter import _content_hash
-
     external_id, application_id = await _prepare_application_at_stage_b(
         partner_admin, partner_client, storage, session_factory,
     )
@@ -178,8 +227,8 @@ async def test_stage_b_run_ten_times_without_new_snapshot_makes_exactly_one_deci
                 (await session.execute(select(StatusHistory).where(StatusHistory.application_id == application_id)))
                 .scalars().all()
             )
-        detail = await partner_client.get_application(external_id)
-        return decisions, history, len(detail.raw["comments"])
+        sent = await _all_decisions(partner_admin, external_id)
+        return decisions, history, len(sent)
 
     baseline = await _counts()
     assert baseline[0] == 1  # ровно одно решение после первого запуска
@@ -194,10 +243,19 @@ async def test_stage_b_run_ten_times_without_new_snapshot_makes_exactly_one_deci
     assert await _counts() == baseline  # ни одного дубля — решение, статус, комментарий не выросли
 
     # Новое «Рассмотреть» (новый снимок анкеты) — ОБЯЗАНО дать новое решение.
+    # content_hash — больше не идемпотентность (T18: это event_id у вебхука),
+    # только подсказка фронту для схлопывания одинаковых снимков подряд
+    # (frontend/src/components/SnapshotHistory.tsx) — здесь просто хеш payload.
+    import hashlib
+    import json
+
     async with session_factory() as session:
         payload = {"stage_b": _DEFAULT_STAGE_B_PAYLOAD}
+        content_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
         session.add(ExternalSnapshot(
-            application_id=application_id, stage="B", payload_raw=payload, content_hash=_content_hash(payload),
+            application_id=application_id, stage="B", payload_raw=payload, content_hash=content_hash,
         ))
         await session.commit()
 
@@ -216,100 +274,17 @@ async def test_stage_b_run_ten_times_without_new_snapshot_makes_exactly_one_deci
     assert decisions_after == baseline[0] + 1
 
 
-async def test_write_back_status_and_comment_does_not_create_new_stage_b_snapshot(
-    partner_admin, partner_client, storage, session_factory, active_ruleset
-):
-    """Найденный баг, продолжение (T13c, ваше уточнение №2): клейм по
-    snapshot_id (тест выше) гарантирует одно решение на снимок — но плодиться
-    может сам СНИМОК. content_hash раньше считался по ВСЕМУ ответу fake_partner
-    (detail.raw), включая status/comments/status_history — поля, которые
-    меняем МЫ САМИ, записывая решение обратно (write_decision_status/
-    write_comment, app/integrations/adapter.py::_write_back). Наша же запись
-    делала хеш "новым", следующий sync_applications видел "новый снимок
-    анкеты" и стадия Б запускалась заново на тех же (не изменённых
-    оператором) данных.
-
-    В отличие от остальных тестов этого файла, НЕ использует
-    _prepare_application_at_stage_b — тот хелпер вставляет ExternalSnapshot
-    напрямую с синтетическим payload_raw={"stage_b": ...}, без status/
-    comments/history вовсе, и потому не мог поймать этот баг ни разу (ваш
-    вопрос "почему тест 10 запусков это не поймал" — вот почему: там не было
-    ни настоящего sync_applications между запусками, ни нашей же записи
-    комментария в заглушку). Здесь — реальный цикл: заполнили анкету ->
-    «Рассмотреть» -> sync_applications (настоящий ответ fake_partner) ->
-    решение (пишет статус+комментарий в fake_partner) -> ещё один
-    sync_applications, как сделал бы celery beat тиком позже."""
-    from app.integrations.adapter import sync_applications
-
-    external_id = await _create_partner_application(partner_admin)
-    (await partner_admin.post(f"/applications/{external_id}/status", json={"status": "on_call"})).raise_for_status()
-    (
-        await partner_admin.post(
-            f"/_test/applications/{external_id}/stage-b-fields", json=_DEFAULT_STAGE_B_PAYLOAD
-        )
-    ).raise_for_status()
-    (await partner_admin.post(f"/_test/applications/{external_id}/review")).raise_for_status()
-
-    await sync_applications(session_factory, partner_client, storage)
-
-    async with session_factory() as session:
-        application = (
-            await session.execute(select(Application).where(Application.external_id == external_id))
-        ).scalar_one()
-        application_id = application.id
-        # sync_applications сама только складывает снимок — переход в
-        # "стадию Б, ждёт обработки" в реальной системе делает run_stage_a
-        # (не гоняем его здесь — тест про хеш снимка, не про стадию А), так
-        # что имитируем ровно этот один переход, как _prepare_application_at_stage_b.
-        application.status = "to_operator"
-        session.add(
-            StatusHistory(
-                application_id=application_id, from_status="received", to_status="to_operator", actor_type="system",
-            )
-        )
-        await session.commit()
-
-    async def _stage_b_snapshot_count() -> int:
-        async with session_factory() as session:
-            return len(
-                (
-                    await session.execute(
-                        select(ExternalSnapshot).where(
-                            ExternalSnapshot.application_id == application_id, ExternalSnapshot.stage == "B"
-                        )
-                    )
-                ).scalars().all()
-            )
-
-    async def _decision_count() -> int:
-        async with session_factory() as session:
-            return len(
-                (
-                    await session.execute(
-                        select(Decision).where(Decision.application_id == application_id, Decision.stage == "B")
-                    )
-                ).scalars().all()
-            )
-
-    assert await _stage_b_snapshot_count() == 1
-
-    status = await run_stage_b(
-        session_factory, application_id, partner_client=partner_client,
-    )
-    assert status == "gray_zone"  # БКИ не подключено в тестовом окружении — пишет статус+комментарий в fake_partner
-    assert await _decision_count() == 1
-
-    # Тик beat спустя: ещё один цикл синхронизации, анкета не менялась.
-    await sync_applications(session_factory, partner_client, storage)
-
-    assert await _stage_b_snapshot_count() == 1  # не выросло — наша же запись статуса/комментария хеш не меняет
-    assert await _decision_count() == 1  # стадия Б не запустилась заново
+# T18: test_write_back_status_and_comment_does_not_create_new_stage_b_snapshot
+# убран целиком — его предпосылка (polling эхом видит нашу же запись как «новый
+# снимок анкеты», T13c) структурно не воспроизводима в push-схеме: опроса их API
+# больше нет, ExternalSnapshot(stage="B") пишется ровно по входящему /review
+# вебхуку с новым event_id, никогда по нашему собственному исходящему ответу.
 
 
 async def test_missing_section_returns_to_operator_with_list(
     partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
-    incomplete_payload = {"deal": {"goods_category_code": "household_appliances"}}  # без employment/income/address
+    incomplete_payload = {"deal": {"goods_category_code": "household_appliances"}}  # без employment/income
     external_id, application_id = await _prepare_application_at_stage_b(
         partner_admin, partner_client, storage, session_factory, stage_b_payload=incomplete_payload,
     )
@@ -341,12 +316,13 @@ async def test_stage_b_run_ten_times_on_incomplete_snapshot_writes_comment_once(
         status = await run_stage_b(session_factory, application_id, partner_client=partner_client)
         assert status == "to_operator"
 
-    detail = await partner_client.get_application(external_id)
-    assert len(detail.raw["comments"]) == 1
+    sent = await _all_decisions(partner_admin, external_id)
+    assert len(sent) == 1
 
-    detail = await partner_client.get_application(external_id)
-    comment = detail.raw["comments"][-1]["text"]
-    assert "employment" in comment and "income" in comment and "address" in comment
+    comment = sent[-1]["reason"]
+    # T18: "address" убран из required_sections (адрес заявителя уже есть из
+    # OCR) — только employment/income остаются обязательными в этом сценарии.
+    assert "employment" in comment and "income" in comment
 
 
 async def test_sharia_forbidden_category_rejects_without_bki(
@@ -416,8 +392,7 @@ async def test_limits_exceeded_on_requested_tariff_offers_alternative(
         ).scalar_one()
         assert snapshot.features["tariff_offer"]["tariff"] == "advantageous"
 
-    detail = await partner_client.get_application(external_id)
-    comments = " ".join(c["text"] for c in detail.raw["comments"])
+    comments = await _all_sent_texts(partner_admin, external_id)
     assert "advantageous" in comments
 
 
@@ -558,11 +533,15 @@ async def test_manual_override_recorded_when_operator_disagrees(
     )
 
     # Оператор вручную одобряет вопреки нашему (будущему) отказу — раньше, чем
-    # наш write-back успеет пройти: имитируем гонку через manual-status с причиной.
-    await partner_admin.post(
-        f"/_test/applications/{external_id}/manual-status",
-        json={"status": "approved", "reason": "Клиент постоянный, одобрено на месте"},
-    )
+    # наш write-back успеет пройти: T18, их эндпоинт (fake_partner) отвечает
+    # 409 с current_status/reason — настраиваем заглушку на этот ответ.
+    (await partner_admin.post(
+        "/_test/configure",
+        json={
+            "mode": "conflict", "conflict_current_status": "approved",
+            "conflict_reason": "Клиент постоянный, одобрено на месте",
+        },
+    )).raise_for_status()
 
     final_status = await run_stage_b(session_factory, application_id, partner_client=partner_client)
     assert final_status == "rejected_b"  # наш внутренний статус меняется независимо от партнёра
@@ -635,8 +614,8 @@ async def test_bki_approve_with_good_history_and_sufficient_score(
         assert decision.offered_tariff == "standard"
         assert decision.required_down_pay == application.down_payment
 
-    detail = await partner_client.get_application(external_id)
-    assert "Одобрено" in detail.raw["comments"][-1]["text"]
+    decision_sent = await _last_decision(partner_admin, external_id)
+    assert "Одобрено" in decision_sent["reason"]
 
 
 async def test_approve_downgraded_to_gray_zone_without_fssp_check(
@@ -672,8 +651,8 @@ async def test_approve_downgraded_to_gray_zone_without_fssp_check(
         # НЕ выставлен (manual_review — не approve), в отличие от теста выше.
         assert decision.approved_amount is None
 
-    detail = await partner_client.get_application(external_id)
-    assert detail.status == "manual_decision"
+    decision_sent = await _last_decision(partner_admin, external_id)
+    assert decision_sent["status"] == "manual_decision"
 
 
 async def test_bki_reject_on_low_score_regardless_of_down_payment(
@@ -770,8 +749,8 @@ async def test_risk_tariff_down_payment_required_when_actual_payment_insufficien
         assert decision.required_down_pay == Decimal("12000.00")  # 20% от 60000
         assert decision.offered_tariff == "standard"
 
-    detail = await partner_client.get_application(external_id)
-    assert "12000" in detail.raw["comments"][-1]["text"]
+    decision_sent = await _last_decision(partner_admin, external_id)
+    assert "12000" in decision_sent["reason"]
 
 
 async def test_risk_tariff_down_payment_sufficient_approves_directly(
@@ -989,7 +968,7 @@ async def test_in_flight_busy_parks_application_and_retry_succeeds(
     # application_id у bki_requests_in_flight ссылается на реальную строку
     # applications (FK), поэтому нужна вторая настоящая заявка, не случайный
     # uuid. Вставляем её напрямую (не через _prepare_application_at_stage_b):
-    # тот хелпер зовёт sync_applications, который повторно перечитывает ВСЕ
+    # T18: раньше хелпер зовёт polling-синхронизацию, которая перечитывает ВСЕ
     # заявки в fake_partner в статусе "на рассмотрении", включая первую, и
     # затёр бы её тестовый снимок стадии Б снимком из fake_partner.
     async with session_factory() as session:

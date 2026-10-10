@@ -29,6 +29,14 @@ class CsrfHeaderMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # T18: вебхуки заказчика (.../api/v1/partner/*) — сервер-сервер по
+        # статичному токену, без куки и без браузера; CSRF (защита конкретно
+        # от куки чужого сайта) к ним не относится, а требовать от заказчика
+        # наш внутренний служебный заголовок — лишнее условие в контракте.
+        if scope["path"].startswith("/api/v1/partner/"):
+            await self.app(scope, receive, send)
+            return
+
         header_name = get_settings().csrf_header_name
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
         if not headers.get(header_name.lower()):

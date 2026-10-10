@@ -40,7 +40,7 @@ from app.engine.rules import (
 from app.engine.state_machine import transition
 from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.adapter import write_comment, write_decision_status
-from app.integrations.base import PartnerClient
+from app.integrations.partner_notifier import PartnerNotifier
 from app.integrations.status_mapping import build_operator_comment, get_status_mapping, render_comment
 from app.models import (
     Application,
@@ -189,7 +189,7 @@ def _serialize_triggered_rules(rules: list[TriggeredRule]) -> list[dict[str, Any
 
 
 async def _write_back(
-    session_factory: async_sessionmaker, partner_client: PartnerClient, application: Application,
+    session_factory: async_sessionmaker, partner_client: PartnerNotifier, application: Application,
     our_status: str, *, reason_code: str | None = None, summary: str | None = None,
     triggered_rules: list[dict[str, Any]] | None = None, comment_context: dict[str, Any] | None = None,
     **extra_context: Any,
@@ -201,7 +201,13 @@ async def _write_back(
     comment = render_comment(mapping, reason_text=reason_text, summary=summary or "", **extra_context)
     await write_decision_status(
         session_factory, partner_client, application_id=application.id, external_id=application.external_id,
-        expected_current_status="on_review", new_status=mapping.partner_status, comment=comment,
+        # T18: prev_status — их статус, каким они его сообщили вебхуком
+        # /review (не захардкоженное "on_review" из polling-эры).
+        expected_current_status=application.partner_last_known_status,
+        new_status=mapping.partner_status, comment=comment,
+        # score — есть только у финансового решения (comment_context несёт
+        # его оттуда же, откуда берётся для текста "{score}" в комментарии).
+        score=(comment_context or {}).get("score"),
     )
 
 
@@ -295,7 +301,7 @@ async def _run_guarantor_local_checks(session, config, guarantor: Guarantor, gua
 
 
 async def run_stage_b(
-    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerClient,
+    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerNotifier,
     bki_provider: BkiProvider | None = None,
 ) -> str:
     settings = get_settings()
@@ -429,7 +435,7 @@ async def run_stage_b(
 
 
 async def finalize_stage_b(
-    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerClient,
+    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerNotifier,
     bki_provider: BkiProvider | None = None,
 ) -> str:
     """Хвост стадии Б: пересобирает поручителя (если был) с уже готовыми
@@ -588,7 +594,7 @@ async def finalize_stage_b(
 async def _finalize_after_bki_call(
     session_factory: async_sessionmaker, application_id: UUID, *, client_id: UUID, subject: Subject,
     ruleset_row, config, base_features: dict, carried_features: dict, declared_income: Decimal,
-    declared_obligations: Decimal, tariff_offer_comment: str | None, partner_client: PartnerClient,
+    declared_obligations: Decimal, tariff_offer_comment: str | None, partner_client: PartnerNotifier,
     bki_provider: BkiProvider,
 ) -> str:
     """Вне какой-либо транзакции: клейм in-flight (защита от двойной оплаты,

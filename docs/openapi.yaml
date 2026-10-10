@@ -1,0 +1,252 @@
+openapi: 3.1.0
+info:
+  title: DIALOG Scoring — партнёрский вебхук (T18)
+  version: "1.0.0"
+  description: >
+    Два эндпоинта, которые принимает DIALOG Scoring от системы заказчика.
+    Подробное описание, примеры и формат ОБРАТНЫХ уведомлений (мы → вы,
+    отдельный эндпоинт на вашей стороне, сюда не входит) — docs/integration_contract.md.
+servers:
+  - url: https://scoring.example.com
+    description: прод (адрес уточняется при развёртывании)
+  - url: http://localhost:8000
+    description: dev
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/partner/applications:
+    post:
+      summary: Новая заявка с сайта
+      operationId: receiveNewApplication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewApplication"
+            example:
+              external_id: "APP-10492"
+              event_id: "2f5a35b1-9e2e-4d3b-8a1a-2a6a9e9b7b21"
+              last_name: "Иванов"
+              first_name: "Иван"
+              middle_name: "Иванович"
+              phone: "+79991234567"
+              photos:
+                passport_main:
+                  base64: "iVBORw0KGgoAAAANSUhEUgAA..."
+                passport_reg:
+                  url: "https://cdn.example.com/tmp/9f2a-reg.jpg"
+      responses:
+        "202":
+          description: Принято, обрабатывается асинхронно.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/partner/review:
+    post:
+      summary: "«Принять на рассмотрение» — переход к стадии Б"
+      operationId: receiveReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Review"
+            example:
+              external_id: "APP-10492"
+              event_id: "7c1e2b3a-5566-4a1a-9f0e-1234567890ab"
+              status: "on_review"
+              deal:
+                goods_category_code: "household_appliances"
+                goods_name: "Стиральная машина"
+                goods_price: 60000
+                down_payment: 6000
+                term_months: 12
+                tariff: "standard"
+              employment:
+                type: "employed"
+              income:
+                declared_monthly: 90000
+              obligations:
+                monthly_payment_total: 15000
+              bki_consent:
+                given: true
+                at: "2026-10-10T09:15:00+00:00"
+              guarantor: null
+      responses:
+        "202":
+          description: Принято, обрабатывается асинхронно.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: "external_id не известен (заявка не приходила через /applications)."
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Статичный токен, свой для test/prod, выдаётся отдельно от того, что мы шлём вам.
+
+  responses:
+    Unauthorized:
+      description: Неверный или отсутствующий токен.
+    ValidationError:
+      description: Не хватает обязательного поля или оно не проходит валидацию.
+
+  schemas:
+    Accepted:
+      type: object
+      properties:
+        status:
+          type: string
+          const: accepted
+      required: [status]
+
+    PhotoRef:
+      type: object
+      description: Ровно одно из двух полей.
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Временная HTTPS-ссылка, доступная без авторизации хотя бы несколько минут.
+        base64:
+          type: string
+          description: Содержимое фото, закодированное в base64.
+      minProperties: 1
+      maxProperties: 1
+
+    NewApplicationPhotos:
+      type: object
+      properties:
+        passport_main:
+          $ref: "#/components/schemas/PhotoRef"
+        passport_reg:
+          $ref: "#/components/schemas/PhotoRef"
+      required: [passport_main, passport_reg]
+
+    NewApplication:
+      type: object
+      properties:
+        external_id:
+          type: string
+          description: ID заявки в системе заказчика (постоянный).
+        event_id:
+          type: string
+          description: Идентификатор именно этого запроса — для идемпотентности при ретраях.
+        last_name:
+          type: string
+        first_name:
+          type: string
+        middle_name:
+          type: string
+          nullable: true
+        phone:
+          type: string
+        photos:
+          $ref: "#/components/schemas/NewApplicationPhotos"
+      required: [external_id, event_id, last_name, first_name, phone, photos]
+
+    Deal:
+      type: object
+      properties:
+        goods_category_code:
+          type: string
+          nullable: true
+        goods_name:
+          type: string
+          nullable: true
+        goods_price:
+          type: number
+        down_payment:
+          type: number
+        term_months:
+          type: integer
+        tariff:
+          type: string
+          nullable: true
+
+    BkiConsent:
+      type: object
+      properties:
+        given:
+          type: boolean
+        at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [given]
+
+    Guarantor:
+      type: object
+      nullable: true
+      properties:
+        last_name:
+          type: string
+          nullable: true
+        first_name:
+          type: string
+          nullable: true
+        middle_name:
+          type: string
+          nullable: true
+        birth_date:
+          type: string
+          nullable: true
+        passport_series:
+          type: string
+          nullable: true
+        passport_number:
+          type: string
+          nullable: true
+        issue_date:
+          type: string
+          nullable: true
+        registration_address:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+
+    Review:
+      type: object
+      properties:
+        external_id:
+          type: string
+        event_id:
+          type: string
+        status:
+          type: string
+          description: Ваш текущий статус заявки в момент отправки — вернётся вам же как prev_status.
+        deal:
+          $ref: "#/components/schemas/Deal"
+        employment:
+          type: object
+          description: 'Минимум {"type": "employed"|"self_employed"|"unemployed"|...}.'
+        income:
+          type: object
+          description: 'Минимум {"declared_monthly": <число>}.'
+        obligations:
+          type: object
+          description: 'Например {"monthly_payment_total": <число>}. Пустой объект — обязательств нет.'
+        bki_consent:
+          $ref: "#/components/schemas/BkiConsent"
+        guarantor:
+          $ref: "#/components/schemas/Guarantor"
+      required: [external_id, event_id, status, bki_consent]
