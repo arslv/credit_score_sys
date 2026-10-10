@@ -1141,6 +1141,8 @@ export interface components {
             /** Score Distribution */
             score_distribution: components["schemas"]["ScoreBucketItem"][];
             score_thresholds: components["schemas"]["ScoreThresholds"] | null;
+            /** Source Unavailable Warn Threshold */
+            source_unavailable_warn_threshold: number;
             /** Weekly Approval */
             weekly_approval: components["schemas"]["WeeklyApprovalItem"][];
             /** Rejection Reasons */

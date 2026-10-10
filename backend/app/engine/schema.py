@@ -219,6 +219,19 @@ class SourcesConfig(BaseModel):
     fssp: FsspSourceConfig
 
 
+class DashboardConfig(BaseModel):
+    """Пороги для ФОРМУЛИРОВОК аналитики (T17, часть 5, ваше явное указание:
+    порог — ключ конфига, не константа в коде фронта/бэкенда). Не влияет ни
+    на одно решение по заявке — только на то, какой заголовок-вывод показать
+    на графике «Недоступность источников»."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Доля source_unavailable, начиная с которой источник считается проблемным
+    # («Чаще всего недоступен …»); ниже — «Источники работают стабильно».
+    source_unavailable_warn_threshold: float = Field(ge=0, le=1, default=0.05)
+
+
 class RulesetConfig(BaseModel):
     """Полная схема YAML-конфига правил (ТЗ, «Конфиг правил и пороги»)."""
 
@@ -240,6 +253,7 @@ class RulesetConfig(BaseModel):
     score_thresholds: ScoreThresholdsConfig
     matrix: list[MatrixEntry] = Field(default_factory=list)
     antifraud: AntifraudConfig
+    dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     # T16, ваше явное указание: без проверки ФССП (заявитель, и поручитель,
     # если используется) approved невозможен — максимум gray_zone с причиной
     # FSSP_NOT_CHECKED, тем же путём, что и BKI_NOT_CONFIGURED

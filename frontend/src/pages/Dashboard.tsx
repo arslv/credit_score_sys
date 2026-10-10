@@ -5,6 +5,7 @@ import { BarList } from "../components/BarList";
 import { SourceBadge } from "../components/SourceBadge";
 import { Term } from "../components/Term";
 import { funnelStepLabel, reasonCodeLabel, sourceMeta } from "../lib/labels";
+import { formatDate, formatMonth } from "../lib/format";
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -51,11 +52,16 @@ export function DashboardPage() {
       <div className="toolbar">
         <label>
           С
-          <input type="date" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} />
+          <input type="date" lang="ru" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} />
+          {/* Формат нативного календаря зависит от локали ОС браузера — вне
+              нашего контроля (lang на элементе Chromium для него не читает).
+              Подпись рядом — всегда ДД.ММ.ГГГГ, тем же Intl, что в карточке. */}
+          <span className="muted">{formatDate(periodFrom)}</span>
         </label>
         <label>
           По (не включая)
-          <input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
+          <input type="date" lang="ru" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
+          <span className="muted">{formatDate(periodTo)}</span>
         </label>
         <span className="muted">Недели и месяцы — по московскому времени.</span>
       </div>
@@ -122,7 +128,7 @@ export function DashboardPage() {
                 <tbody>
                   {query.data.weekly_approval.map((w) => (
                     <tr key={w.week_start}>
-                      <td>{w.week_start}</td>
+                      <td>с {formatDate(w.week_start)}</td>
                       <td>{w.approved}</td>
                       <td>{w.total}</td>
                       <td>{pct(w.approved, w.total)}</td>
@@ -176,11 +182,14 @@ export function DashboardPage() {
                 </div>
                 <div className="stat">
                   <span className="stat-value">
-                    {pct(query.data.overrides.discrepancies, query.data.overrides.applications_total)}
+                    {pct(query.data.overrides.discrepancies, query.data.overrides.overridden)}
                   </span>
                   <span className="stat-label">
-                    разошлись с системой ({query.data.overrides.discrepancies} из{" "}
-                    {query.data.overrides.applications_total})
+                    {/* Доля от ПЕРЕОПРЕДЕЛЁННЫХ, не от всех заявок (ваше замечание —
+                        иначе эта цифра совпадает с первой и непонятно, чем они разные):
+                        сколько из тех, что оператор поменял, разошлось с системой. */}
+                    из них разошлись с системой ({query.data.overrides.discrepancies} из{" "}
+                    {query.data.overrides.overridden})
                   </span>
                 </div>
               </div>
@@ -213,7 +222,7 @@ export function DashboardPage() {
                 <tbody>
                   {query.data.bki_monthly.map((m) => (
                     <tr key={m.month}>
-                      <td>{m.month}</td>
+                      <td>{formatMonth(m.month)}</td>
                       <td>{m.attempts}</td>
                       <td>{m.successful}</td>
                     </tr>
@@ -226,13 +235,19 @@ export function DashboardPage() {
           <div className="card">
             {(() => {
               const d = query.data!;
+              const threshold = d.source_unavailable_warn_threshold;
               const sorted = d.source_availability.slice().sort((a, b) => b.unavailable / Math.max(1, b.total) - a.unavailable / Math.max(1, a.total));
-              const worst = sorted.find((s) => s.unavailable > 0);
+              // Порог — из действующей версии правил (config/rulesets/dev.yaml
+              // dashboard.source_unavailable_warn_threshold), не константа в коде
+              // фронта: ниже него — «стабильно», выше — называем худший источник.
+              const worst = sorted.find((s) => s.total > 0 && s.unavailable / s.total >= threshold);
               return (
                 <h2 style={{ marginTop: 0 }}>
-                  {!worst
+                  {d.source_availability.length === 0
                     ? "Недоступность источников"
-                    : `Чаще всего недоступен источник «${sourceMeta(worst.source).label}» (${pct(worst.unavailable, worst.total)})`}
+                    : !worst
+                      ? "Источники работают стабильно"
+                      : `Чаще всего недоступен источник «${sourceMeta(worst.source).label}» (${pct(worst.unavailable, worst.total)})`}
                 </h2>
               );
             })()}
@@ -303,7 +318,7 @@ export function DashboardPage() {
               return (
                 <h2 style={{ marginTop: 0 }}>
                   {totalMature === 0
-                    ? "Винтажный анализ (просрочка 60+ за 6 мес.)"
+                    ? "Просрочка по месяцу выдачи (60+ за 6 мес.)"
                     : `Среди зрелых когорт просрочку 60+ за 6 мес. допускают ${pct(totalBad, totalMature)} договоров`}
                 </h2>
               );
@@ -315,7 +330,7 @@ export function DashboardPage() {
               <table className="table table--compact">
                 <thead>
                   <tr>
-                    <th>Когорта</th>
+                    <th>Месяц выдачи</th>
                     <th>Договоров</th>
                     <th>Зрелых</th>
                     <th>Доля плохих</th>
@@ -324,12 +339,12 @@ export function DashboardPage() {
                 <tbody>
                   {query.data.vintage.map((v) => (
                     <tr key={v.cohort_month}>
-                      <td>{v.cohort_month}</td>
+                      <td>{formatMonth(v.cohort_month)}</td>
                       <td>{v.total_contracts}</td>
                       <td>{v.mature_contracts}</td>
                       <td>
                         {v.mature_contracts === 0
-                          ? "ещё не зрела"
+                          ? "рано оценивать"
                           : `${pct(v.bad_contracts ?? 0, v.mature_contracts)} (${v.bad_contracts} из ${v.mature_contracts})`}
                       </td>
                     </tr>

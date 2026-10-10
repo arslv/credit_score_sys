@@ -586,6 +586,9 @@ a:hover {
 }
 
 .bar-fill {
+  /* Баг (часть 5): без display эта заливка — span, inline-элемент, и
+     width/height из стилей на ней не действуют — трек оставался пустым. */
+  display: block;
   background: var(--color-primary);
   height: 100%;
   border-radius: 4px;

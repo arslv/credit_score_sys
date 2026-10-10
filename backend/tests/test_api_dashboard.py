@@ -198,6 +198,7 @@ async def test_dashboard_summary_matches_exact_seeded_numbers(
     assert distribution == {400: 1, 750: 1, 800: 1}  # App2=410, App1=780, App3=820
     assert body["score_thresholds"]["auto_approve_above"] is not None
     assert body["score_thresholds"]["auto_reject_below"] is not None
+    assert body["source_unavailable_warn_threshold"] == 0.05  # config/rulesets/dev.yaml
 
 
 async def test_dashboard_forbidden_for_admin_and_compliance(admin_client, session_factory):

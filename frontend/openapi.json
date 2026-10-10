@@ -3442,6 +3442,10 @@
               }
             ]
           },
+          "source_unavailable_warn_threshold": {
+            "type": "number",
+            "title": "Source Unavailable Warn Threshold"
+          },
           "weekly_approval": {
             "items": {
               "$ref": "#/components/schemas/WeeklyApprovalItem"
@@ -3495,6 +3499,7 @@
           "funnel",
           "score_distribution",
           "score_thresholds",
+          "source_unavailable_warn_threshold",
           "weekly_approval",
           "rejection_reasons",
           "overrides",

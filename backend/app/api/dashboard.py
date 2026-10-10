@@ -122,6 +122,7 @@ class DashboardSummary(BaseModel):
     funnel: list[FunnelStepItem]
     score_distribution: list[ScoreBucketItem]
     score_thresholds: ScoreThresholds | None
+    source_unavailable_warn_threshold: float
     weekly_approval: list[WeeklyApprovalItem]
     rejection_reasons: list[RejectionReasonItem]
     overrides: OverridesSummary
@@ -305,6 +306,9 @@ async def get_dashboard_summary(
     # конкретной заявки — тот в карточке берётся из версии РЕШЕНИЯ, см.
     # app/api/applications.py). Битый конфиг — не роняем дашборд целиком.
     score_thresholds = None
+    # Дефолт схемы (0.05) — на случай битого/отсутствующего конфига: страница
+    # не должна зависеть от того, что именно случилось с версией правил.
+    source_unavailable_warn_threshold = 0.05
     ruleset_row = await get_active_ruleset_version(session)
     if ruleset_row is not None:
         try:
@@ -316,6 +320,7 @@ async def get_dashboard_summary(
                 auto_approve_above=config.score_thresholds.auto_approve_above,
                 auto_reject_below=config.score_thresholds.auto_reject_below,
             )
+            source_unavailable_warn_threshold = config.dashboard.source_unavailable_warn_threshold
 
     vintage_rows = (
         await session.execute(
@@ -379,4 +384,5 @@ async def get_dashboard_summary(
         overrides=overrides, bki_monthly=bki_monthly, source_availability=source_availability,
         vintage=vintage, delinquency_buckets=delinquency_buckets,
         score_distribution=score_distribution, score_thresholds=score_thresholds,
+        source_unavailable_warn_threshold=source_unavailable_warn_threshold,
     )

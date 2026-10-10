@@ -51,3 +51,13 @@ export function formatElapsed(fromIso: string, now: Date = new Date()): string {
   return `${Math.floor(hours / 24)} дн ${hours % 24} ч`;
 }
 
+const monthFormatter = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" });
+
+// "2026-10" -> "октябрь 2026" (аналитика: месяцы по-русски, не ISO).
+export function formatMonth(yearMonth: string | null | undefined): string {
+  if (!yearMonth) return "—";
+  const [year, month] = yearMonth.split("-").map(Number);
+  if (!year || !month) return yearMonth;
+  return monthFormatter.format(new Date(year, month - 1, 1));
+}
+
