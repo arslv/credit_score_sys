@@ -34,9 +34,14 @@ from uuid import UUID
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.engine.bki_features import (
+    add_installment_to_legacy_stage_b_features,
+    compute_installment_payment,
+    parse_declared_income_and_obligations,
+)
 from app.engine.rules import evaluate_financial, evaluate_hard_stops, evaluate_rule_list, evaluate_stage_b_pre_bki
 from app.engine.schema import RulesetConfig
-from app.models import Application, Client, Decision, FeatureSnapshot
+from app.models import Application, Client, Decision, ExternalSnapshot, FeatureSnapshot
 
 # Категории исхода заявки под одной версией конфига.
 OUTCOME_REJECTED_A = "rejected_a"
@@ -155,6 +160,42 @@ async def _latest_feature_snapshots(
     return {(row.application_id, row.stage): row.features for row in rows}
 
 
+async def _latest_stage_b_payloads(session: AsyncSession, application_ids: list[UUID]) -> dict[UUID, dict]:
+    """Последний снимок анкеты стадии Б (deal/income из /review) — нужен T21,
+    чтобы досчитать платёж по рассрочке для снимков признаков до T21."""
+    if not application_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(ExternalSnapshot)
+            .where(ExternalSnapshot.application_id.in_(application_ids), ExternalSnapshot.stage == "B")
+            .order_by(ExternalSnapshot.application_id, ExternalSnapshot.received_at.desc())
+            .distinct(ExternalSnapshot.application_id)
+        )
+    ).scalars().all()
+    return {row.application_id: (row.payload_raw or {}).get("stage_b") or {} for row in rows}
+
+
+def _stage_b_features_for(config: RulesetConfig, features_b: dict | None, application, stage_b_payload: dict | None):
+    """T21: ПДН включает платёж по нашей рассрочке. Снимки до T21 посчитаны
+    без него — досчитываем по правилам ЭТОЙ версии (наценки тарифа) так же,
+    как посчитал бы конвейер, иначе смена формулы на истории была бы невидна."""
+    if features_b is None or stage_b_payload is None:
+        return features_b
+    installment, source = compute_installment_payment(
+        partner_monthly_payment=(stage_b_payload.get("deal") or {}).get("monthly_payment"),
+        goods_price=application.goods_price, down_payment=application.down_payment,
+        term_months=application.term_months, tariff=application.tariff, tariffs=config.tariffs,
+    )
+    income, _obligations = parse_declared_income_and_obligations(
+        stage_b_payload.get("income") or {}, stage_b_payload.get("obligations") or {}
+    )
+    return add_installment_to_legacy_stage_b_features(
+        features_b, installment_payment=installment, installment_source=source,
+        monthly_income=income, pti_max=config.limits.pti_max,
+    )
+
+
 async def _latest_decisions(
     session: AsyncSession, application_ids: list[UUID]
 ) -> dict[tuple[UUID, str], Decision]:
@@ -200,7 +241,10 @@ async def run_simulation(
     """Только чтение — ни одна из выборок и функций здесь не пишет в БД."""
     applications = (
         await session.execute(
-            select(Application.id, Application.external_id, Application.client_id)
+            select(
+                Application.id, Application.external_id, Application.client_id, Application.goods_price,
+                Application.down_payment, Application.term_months, Application.tariff,
+            )
             .order_by(Application.submitted_at.desc())
             .limit(sample_size)
         )
@@ -208,6 +252,7 @@ async def run_simulation(
     app_ids = [row.id for row in applications]
 
     snapshots = await _latest_feature_snapshots(session, app_ids)
+    stage_b_payloads = await _latest_stage_b_payloads(session, app_ids)
     known_bad = await _known_bad_by_application(session, app_ids)
     decisions = await _latest_decisions(session, app_ids)
 
@@ -237,10 +282,14 @@ async def run_simulation(
         features_a = snapshots.get((row.id, "A"))
         features_b = snapshots.get((row.id, "B"))
 
-        active = _evaluate_side(active_config, features_a, features_b)
-        candidate = _evaluate_side(candidate_config, features_a, features_b)
+        stage_b_payload = stage_b_payloads.get(row.id)
+        features_b_active = _stage_b_features_for(active_config, features_b, row, stage_b_payload)
+        features_b_candidate = _stage_b_features_for(candidate_config, features_b, row, stage_b_payload)
 
-        for rule_id in _not_computable_rule_ids(candidate_config, features_a, features_b):
+        active = _evaluate_side(active_config, features_a, features_b_active)
+        candidate = _evaluate_side(candidate_config, features_a, features_b_candidate)
+
+        for rule_id in _not_computable_rule_ids(candidate_config, features_a, features_b_candidate):
             not_computable_ids.setdefault(rule_id, set()).add(row.id)
 
         if active.outcome == OUTCOME_REJECTED_A and candidate.outcome == OUTCOME_NO_DATA:

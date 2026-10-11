@@ -43,6 +43,11 @@ class TriggerReviewRequest(BaseModel):
     down_payment: float = 6000.0
     term_months: int = 12
     tariff: str = "standard"
+    # T21: ежемесячный платёж по рассрочке из их графика. None — посчитать
+    # как настоящая система без наценки ((цена − взнос) / срок);
+    # send_monthly_payment=False — не слать поле вовсе (наш запасной расчёт).
+    monthly_payment: float | None = None
+    send_monthly_payment: bool = True
     employment_type: str = "employed"
     declared_monthly_income: float = 90000.0
     declared_monthly_obligations: float = 0.0

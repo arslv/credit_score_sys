@@ -32,6 +32,20 @@ class Settings(BaseSettings):
     # (тот — для /partner/webhook, этот — для её собственных /_test/*).
     fake_partner_test_token: str = "dev-token"
     partner_ip_allowlist: str = ""
+    # T21: фото паспорта по ссылке (POST .../applications, photos.*.url) —
+    # только с этих хостов (через запятую, точное имя); пусто — url-вариант
+    # не принимаем вовсе, только base64. Только https: http — исключительно
+    # для dev (fake_partner внутри docker-сети), в production сервис с
+    # PARTNER_PHOTO_ALLOW_HTTP=true не стартует (app/startup_guard.py).
+    partner_photo_hosts: str = ""
+    partner_photo_allow_http: bool = False
+    partner_photo_timeout_seconds: float = 10.0
+    # Лимит одного фото (и по ссылке, и в base64) — байт после декодирования.
+    partner_photo_max_bytes: int = 8 * 1024 * 1024
+    # Лимит тела любого запроса к API, МБ — ОДНА переменная REQUEST_BODY_MAX_MB
+    # и для приложения, и для client_max_body_size в nginx (docker-compose.prod.yml,
+    # deploy/nginx). Два фото base64 по 8 МБ — ~21 МБ JSON, отсюда 25.
+    request_body_max_mb: int = 25
     # Исходящие уведомления — URL и токен ИХ эндпоинта (нам его дадут, когда
     # согласуют контракт; dev-значение указывает на fake_partner, который
     # теперь ПРИНИМАЕТ наши вызовы, см. fake_partner/app/main.py).

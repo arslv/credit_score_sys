@@ -47,6 +47,10 @@ services:
       PARTNER_IP_ALLOWLIST: ${PARTNER_IP_ALLOWLIST:-}
       PARTNER_OUTBOUND_URL: ${PARTNER_OUTBOUND_URL:-http://fake_partner:8000/partner/webhook}
       PARTNER_OUTBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:-dev-outbound-token}
+      # T21: фото по ссылке — только с этих хостов; в dev это fake_partner по
+      # http внутри docker-сети (в production http запрещён на старте).
+      PARTNER_PHOTO_HOSTS: ${PARTNER_PHOTO_HOSTS:-fake_partner}
+      PARTNER_PHOTO_ALLOW_HTTP: ${PARTNER_PHOTO_ALLOW_HTTP:-true}
       STORAGE_DIR: /data/storage
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}

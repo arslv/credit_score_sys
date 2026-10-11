@@ -52,8 +52,8 @@ async def test_repeated_event_id_does_not_duplicate_application(
         "external_id": external_id, "event_id": event_id,
         "last_name": "Тестов", "first_name": "Тест", "middle_name": "Тестович", "phone": "+70000000000",
         "photos": {
-            "passport_main": {"base64": "ZmFrZS1wYXNzcG9ydC1tYWlu"},
-            "passport_reg": {"base64": "ZmFrZS1wYXNzcG9ydC1yZWc="},
+            "passport_main": {"base64": "iVBORw0KGgpmYWtlLXBhc3Nwb3J0LW1haW4="},  # PNG-сигнатура (T21: только JPEG/PNG)
+            "passport_reg": {"base64": "iVBORw0KGgpmYWtlLXBhc3Nwb3J0LXJlZw=="},
         },
     }
     async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="https://test") as client:

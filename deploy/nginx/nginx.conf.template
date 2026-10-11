@@ -1,6 +1,7 @@
 # T19: шаблон envsubst (образ nginx:1.27-alpine подставляет переменные из
 # окружения контейнера в файлы /etc/nginx/templates/*.template при старте —
-# см. docker-compose.prod.yml). Переменные: $DOMAIN, $SSL_CERT_PATH, $SSL_KEY_PATH.
+# см. docker-compose.prod.yml). Переменные: $DOMAIN, $SSL_CERT_PATH, $SSL_KEY_PATH,
+# $REQUEST_BODY_MAX_MB (T21: тот же лимит, что у api).
 #
 # X-Forwarded-For (T12, docs/deployment.md): перезаписываем значением реального
 # адреса клиента ($remote_addr), не дописываем в заголовок клиента — иначе
@@ -24,7 +25,14 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
 
     # Фото паспортов (base64 в теле вебхука, T18) — больше дефолтного 1m.
-    client_max_body_size 20m;
+    # T21: одна переменная с api (REQUEST_BODY_MAX_MB) и понятный 413 в JSON,
+    # как у самого api, а не HTML-страница nginx.
+    client_max_body_size ${REQUEST_BODY_MAX_MB}m;
+    error_page 413 = @body_too_large;
+    location @body_too_large {
+        default_type application/json;
+        return 413 '{"detail": "тело запроса больше допустимых ${REQUEST_BODY_MAX_MB} МБ — уменьшите фото (лимиты — docs/integration_contract.md)"}';
+    }
 
     location /api/ {
         proxy_pass http://api:8000;

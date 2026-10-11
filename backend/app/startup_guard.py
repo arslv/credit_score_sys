@@ -39,8 +39,20 @@ def assert_safe_for_environment(settings: Settings) -> None:
             "см. docs/deployment.md про Secure-куку на http://localhost)"
         )
 
+    # T21: безопасность интеграции с заказчиком.
+    if not [ip for ip in settings.partner_ip_allowlist.split(",") if ip.strip()]:
+        violations.append(
+            "PARTNER_IP_ALLOWLIST пуст — вебхуки заказчика принимались бы с любого адреса; "
+            "впишите IP их серверов через запятую (docs/deployment.md)"
+        )
+    if settings.partner_photo_allow_http:
+        violations.append(
+            "PARTNER_PHOTO_ALLOW_HTTP=true — фото паспортов по незашифрованной ссылке; "
+            "в production только https (уберите переменную или поставьте false)"
+        )
+
     if violations:
         raise UnsafeProviderConfigurationError(
-            "APP_ENV=production, но обнаружены фейковые провайдеры данных — сервис не запускается:\n"
+            "APP_ENV=production, но конфигурация небезопасна — сервис не запускается:\n"
             + "\n".join(f"  - {v}" for v in violations)
         )

@@ -26,6 +26,7 @@ from app.logging import configure_logging
 from app.redis import get_redis
 from app.registries.sync import is_registry_stale
 from app.security.csrf import CsrfHeaderMiddleware
+from app.security.body_limit import BodySizeLimitMiddleware
 from app.startup_guard import assert_safe_for_environment
 from app.storage.local import LocalDirectoryStorage
 
@@ -61,6 +62,8 @@ app.state.storage = LocalDirectoryStorage(get_settings().storage_dir)
 # фронтенда и проксирует /api сюда же. Браузер никогда не видит два origin'а
 # одновременно — CORS не нужен и намеренно не настроен (см. docs/deployment.md).
 app.add_middleware(CsrfHeaderMiddleware)
+# T21: лимит тела запроса — понятный 413 (то же значение, что в nginx).
+app.add_middleware(BodySizeLimitMiddleware)
 
 app.include_router(auth_router)
 app.include_router(applications_router)

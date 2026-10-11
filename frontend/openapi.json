@@ -3804,6 +3804,7 @@
                 "enum": [
                   "computed",
                   "no_income",
+                  "no_installment",
                   "no_credit_history"
                 ]
               },
@@ -3823,6 +3824,32 @@
               }
             ],
             "title": "Bki Active Contracts Count"
+          },
+          "installment_payment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installment Payment"
+          },
+          "installment_payment_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "partner",
+                  "tariff"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installment Payment Source"
           }
         },
         "type": "object",
@@ -3848,7 +3875,9 @@
           "pti_max",
           "pti",
           "pti_status",
-          "bki_active_contracts_count"
+          "bki_active_contracts_count",
+          "installment_payment",
+          "installment_payment_source"
         ],
         "title": "DecisionOut"
       },
@@ -5309,6 +5338,21 @@
               }
             ],
             "title": "Tariff"
+          },
+          "monthly_payment": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Payment"
           }
         },
         "type": "object",

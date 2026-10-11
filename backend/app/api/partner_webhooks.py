@@ -17,9 +17,11 @@
 
 import base64
 import hashlib
+import hmac
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import structlog
@@ -47,7 +49,9 @@ async def verify_partner_webhook(request: Request) -> None:
     settings = get_settings()
     auth_header = request.headers.get("authorization", "")
     token = auth_header.removeprefix("Bearer ").strip() if auth_header.lower().startswith("bearer ") else ""
-    if not token or token != settings.partner_inbound_token:
+    # T21: сравнение за постоянное время — по времени ответа нельзя подобрать
+    # токен посимвольно.
+    if not token or not hmac.compare_digest(token.encode(), settings.partner_inbound_token.encode()):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or missing token")
 
     allowlist = [ip.strip() for ip in settings.partner_ip_allowlist.split(",") if ip.strip()]
@@ -109,6 +113,10 @@ class ReviewDealIn(BaseModel):
     down_payment: Decimal | None = None
     term_months: int | None = None
     tariff: str | None = None
+    # T21: ежемесячный платёж по нашей рассрочке — их система считает график
+    # с наценкой. Нужен для ПДН; без него — запасной расчёт по тарифу из
+    # правил (tariffs.<тариф>.markup_pct), см. compute_installment_payment.
+    monthly_payment: Decimal | None = Field(default=None, gt=0)
 
 
 class ReviewIn(BaseModel):
@@ -125,23 +133,90 @@ class ReviewIn(BaseModel):
     guarantor: GuarantorIn | None = None
 
 
+# T21: фото — только JPEG или PNG. Проверяем и заголовок ответа (для url), и
+# сами байты (сигнатуру файла) — заголовку отправителя на слово не верим.
+_ALLOWED_PHOTO_TYPES = ("image/jpeg", "image/png")
+_PHOTO_SIGNATURES = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG\r\n\x1a\n": "image/png"}
+
+
+def _photo_too_large(max_bytes: int) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        detail=f"фото больше допустимого размера {max_bytes // (1024 * 1024)} МБ",
+    )
+
+
+def _check_image_bytes(data: bytes) -> bytes:
+    if not any(data.startswith(signature) for signature in _PHOTO_SIGNATURES):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="фото должно быть в формате JPEG или PNG",
+        )
+    return data
+
+
+def _check_photo_url(url: str) -> None:
+    """Только https и только хосты из PARTNER_PHOTO_HOSTS (точное имя, без
+    поддоменов) — иначе ссылка в заявке становилась бы способом заставить наш
+    сервер сходить по любому адресу (в том числе во внутреннюю сеть)."""
+    settings = get_settings()
+    parts = urlsplit(url)
+    allowed_schemes = ("https", "http") if settings.partner_photo_allow_http else ("https",)
+    if parts.scheme not in allowed_schemes:
+        raise HTTPException(status_code=422, detail="ссылка на фото должна быть https")
+    allowed_hosts = {h.strip().lower() for h in settings.partner_photo_hosts.split(",") if h.strip()}
+    host = (parts.hostname or "").lower()
+    if not allowed_hosts or host not in allowed_hosts:
+        raise HTTPException(
+            status_code=422,
+            detail="хост ссылки на фото не разрешён — фото принимаем только с согласованных хостов "
+            "(см. docs/integration_contract.md), либо передайте base64",
+        )
+
+
 async def _fetch_photo(ref: PhotoRefIn) -> bytes:
+    settings = get_settings()
+    max_bytes = settings.partner_photo_max_bytes
     if ref.base64 is not None:
+        # Оценка до декодирования: 4 символа base64 = 3 байта.
+        if len(ref.base64) * 3 // 4 > max_bytes + 3:
+            raise _photo_too_large(max_bytes)
         try:
-            return base64.b64decode(ref.base64, validate=True)
+            data = base64.b64decode(ref.base64, validate=True)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"не удалось разобрать base64 фото: {exc}") from exc
+        if len(data) > max_bytes:
+            raise _photo_too_large(max_bytes)
+        return _check_image_bytes(data)
 
     assert ref.url is not None  # гарантирован валидатором PhotoRefIn
+    _check_photo_url(ref.url)
+    chunks: list[bytes] = []
+    received = 0
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(ref.url)
+        # Редиректы не следуем (по умолчанию httpx) — иначе разрешённый хост
+        # мог бы перенаправить на неразрешённый.
+        async with httpx.AsyncClient(timeout=settings.partner_photo_timeout_seconds) as client:
+            async with client.stream("GET", ref.url) as response:
+                # Правило 14 CLAUDE.md: ответ любого HTTP-вызова проверяется явно.
+                if response.status_code != 200:
+                    raise HTTPException(status_code=422, detail=f"фото по url вернуло HTTP {response.status_code}")
+                content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+                if content_type not in _ALLOWED_PHOTO_TYPES:
+                    raise HTTPException(
+                        status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                        detail="фото по ссылке должно отдаваться как image/jpeg или image/png",
+                    )
+                declared_length = response.headers.get("content-length")
+                if declared_length is not None and declared_length.isdigit() and int(declared_length) > max_bytes:
+                    raise _photo_too_large(max_bytes)
+                async for chunk in response.aiter_bytes():
+                    received += len(chunk)
+                    if received > max_bytes:  # Content-Length мог соврать или не прийти
+                        raise _photo_too_large(max_bytes)
+                    chunks.append(chunk)
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=422, detail=f"фото по url недоступно: {exc}") from exc
-    # Правило 14 CLAUDE.md: ответ любого HTTP-вызова проверяется явно.
-    if response.status_code != 200:
-        raise HTTPException(status_code=422, detail=f"фото по url вернуло HTTP {response.status_code}")
-    return response.content
+        raise HTTPException(status_code=422, detail=f"фото по url недоступно: {exc.__class__.__name__}") from exc
+    return _check_image_bytes(b"".join(chunks))
 
 
 @router.post("/applications", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(verify_partner_webhook)])
@@ -285,6 +360,7 @@ async def receive_review(payload: ReviewIn, session: AsyncSession = Depends(get_
             "down_payment": str(deal.down_payment) if deal.down_payment is not None else None,
             "term_months": deal.term_months,
             "tariff": deal.tariff,
+            "monthly_payment": str(deal.monthly_payment) if deal.monthly_payment is not None else None,
         },
         "employment": payload.employment,
         "income": payload.income,

@@ -508,10 +508,18 @@ class DecisionOut(BaseModel):
     # нет); "no_income" — дохода в анкете нет/нулевой (declared_pti=None в
     # снимке, см. compute_declared_pti_features); "no_credit_history" — КИ не
     # получена (решение до/без БКИ), а ПДН по ТЗ — по фактическим обязательствам.
-    pti_status: Literal["computed", "no_income", "no_credit_history"] | None
+    # T21: "no_installment" — неизвестен платёж по нашей рассрочке (заказчик
+    # не прислал deal.monthly_payment и у тарифа нет markup_pct в правилах).
+    pti_status: Literal["computed", "no_income", "no_installment", "no_credit_history"] | None
     # Число действующих кредитов по КИ (features.bki_active_contracts_count) —
     # объясняет ПДН 0%: «действующих кредитов нет».
     bki_active_contracts_count: int | None
+    # T21: платёж по нашей рассрочке, вошедший в ПДН, и откуда он: "partner"
+    # (deal.monthly_payment из /review) или "tariff" (расчёт по наценке из
+    # правил — карточка помечает «рассчитан по тарифу»). None — старое решение
+    # (ПДН без рассрочки) или платёж неизвестен.
+    installment_payment: Decimal | None
+    installment_payment_source: Literal["partner", "tariff"] | None
 
 
 class CheckOut(BaseModel):
@@ -767,6 +775,8 @@ async def get_application(
         pti = None
         pti_status = None
         active_contracts = None
+        installment_payment = None
+        installment_source = None
         if d.feature_snapshot_id is not None:
             snapshot_row = await session.get(FeatureSnapshot, d.feature_snapshot_id)
             if snapshot_row is not None:
@@ -774,10 +784,18 @@ async def get_application(
                 bki_features = snapshot_features.get("features") or {}
                 pti = bki_features.get("pti")
                 active_contracts = bki_features.get("bki_active_contracts_count")
+                raw_installment = snapshot_features.get("installment_monthly_payment")
+                if raw_installment is not None:
+                    installment_payment = Decimal(str(raw_installment)).quantize(Decimal("0.01"))
+                    installment_source = snapshot_features.get("installment_payment_source")
                 if d.stage == "B":
                     if pti is not None:
                         pti_status = "computed"
+                    elif snapshot_features.get("pti_unavailable_reason") in ("no_income", "no_installment"):
+                        pti_status = snapshot_features["pti_unavailable_reason"]
                     elif "declared_pti" in snapshot_features and snapshot_features["declared_pti"] is None:
+                        # Снимки до T21 — без явной причины: declared_pti=None
+                        # тогда означал только отсутствие дохода.
                         pti_status = "no_income"
                     else:
                         pti_status = "no_credit_history"
@@ -796,6 +814,7 @@ async def get_application(
                 ruleset_version_id=d.ruleset_version_id, created_at=d.created_at,
                 score_auto_approve_above=approve_above, score_auto_reject_below=reject_below, pti_max=pti_max,
                 pti=pti, pti_status=pti_status, bki_active_contracts_count=active_contracts,
+                installment_payment=installment_payment, installment_payment_source=installment_source,
             )
         )
 

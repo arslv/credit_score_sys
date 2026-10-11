@@ -5,6 +5,7 @@
 // дохода нет; одна подсказка «?» на экран — у вердикта, объясняет это решение.
 import { test, expect } from "@playwright/test";
 import { explainDecision, type DecisionForExplain } from "../src/lib/explain";
+import { formatAmount } from "../src/lib/format";
 import { loadSeed } from "./fixtures";
 import { login } from "./login";
 
@@ -76,6 +77,40 @@ test("отказ по стоп-фактору: проваленное сравн
   expect(e.reason).toContain("Долг по исполнительному производству");
   expect(e.causes).toEqual(["ПДН 70% — выше порога 60%"]);
   expect(e.passed).toEqual(["Балл БКИ 780 — не ниже порога одобрения 700"]);
+});
+
+test("ПДН с рассрочкой (T21): сумма платежа в строке, пометка, если он рассчитан по тарифу", () => {
+  const fromPartner = explainDecision({ ...base, pti: 0.48, installment_payment: "6500.00", installment_payment_source: "partner" });
+  expect(fromPartner.passed).toContain(`ПДН 48% (с учётом платежа по рассрочке ${formatAmount("6500")} ₽) — порог 60%`);
+
+  const fromTariff = explainDecision({ ...base, pti: 0.48, installment_payment: "4500.00", installment_payment_source: "tariff" });
+  expect(fromTariff.passed).toContain(
+    `ПДН 48% (с учётом платежа по рассрочке ${formatAmount("4500")} ₽; платёж рассчитан по тарифу, не из системы заказчика) — порог 60%`,
+  );
+
+  const over = explainDecision({
+    ...base, outcome: "manual_review", reason_code: "PTI_HIGH", pti: 0.65,
+    installment_payment: "6500.00", installment_payment_source: "partner",
+  });
+  expect(over.help).toContain("ПДН 65% выше порога 60%");
+
+  // Сработало правило ручной проверки по ПДН (55%) — порог в подсказке его,
+  // не порог отказа (60%); сумма платежа — деталью в «Причине», раз в строке
+  // вердикта её нет.
+  const softRule = explainDecision({
+    ...base, outcome: "manual_review", reason_code: "PTI_HIGH", pti: 0.83,
+    triggered_rules: [{ id: "pti_high", field: "features.pti", expected: 0.55 }],
+    triggered_rules_text: ["Долговая нагрузка 83% при допустимых 55%."],
+    installment_payment: "4500.00", installment_payment_source: "partner",
+  });
+  expect(softRule.reason).toBe("Долговая нагрузка 83% при допустимых 55%.");
+  expect(softRule.help).toBe(
+    "Серая зона: балл 780 выше порога 700, но ПДН 83% выше порога ручной проверки 55% — автоматически решить нельзя — решает человек.",
+  );
+  expect(softRule.causes).toEqual([`ПДН 83% — с учётом платежа по рассрочке ${formatAmount("4500")} ₽`]);
+
+  const unknown = explainDecision({ ...base, pti: null, pti_status: "no_installment" });
+  expect(unknown.unknown[0]).toMatch(/^ПДН: не вычислимо \(нет платежа по рассрочке/);
 });
 
 test("ПДН: нет дохода — «не вычислимо», а не 0%; 0% при доходе — объяснён", () => {

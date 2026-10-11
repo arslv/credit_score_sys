@@ -11,7 +11,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
 const baseUrl = "http://localhost:5173";
 const seed = JSON.parse(readFileSync(path.resolve(__dirname, "../e2e/.seed.json"), "utf-8"));
-const outDir = path.resolve(repoRoot, "docs/design/after/t20-polish");
+// T21: папку можно переопределить (SHOTS_DIR=t21-pti), чтобы не затирать T20.
+const outDir = path.resolve(repoRoot, "docs/design/after", process.env.SHOTS_DIR ?? "t20-polish");
 mkdirSync(outDir, { recursive: true });
 
 const [approved, gray, reject, ...extra] = process.argv.slice(2);
@@ -31,6 +32,7 @@ const shots = [
     return ["risk_manager", `/applications/${id}`, slug, false];
   }),
   // Остальные экраны — те же токены и секции (обзор, не по одному на роль).
+  ...(process.env.SKIP_OVERVIEW ? [] : [
   ["risk_manager", "/applications", "overview/applications-list", false],
   ["risk_manager", "/dashboard", "overview/analytics", false],
   ["risk_manager", "/rulesets", "overview/scoring", false],
@@ -38,6 +40,7 @@ const shots = [
   ["risk_manager", "/imports", "overview/imports", false],
   ["admin", "/employees", "overview/employees", false],
   ["admin", "/references", "overview/references", false],
+  ]),
 ];
 mkdirSync(path.resolve(outDir, "overview"), { recursive: true });
 

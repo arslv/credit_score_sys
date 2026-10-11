@@ -101,13 +101,18 @@ class BkiConfig(BaseModel):
 
 class TariffConfig(BaseModel):
     """Один тариф из ТЗ («Тарифы»): требование по первому взносу и, для
-    «Постоянному клиенту», обязательность is_repeat. Наценка сюда не входит —
-    это ценообразование, не проверка стадии Б."""
+    «Постоянному клиенту», обязательность is_repeat.
+
+    markup_pct (T21) — наценка мурабахи доля от суммы рассрочки (0.2 = 20%):
+    ЗАПАСНОЙ расчёт ежемесячного платежа по нашей рассрочке для ПДН, когда
+    заказчик не прислал deal.monthly_payment в /review. None — наценка
+    тарифа не задана (старые версии правил): платёж по тарифу не считаем."""
 
     model_config = ConfigDict(extra="forbid")
 
     down_payment_min_pct: float = Field(ge=0, le=1)
     requires_repeat_client: bool = False
+    markup_pct: float | None = Field(default=None, ge=0)
 
 
 class ScoreThresholdsConfig(BaseModel):

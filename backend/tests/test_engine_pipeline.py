@@ -54,8 +54,8 @@ async def _ingest(
         "middle_name": overrides.pop("middle_name", "Клиентович"),
         "phone": overrides.pop("phone", "+70000000000"),
         "photos": {
-            "passport_main": {"base64": "ZmFrZS1wYXNzcG9ydC1tYWlu"},
-            "passport_reg": {"base64": "ZmFrZS1wYXNzcG9ydC1yZWc="},
+            "passport_main": {"base64": "iVBORw0KGgpmYWtlLXBhc3Nwb3J0LW1haW4="},  # PNG-сигнатура (T21: только JPEG/PNG)
+            "passport_reg": {"base64": "iVBORw0KGgpmYWtlLXBhc3Nwb3J0LXJlZw=="},
         },
         **overrides,
     }

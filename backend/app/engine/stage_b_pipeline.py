@@ -22,6 +22,7 @@ from app.engine.bki_cache import claim_in_flight, get_cached_report_row, record_
 from app.engine.bki_features import (
     compute_bki_features,
     compute_declared_pti_features,
+    compute_installment_payment,
     parse_declared_income_and_obligations,
 )
 from app.engine.clients import find_or_create_client
@@ -62,7 +63,19 @@ from app.sources.runner import run_and_record_check
 
 logger = structlog.get_logger()
 
-STAGE_B_FEATURE_SET_VERSION = "stage_b.v1"
+# v2 (T21): ПДН включает ежемесячный платёж по нашей рассрочке
+# (installment_monthly_payment/installment_payment_source сверху снимка).
+STAGE_B_FEATURE_SET_VERSION = "stage_b.v2"
+
+
+def _installment_payment(application, deal: dict, config) -> tuple[Decimal | None, str | None]:
+    """Платёж по нашей рассрочке для ПДН: из /review (deal.monthly_payment),
+    иначе по тарифу заявки из правил — см. compute_installment_payment."""
+    return compute_installment_payment(
+        partner_monthly_payment=deal.get("monthly_payment"), goods_price=application.goods_price,
+        down_payment=application.down_payment, term_months=application.term_months,
+        tariff=application.tariff, tariffs=config.tariffs,
+    )
 
 
 class NoStageBSnapshotError(Exception):
@@ -367,8 +380,9 @@ async def run_stage_b(
         declared_income, declared_obligations = parse_declared_income_and_obligations(
             stage_b_payload.get("income") or {}, stage_b_payload.get("obligations") or {}
         )
+        installment, installment_source = _installment_payment(application, deal, config)
         declared_pti_features = compute_declared_pti_features(
-            declared_income, declared_obligations, pti_max=config.limits.pti_max
+            declared_income, declared_obligations, installment, installment_source, pti_max=config.limits.pti_max
         )
         pre_bki_features = {**goods_features, **declared_pti_features}
         pre_bki_outcome = evaluate_stage_b_pre_bki(config, pre_bki_features)
@@ -524,8 +538,11 @@ async def finalize_stage_b(
         income = stage_b_payload.get("income") or {}
         obligations = stage_b_payload.get("obligations") or {}
         declared_income, declared_obligations = parse_declared_income_and_obligations(income, obligations)
+        installment, installment_source = _installment_payment(
+            application, stage_b_payload.get("deal") or {}, config
+        )
         declared_pti_features = compute_declared_pti_features(
-            declared_income, declared_obligations, pti_max=config.limits.pti_max
+            declared_income, declared_obligations, installment, installment_source, pti_max=config.limits.pti_max
         )
         base_features = {
             **goods_features,
@@ -564,7 +581,7 @@ async def finalize_stage_b(
             report = deserialize_report(cached_row.report_raw)
             bki_result_features = compute_bki_features(
                 report, monthly_income=declared_income, declared_monthly_obligations=declared_obligations,
-                today=today,
+                installment_payment=installment, today=today,
             )
             score = float(cached_row.score) if cached_row.score is not None else report.score
             return await _write_financial_decision(
@@ -586,7 +603,7 @@ async def finalize_stage_b(
         return await _finalize_after_bki_call(
             session_factory, application_id, client_id=client_id, subject=subject, ruleset_row=ruleset_row,
             config=config, base_features=base_features, carried_features=carried_features,
-            declared_income=declared_income, declared_obligations=declared_obligations,
+            declared_income=declared_income, declared_obligations=declared_obligations, installment=installment,
             tariff_offer_comment=tariff_offer_comment, partner_client=partner_client, bki_provider=bki_provider,
         )
 
@@ -594,8 +611,8 @@ async def finalize_stage_b(
 async def _finalize_after_bki_call(
     session_factory: async_sessionmaker, application_id: UUID, *, client_id: UUID, subject: Subject,
     ruleset_row, config, base_features: dict, carried_features: dict, declared_income: Decimal,
-    declared_obligations: Decimal, tariff_offer_comment: str | None, partner_client: PartnerNotifier,
-    bki_provider: BkiProvider,
+    declared_obligations: Decimal, installment: Decimal | None, tariff_offer_comment: str | None,
+    partner_client: PartnerNotifier, bki_provider: BkiProvider,
 ) -> str:
     """Вне какой-либо транзакции: клейм in-flight (защита от двойной оплаты,
     уровень БД) -> платный вызов бюро -> журнал попытки (append-only) ->
@@ -623,7 +640,7 @@ async def _finalize_after_bki_call(
     bki_result_features = (
         compute_bki_features(
             result.report, monthly_income=declared_income, declared_monthly_obligations=declared_obligations,
-            today=today,
+            installment_payment=installment, today=today,
         )
         if report_ok
         else {"features": {}}

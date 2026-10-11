@@ -47,6 +47,16 @@ paths:
                 $ref: "#/components/schemas/Accepted"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/IpNotAllowed"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "415":
+          description: Фото не JPEG и не PNG (проверяется и Content-Type ответа по ссылке, и сами байты).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -71,6 +81,7 @@ paths:
                 down_payment: 6000
                 term_months: 12
                 tariff: "standard"
+                monthly_payment: 4950
               employment:
                 type: "employed"
               income:
@@ -90,8 +101,12 @@ paths:
                 $ref: "#/components/schemas/Accepted"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/IpNotAllowed"
         "404":
           description: "external_id не известен (заявка не приходила через /applications)."
+        "413":
+          $ref: "#/components/responses/TooLarge"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -106,9 +121,29 @@ components:
     Unauthorized:
       description: Неверный или отсутствующий токен.
     ValidationError:
-      description: Не хватает обязательного поля или оно не проходит валидацию.
+      description: >-
+        Не хватает обязательного поля или оно не проходит валидацию; для фото —
+        ссылка не https или не с согласованного хоста, фото не скачалось за 10 с,
+        ответ по ссылке не 200 (редиректы не выполняются).
+    IpNotAllowed:
+      description: Запрос не с адреса из согласованного allowlist IP.
+    TooLarge:
+      description: Фото больше 8 МБ или всё тело запроса больше 25 МБ.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            detail: "тело запроса больше допустимых 25 МБ — уменьшите фото (лимиты — docs/integration_contract.md)"
 
   schemas:
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+      required: [detail]
+
     Accepted:
       type: object
       properties:
@@ -124,10 +159,13 @@ components:
         url:
           type: string
           format: uri
-          description: Временная HTTPS-ссылка, доступная без авторизации хотя бы несколько минут.
+          description: >-
+            Временная HTTPS-ссылка, доступная без авторизации хотя бы несколько минут.
+            Только https и только с хостов, согласованных заранее (точное имя хоста);
+            сразу 200 с Content-Type image/jpeg или image/png, без редиректов, до 8 МБ.
         base64:
           type: string
-          description: Содержимое фото, закодированное в base64.
+          description: Содержимое фото (JPEG или PNG, до 8 МБ после декодирования), закодированное в base64.
       minProperties: 1
       maxProperties: 1
 
@@ -180,6 +218,14 @@ components:
         tariff:
           type: string
           nullable: true
+        monthly_payment:
+          type: number
+          exclusiveMinimum: 0
+          nullable: true
+          description: >-
+            Ежемесячный платёж по этой рассрочке по вашему графику (с наценкой), рубли.
+            Обязателен для расчёта долговой нагрузки (ПДН); без него считаем по тарифу
+            приблизительно, а если тариф неизвестен — ПДН не вычислим.
 
     BkiConsent:
       type: object

@@ -137,6 +137,7 @@ async def _prepare_application_at_stage_b(
             "down_payment": deal.get("down_payment"),
             "term_months": deal.get("term_months"),
             "tariff": deal.get("tariff"),
+            "monthly_payment": deal.get("monthly_payment"),
         },
         "employment": payload.get("employment") or {},
         "income": payload.get("income") or {},
@@ -399,8 +400,12 @@ async def test_limits_exceeded_on_requested_tariff_offers_alternative(
 async def test_limits_exceeded_for_every_tariff_rejects(
     partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
+    # T21: ПДН включает платёж по рассрочке — на 10 млн это ~833 тыс. ₽/мес.,
+    # и заявленный ПДН (фильтр ДО лимитов) отказал бы раньше. Тест — про
+    # лимиты, поэтому доход такой, что ПДН проходит.
     external_id, application_id = await _prepare_application_at_stage_b(
         partner_admin, partner_client, storage, session_factory,
+        stage_b_payload={**_DEFAULT_STAGE_B_PAYLOAD, "income": {"declared_monthly": "100000000"}},
         goods_price=10000000.0, down_payment=0.0, tariff="standard",
     )
 
@@ -1111,9 +1116,10 @@ async def test_review_income_and_obligations_reach_pti_and_card(
     admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
     """T20, баг «ПДН 0%»: доход и платежи из /review (T18) доходят до расчёта.
-    Заявленные платежи — в declared_pti (фильтр до БКИ), фактический ПДН —
-    по действующим кредитам из КИ (ТЗ: «ПДН по фактическим обязательствам»):
-    34 000 ₽ по трём действующим кредитам / 100 000 ₽ дохода = 34%."""
+    T21: в оба ПДН входит платёж по нашей рассрочке. Заказчик не прислал
+    deal.monthly_payment -> по тарифу из правил: (60 000 − 6 000) × (1 + 0) / 12
+    = 4 500 ₽. Заявленный: (15 000 + 4 500) / 100 000 = 19,5%; фактический:
+    (34 000 по трём кредитам КИ + 4 500) / 100 000 = 38,5%."""
     from app.sources.bki import overloaded_report
 
     payload = {**_DEFAULT_STAGE_B_PAYLOAD, "obligations": {"monthly_payment_total": "15000"}}
@@ -1132,12 +1138,67 @@ async def test_review_income_and_obligations_reach_pti_and_card(
             await session.execute(select(Decision).where(Decision.application_id == application_id))
         ).scalar_one()
         snapshot = await session.get(FeatureSnapshot, decision.feature_snapshot_id)
-        assert snapshot.features["declared_pti"] == 0.15
+        assert snapshot.features["declared_pti"] == 0.195
+        assert snapshot.feature_set_ver == "stage_b.v2"
 
     card = await _card_decision(admin_client, session_factory, application_id, "rm_pti_ok@example.com")
     assert card["pti_status"] == "computed"
-    assert card["pti"] == 0.34
+    assert card["pti"] == 0.385
     assert card["bki_active_contracts_count"] == 3
+    assert card["installment_payment"] == "4500.00"
+    assert card["installment_payment_source"] == "tariff"
+
+
+async def test_partner_monthly_payment_from_review_is_used_in_pti(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """T21: основной источник платежа — deal.monthly_payment из /review (их
+    график с наценкой), а не расчёт по тарифу: (34 000 + 6 500) / 100 000."""
+    from app.sources.bki import overloaded_report
+
+    payload = {**_DEFAULT_STAGE_B_PAYLOAD, "deal": {**_DEFAULT_STAGE_B_PAYLOAD["deal"], "monthly_payment": 6500}}
+    _external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(overloaded_report()))
+    await run_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=provider)
+
+    async with session_factory() as session:
+        snapshot_row = (
+            await session.execute(
+                select(ExternalSnapshot).where(
+                    ExternalSnapshot.application_id == application_id, ExternalSnapshot.stage == "B"
+                )
+            )
+        ).scalar_one()
+        # Правило 3: сырое значение от заказчика сохранено в снимке анкеты.
+        assert snapshot_row.payload_raw["stage_b"]["deal"]["monthly_payment"] == "6500"
+
+    card = await _card_decision(admin_client, session_factory, application_id, "rm_pti_partner@example.com")
+    assert card["pti"] == 0.405
+    assert card["installment_payment"] == "6500.00"
+    assert card["installment_payment_source"] == "partner"
+
+
+async def test_pti_not_computable_without_partner_payment_and_tariff_markup(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """T21: «не вычислимо» — только если нет ни поля от заказчика, ни наценки
+    тарифа (тариф неизвестен правилам). Заниженного ПДН без рассрочки нет."""
+    payload = {**_DEFAULT_STAGE_B_PAYLOAD, "deal": {**_DEFAULT_STAGE_B_PAYLOAD["deal"], "tariff": "no_such_tariff"}}
+    _external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+    )
+    await run_stage_b(session_factory, application_id, partner_client=partner_client)
+
+    card = await _card_decision(admin_client, session_factory, application_id, "rm_pti_noinst@example.com")
+    assert card["pti"] is None
+    assert card["pti_status"] == "no_installment"
+    assert card["installment_payment"] is None
 
 
 async def test_card_pti_not_computable_without_income(

@@ -209,3 +209,66 @@ async def test_dedup_allows_send_once_then_blocks_until_ttl():
         assert second is False
     finally:
         await get_redis().delete(f"alerts:sent:{key}")
+
+
+async def test_alert_texts_contain_no_personal_data(session_factory):
+    """T21: в Telegram уходят только счётчики и названия источников — ни ФИО,
+    ни паспорта, ни телефона, ни адреса (правило 7 CLAUDE.md распространяется
+    и на алерты: чат — внешний сервис). Сеем данные, которые срабатывают на
+    все сигналы и при этом СОДЕРЖАТ персданные в профиле, тексте ошибки
+    проверки и теле исходящего уведомления, — и проверяем, что ушло в Telegram."""
+    import json
+
+    from app.models import Client
+
+    series, number = f"{uuid.uuid4().int % 9000 + 1000}", f"{uuid.uuid4().int % 900000 + 100000}"
+    pii = ["Персданнов", "Секретный", series, number, "+79991234567", "ул. Тайная"]
+    settings = _settings(
+        alerts_source_unavailable_minutes=30, alerts_stuck_applications_minutes=60, partner_outbox_stuck_minutes=30,
+    )
+    async with session_factory() as session:
+        client = Client(
+            last_name="Персданнов", first_name="Секретный", middle_name="Тестович",
+            birth_date=datetime(1990, 1, 1).date(), passport_series=series, passport_number=number, phone="+79991234567",
+        )
+        session.add(client)
+        await session.flush()
+        application = await _application(session, status="to_operator")
+        application.client_id = client.id
+        application.profile = {
+            "last_name": "Персданнов", "first_name": "Секретный", "phone": "+79991234567",
+            "registration_address": "г. Тестоград, ул. Тайная, д. 1",
+        }
+        now = datetime.now(timezone.utc)
+        old = now - timedelta(hours=2)
+        session.add(StatusHistory(
+            application_id=application.id, from_status="received", to_status="to_operator",
+            actor_type="system", created_at=old,
+        ))
+        session.add(Check(
+            application_id=application.id, subject_type="applicant", source="fssp", status="error",
+            error_text=f"Персданнов Секретный, паспорт {series} {number}: сайт не ответил", started_at=now - timedelta(minutes=5),
+        ))
+        session.add(PartnerOutboxEvent(
+            application_id=application.id, external_id=application.external_id, event_type="decision",
+            payload={"status": "manual_decision", "comment": "Персданнов Секретный, тел. +79991234567"}, status="pending", created_at=old,
+        ))
+        await session.commit()
+
+        messages = [
+            *await _check_sources_unavailable(session, settings),
+            await _check_stuck_applications(session, settings),
+            await _check_outbox_stuck(session, settings),
+        ]
+    assert all(messages) and len(messages) == 3  # все три сигнала сработали
+
+    with respx.mock:
+        route = respx.post(_TELEGRAM_URL).mock(return_value=Response(200, json={"ok": True}))
+        for text in messages:
+            await send_telegram_alert(settings, f"DIALOG Scoring: {text}")
+        sent = [json.loads(call.request.content)["text"] for call in route.calls]
+
+    assert len(sent) == 3
+    for text in sent:
+        for value in pii:
+            assert value not in text, f"персданные {value!r} попали в алерт: {text}"

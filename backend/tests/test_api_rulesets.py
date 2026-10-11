@@ -629,3 +629,55 @@ async def test_versions_list_describes_typed_changes_between_versions(admin_clie
     latest = versions[0]
     assert "Порог отказа (балл БКИ): 450 → 460" in latest["changes"]
     assert versions[-1]["changes"] == []  # самая ранняя версия — без предыдущей, сравнивать не с чем
+
+
+async def test_simulation_applies_installment_pti_to_pre_t21_snapshots(admin_client, session_factory, active_ruleset):
+    """T21: ПДН теперь включает платёж по нашей рассрочке — изменение формулы,
+    а не порога. Снимки стадии Б до T21 посчитаны без него, поэтому симуляция
+    кандидата С наценками тарифов досчитывает платёж (по сделке и доходу из
+    снимка анкеты) — иначе «проверить на истории» показал бы 0 изменений.
+    Активная версия без наценок (как до T21) считает по снимку как есть.
+
+    ПДН 52% + 3 750 ₽ ((50 000 − 5 000) / 12, наценка 0) / 100 000 = 55,75% —
+    выше pti_high (55%): одобрение -> ручная проверка."""
+    import hashlib
+    import json
+
+    from app.engine.schema import parse_ruleset
+    from app.engine.versions import save_ruleset_version
+    from app.models import ExternalSnapshot
+
+    await create_employee(session_factory, email="rm_t21@example.com", role="risk_manager")
+    await login(admin_client, "rm_t21@example.com")
+
+    candidate = load_config(active_ruleset)
+    raw_without_markups = candidate.model_dump(mode="json")
+    for tariff in raw_without_markups["tariffs"].values():
+        tariff["markup_pct"] = None
+    raw_without_markups["effective_from"] = date.today().isoformat()
+
+    async with session_factory() as session:
+        await save_ruleset_version(session, parse_ruleset(raw_without_markups))
+        application = await _application(session, external_id=f"SIM-T21-{uuid.uuid4().hex[:6]}", status="approved")
+        await _snapshot(session, application.id, "A", _STAGE_A_PASS_FEATURES)
+        await _snapshot(
+            session, application.id, "B",
+            {"goods": {"sharia_allowed": True}, "score": 780, "amount": 45000.0, "is_repeat": False,
+             "declared_pti": 0.2, "declared_pti_exceeds_max": False, "features": {"pti": 0.52}},
+        )
+        payload_raw = {"stage_b": {"deal": {"tariff": "standard"}, "income": {"declared_monthly": "100000"}}}
+        session.add(
+            ExternalSnapshot(
+                application_id=application.id, stage="B", payload_raw=payload_raw,
+                content_hash=hashlib.sha256(json.dumps(payload_raw, sort_keys=True).encode()).hexdigest(),
+            )
+        )
+        await session.commit()
+
+    summary = await _simulate(admin_client, candidate)
+    summary = summary["summary"]
+    swapped_out = {row["application_id"]: row for row in summary["swap_out"]}
+    assert str(application.id) in swapped_out
+    assert swapped_out[str(application.id)]["active_outcome"] == "approved"
+    assert swapped_out[str(application.id)]["candidate_outcome"] == "manual_review"
+    assert swapped_out[str(application.id)]["candidate_reason_code"] == "PTI_HIGH"

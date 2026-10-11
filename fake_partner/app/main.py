@@ -180,6 +180,12 @@ async def trigger_review(external_id: str, payload: TriggerReviewRequest) -> dic
             "down_payment": payload.down_payment,
             "term_months": payload.term_months,
             "tariff": payload.tariff,
+            **(
+                {"monthly_payment": payload.monthly_payment if payload.monthly_payment is not None
+                 else round((payload.goods_price - payload.down_payment) / payload.term_months, 2)}
+                if payload.send_monthly_payment and payload.term_months > 0
+                else {}
+            ),
         },
         "employment": {"type": payload.employment_type},
         "income": {"declared_monthly": payload.declared_monthly_income},

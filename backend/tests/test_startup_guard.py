@@ -11,6 +11,7 @@ from app.startup_guard import UnsafeProviderConfigurationError, assert_safe_for_
 def _settings(
     *, app_env: str, ocr_provider_mode: str = "anthropic", bki_provider_mode: str = "not_configured",
     external_sources_mode: str = "http", cookie_secure: bool = True,
+    partner_ip_allowlist: str = "203.0.113.10", partner_photo_allow_http: bool = False,
 ) -> Settings:
     """Всегда передаёт все режимы явно — иначе тест зависел бы от того, что
     уже выставлено в окружении процесса (docker compose exec и т.п. — dev-
@@ -18,7 +19,8 @@ def _settings(
     return Settings(
         app_env=app_env, ocr_provider_mode=ocr_provider_mode,
         bki_provider_mode=bki_provider_mode, external_sources_mode=external_sources_mode,
-        cookie_secure=cookie_secure,
+        cookie_secure=cookie_secure, partner_ip_allowlist=partner_ip_allowlist,
+        partner_photo_allow_http=partner_photo_allow_http,
     )
 
 
@@ -62,6 +64,26 @@ def test_production_lists_every_violation_at_once():
     assert "OCR_PROVIDER_MODE" in message
     assert "EXTERNAL_SOURCES_MODE" in message
     assert "COOKIE_SECURE" in message
+
+
+def test_production_with_empty_partner_ip_allowlist_refuses_to_start():
+    """T21: в production вебхуки заказчика — только с их адресов."""
+    for allowlist in ("", " , "):
+        settings = _settings(app_env="production", partner_ip_allowlist=allowlist)
+        with pytest.raises(UnsafeProviderConfigurationError) as exc_info:
+            assert_safe_for_environment(settings)
+        assert "PARTNER_IP_ALLOWLIST" in str(exc_info.value)
+
+
+def test_production_with_http_photo_links_refuses_to_start():
+    settings = _settings(app_env="production", partner_photo_allow_http=True)
+    with pytest.raises(UnsafeProviderConfigurationError) as exc_info:
+        assert_safe_for_environment(settings)
+    assert "PARTNER_PHOTO_ALLOW_HTTP" in str(exc_info.value)
+
+
+def test_dev_allows_empty_allowlist_and_http_photos():
+    assert_safe_for_environment(_settings(app_env="dev", partner_ip_allowlist="", partner_photo_allow_http=True))
 
 
 def test_production_with_real_providers_starts_fine():

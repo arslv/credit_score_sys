@@ -1252,9 +1252,13 @@ export interface components {
             /** Pti */
             pti: number | null;
             /** Pti Status */
-            pti_status: ("computed" | "no_income" | "no_credit_history") | null;
+            pti_status: ("computed" | "no_income" | "no_installment" | "no_credit_history") | null;
             /** Bki Active Contracts Count */
             bki_active_contracts_count: number | null;
+            /** Installment Payment */
+            installment_payment: string | null;
+            /** Installment Payment Source */
+            installment_payment_source: ("partner" | "tariff") | null;
         };
         /** DelinquencyBucketItem */
         DelinquencyBucketItem: {
@@ -1781,6 +1785,8 @@ export interface components {
             term_months?: number | null;
             /** Tariff */
             tariff?: string | null;
+            /** Monthly Payment */
+            monthly_payment?: number | string | null;
         };
         /** ReviewIn */
         ReviewIn: {
