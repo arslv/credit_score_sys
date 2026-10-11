@@ -14,6 +14,7 @@ APP_ENV=production, тем же способом, что app/startup_guard.py д
 
 import asyncio
 import json
+import os
 import sys
 import uuid
 from datetime import date, datetime, timezone
@@ -26,7 +27,9 @@ from app.engine.stage_b_pipeline import STAGE_B_FEATURE_SET_VERSION
 from app.models import Application, Client, Decision, Employee, FeatureSnapshot, ManualOverride
 from app.security.passwords import hash_password
 
-RUN = uuid.uuid4().hex[:8]
+# T22: global-setup сеет ДВЕ базы (dev и отдельную dialog_e2e) одним и тем же
+# суффиксом — те же учётки входят в обе. Без переменной — случайный, как раньше.
+RUN = os.environ.get("SEED_RUN") or uuid.uuid4().hex[:8]
 PASSWORD = "e2e-playwright-password-123"
 
 
@@ -205,12 +208,20 @@ async def main() -> None:
             # не проверено — пример из задания T20.
             gray_fssp = await _seed_stage_b_decision(
                 session, suffix="GRAY", outcome="manual_review", reason_code="FSSP_NOT_CHECKED",
-                features={"score": 760, "declared_pti": 0.1, "features": {"pti": 0.42, "bki_active_contracts_count": 1}},
+                # T22: платёж по рассрочке рассчитан по тарифу — строка «Платёж
+                # в месяц» в «Сделке» с пометкой источника.
+                features={
+                    "score": 760, "declared_pti": 0.1, "installment_monthly_payment": 4500.0,
+                    "installment_payment_source": "tariff",
+                    "features": {"pti": 0.42, "bki_active_contracts_count": 1},
+                },
             )
             # Доход нулевой: declared_pti и pti — None, КИ получена.
             no_income = await _seed_stage_b_decision(
-                session, suffix="NOINCOME", outcome="manual_review", reason_code="FSSP_NOT_CHECKED",
-                features={"score": 760, "declared_pti": None, "features": {"pti": None, "bki_active_contracts_count": 0}},
+                # Балл между порогами — серая зона без ФССП-причины: «Нужно
+                # сделать: решение риск-менеджера или оператора» (T22).
+                session, suffix="NOINCOME", outcome="manual_review", reason_code="SCORE_GRAY_ZONE",
+                features={"score": 600, "declared_pti": None, "features": {"pti": None, "bki_active_contracts_count": 0}},
             )
             await session.commit()
     finally:

@@ -154,6 +154,45 @@ services:
       - "5173:5173"
     command: npm run dev -- --host 0.0.0.0
 
+  # T22: отдельный API и фронт на ОТДЕЛЬНОЙ базе dialog_e2e — для Playwright-
+  # тестов, которые публикуют и откатывают версии правил (*.isolated.spec.ts).
+  # Версии правил append-only: в dev-базе после такого теста активной стала
+  # бы новая версия. Поднимаются только по профилю e2e (frontend/e2e/
+  # global-setup.ts делает это сам): docker compose --profile e2e up -d.
+  api_e2e:
+    build: ./backend
+    profiles: ["e2e"]
+    environment:
+      APP_ENV: dev
+      COOKIE_SECURE: "false"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dialog}:${POSTGRES_PASSWORD:-dialog}@db:5432/dialog_e2e
+      REDIS_URL: redis://redis:6379/1
+      STORAGE_DIR: /tmp/storage
+      EXTERNAL_SOURCES_MODE: fake
+    volumes:
+      - ./config:/app/config:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "python -m app.cli.ensure_database && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  frontend_e2e:
+    build: ./frontend
+    profiles: ["e2e"]
+    environment:
+      VITE_API_PROXY_TARGET: http://api_e2e:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - api_e2e
+    ports:
+      - "5174:5173"
+    command: npm run dev -- --host 0.0.0.0
+
   # Заглушка системы заказчика для локальной разработки — их реальный API пока неизвестен.
   fake_partner:
     build: ./fake_partner

@@ -181,14 +181,15 @@ const QUICK_FIELDS: QuickField[] = [
     get: (c) => c?.limits?.term_max, set: (c, v) => { c.limits.term_max = v; },
   },
   {
-    key: "pti_max", label: "Долговая нагрузка: отказ выше", percent: true, section: "pti", unit: "%",
-    help: "ПДН — доля дохода, которая уходит на платежи по долгам. Выше этого значения — отказ.",
+    key: "pti_max", label: "ПДН (заявленный до БКИ и по КИ): отказ выше", percent: true, section: "pti", unit: "%",
+    help:
+      "ПДН — доля дохода, которая уходит на платежи по долгам, с платежом по нашей рассрочке. Один порог отказа на оба ПДН: заявленный клиентом (до запроса в БКИ) и по кредитной истории.",
     min: 0, max: 100,
     get: (c) => c?.limits?.pti_max, set: (c, v) => { c.limits.pti_max = v; },
   },
   {
-    key: "pti_high", label: "Долговая нагрузка: ручная проверка выше", percent: true, section: "pti", unit: "%",
-    help: "ПДН выше этого значения, но не выше порога отказа — заявка уходит на ручную проверку.",
+    key: "pti_high", label: "ПДН по КИ: ручная проверка выше", percent: true, section: "pti", unit: "%",
+    help: "ПДН по кредитной истории выше этого значения, но не выше порога отказа — заявка уходит на ручную проверку.",
     min: 0, max: 100,
     get: (c) => findRule(c, "pti_high")?.value,
     set: (c, v) => { const r = findRule(c, "pti_high"); if (r) r.value = v; },

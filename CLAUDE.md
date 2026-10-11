@@ -20,7 +20,7 @@ httpx, Pydantic v2, pytest + respx, structlog. Админка: React + Vite (`fr
 ```bash
 docker compose up -d                          # поднять всё
 docker compose exec api alembic upgrade head  # миграции
-docker compose exec api pytest -q             # тесты
+scripts/run_tests.sh                          # тесты: backend + fake_partner (T22)
 docker compose exec api alembic revision --autogenerate -m "..."  # новая миграция
 ```
 

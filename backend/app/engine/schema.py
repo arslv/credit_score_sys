@@ -74,6 +74,11 @@ class LimitsConfig(BaseModel):
     term_min: int
     term_max: int
     pti_max: float
+    # T22: pti_max — порог отказа и для ПДН по КИ (после БКИ), а не только
+    # для заявленного ПДН до БКИ (ТЗ, «Начальные значения»: «ПДН, отказ —
+    # выше 60%»). False — как было до T22 (старые версии правил): по КИ
+    # действует только ручная проверка из soft_rules.
+    pti_max_applies_to_credit_history: bool = False
     declared_income_cap: Decimal
 
     @model_validator(mode="after")

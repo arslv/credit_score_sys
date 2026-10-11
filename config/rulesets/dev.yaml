@@ -118,6 +118,9 @@ limits:
   term_min: 3
   term_max: 24
   pti_max: 0.60
+  # T22: pti_max — порог отказа и для ПДН по КИ, не только для заявленного
+  # до БКИ (ТЗ: «ПДН, отказ — выше 60%»). Ручная проверка по КИ — pti_high.
+  pti_max_applies_to_credit_history: true
   declared_income_cap: 80000 # потолок неподтверждённого дохода
 
 tariffs:

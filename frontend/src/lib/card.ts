@@ -78,6 +78,9 @@ export function dealRows(input: {
   approvedTerm: number | null;
   approvedTariff: string | null;
   approvedDownPay?: string | null;
+  // T22: платёж по рассрочке, вошедший в ПДН последнего решения стадии Б.
+  installmentPayment?: string | null;
+  installmentSource?: string | null;
 }): CardRow[] {
   // T18: параметры сделки приходят только с /review (стадия Б); до этого в
   // заявке заглушки (цена 0, срок 0, тариф "unknown") — их не показываем.
@@ -87,6 +90,14 @@ export function dealRows(input: {
     { label: "Категория товара", value: input.goodsCategory ?? "" },
     { label: "Первый взнос", value: dealKnown ? `${formatAmount(input.downPayment)} ₽` : "" },
     { label: "Срок и тариф", value: dealKnown ? `${input.termMonths} мес., тариф «${tariffLabel(input.tariff)}»` : "" },
+    {
+      label: "Платёж в месяц",
+      value: input.installmentPayment
+        ? `${formatAmount(input.installmentPayment)} ₽${
+            input.installmentSource === "tariff" ? " (рассчитан по тарифу, не из системы заказчика)" : ""
+          }`
+        : "",
+    },
     input.approvedAmount
       ? {
           label: "Одобрено",

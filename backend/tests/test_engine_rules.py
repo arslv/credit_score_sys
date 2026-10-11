@@ -248,6 +248,64 @@ def test_financial_soft_rule_triggers_manual_review():
     assert outcome.reason_code == "PTI_HIGH"
 
 
+def _pti_rules_config(*, applies_to_credit_history: bool = True):
+    config = _config(
+        soft_rules=[_rule(id="pti_high", field="features.pti", op="gt", value=0.55,
+                           action="manual_review", reason="PTI_HIGH")]
+    )
+    config.limits.pti_max_applies_to_credit_history = applies_to_credit_history
+    return config
+
+
+def test_financial_pti_reject_off_in_versions_before_t22():
+    """Старые версии правил (ключа нет -> False) решают, как решали: 83% по
+    КИ — ручная проверка. Иначе симуляция и история версий не видели бы, с
+    какой версии 83% стало отказом."""
+    outcome = evaluate_financial(
+        _pti_rules_config(applies_to_credit_history=False), {"features": {"pti": 0.83}, "score": 900}
+    )
+    assert outcome.outcome == "manual_review"
+    assert outcome.reason_code == "PTI_HIGH"
+
+
+def test_financial_pti_by_credit_history_above_pti_max_rejects():
+    """T22 (ваше решение, ТЗ: «ПДН, отказ — выше 60%»): ПДН по КИ выше
+    limits.pti_max — отказ, а не ручная проверка по pti_high. Раньше 83% давало
+    серую зону: pti_max действовал только на заявленный ПДН до БКИ."""
+    outcome = evaluate_financial(_pti_rules_config(), {"features": {"pti": 0.83}, "score": 900})
+    assert outcome.outcome == "reject"
+    assert outcome.reason_code == "PTI_TOO_HIGH"
+    [rule] = outcome.triggered_rules
+    assert (rule.id, rule.field, rule.actual, rule.expected, rule.action) == (
+        "pti_max", "features.pti", 0.83, 0.60, "reject",
+    )
+
+
+def test_financial_pti_exactly_at_pti_max_is_not_reject():
+    # Строго больше, как у заявленного ПДН (declared_pti_exceeds_max).
+    outcome = evaluate_financial(_pti_rules_config(), {"features": {"pti": 0.60}, "score": 900})
+    assert outcome.outcome == "manual_review"
+    assert outcome.reason_code == "PTI_HIGH"
+
+
+def test_financial_pti_between_manual_and_reject_thresholds_is_manual_review():
+    outcome = evaluate_financial(_pti_rules_config(), {"features": {"pti": 0.58}, "score": 900})
+    assert outcome.outcome == "manual_review"
+    assert outcome.reason_code == "PTI_HIGH"
+
+
+def test_financial_pti_reject_uses_pti_max_from_config_not_a_literal():
+    config = _pti_rules_config()
+    config.limits.pti_max = 0.90
+    outcome = evaluate_financial(config, {"features": {"pti": 0.83}, "score": 900})
+    assert outcome.outcome == "manual_review"  # 83% < 90% — только ручная проверка
+
+
+def test_financial_missing_pti_does_not_reject():
+    outcome = evaluate_financial(_pti_rules_config(), {"features": {"pti": None}, "score": 900})
+    assert outcome.outcome == "approve"
+
+
 def test_financial_score_above_approve_threshold():
     config = _config()
     outcome = evaluate_financial(config, {"score": 700})

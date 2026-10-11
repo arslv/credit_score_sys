@@ -16,7 +16,7 @@ export interface DecisionForExplain {
   outcome: string;
   reason_code: string | null;
   reason_text: string | null;
-  triggered_rules: { id?: string; field?: string; expected?: unknown }[];
+  triggered_rules: { id?: string; field?: string; expected?: unknown; action?: string | null }[];
   triggered_rules_text: string[];
   score: string | number | null;
   score_auto_approve_above: number | null;
@@ -96,17 +96,20 @@ function ptiComparison(d: DecisionForExplain): Comparison | null {
   // Сработало правило по ПДН (например, ручная проверка выше 55%) — его порог
   // и есть порог ЭТОГО решения; pti_max (отказ) здесь был бы не тем числом.
   const ptiRule = d.triggered_rules.find((rule) => rule.field === "features.pti" && typeof rule.expected === "number");
-  const isDecisionReason = d.reason_code === "PTI_HIGH" || ptiRule != null;
+  const isDecisionReason = d.reason_code === "PTI_HIGH" || d.reason_code === "PTI_TOO_HIGH" || ptiRule != null;
   const threshold = ptiRule ? (ptiRule.expected as number) : d.pti_max;
-  const thresholdLabel = ptiRule ? `порога ручной проверки ${percent(threshold)}` : `порога ${percent(threshold)}`;
+  // T22: точно, какой это порог — отказа (limits.pti_max, после T22 — и для
+  // ПДН по КИ) или ручной проверки (правило pti_high).
+  const thresholdLabel =
+    ptiRule && ptiRule.action !== "reject"
+      ? `порога ручной проверки ${percent(threshold)}`
+      : `порога отказа ${percent(threshold)}`;
   // T21: ПДН включает платёж по нашей рассрочке — так и пишем, с суммой;
   // если он посчитан по тарифу из правил, а не пришёл от заказчика, — помечаем.
+  // T22: откуда платёж (по тарифу / от заказчика) — в строке «Платёж в месяц»
+  // блока «Сделка», здесь не повторяем.
   const installmentNote =
-    d.installment_payment != null
-      ? `с учётом платежа по рассрочке ${formatAmount(d.installment_payment)} ₽${
-          d.installment_payment_source === "tariff" ? "; платёж рассчитан по тарифу, не из системы заказчика" : ""
-        }`
-      : "";
+    d.installment_payment != null ? `с учётом платежа по рассрочке ${formatAmount(d.installment_payment)} ₽` : "";
   const installment = installmentNote ? ` (${installmentNote})` : "";
   if (ptiRule != null || Math.round(d.pti * 100) > Math.round(d.pti_max * 100)) {
     return {
@@ -122,10 +125,10 @@ function ptiComparison(d: DecisionForExplain): Comparison | null {
   return {
     verdict: "pass", isDecisionReason,
     text: noLoans
-      ? `ПДН 0% — действующих кредитов в КИ нет (порог ${percent(d.pti_max)})`
+      ? `ПДН 0% — действующих кредитов в КИ нет (порог отказа ${percent(d.pti_max)})`
       : installment
-        ? `ПДН ${percent(d.pti)}${installment} — порог ${percent(d.pti_max)}`
-        : `ПДН ${percent(d.pti)} — в пределах порога ${percent(d.pti_max)}`,
+        ? `ПДН ${percent(d.pti)}${installment} — порог отказа ${percent(d.pti_max)}`
+        : `ПДН ${percent(d.pti)} — в пределах порога отказа ${percent(d.pti_max)}`,
     phrase: noLoans ? "ПДН 0% (действующих кредитов нет)" : `ПДН ${percent(d.pti)} в пределах ${percent(d.pti_max)}`,
   };
 }

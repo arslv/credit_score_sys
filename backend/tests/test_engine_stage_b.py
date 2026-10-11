@@ -1240,3 +1240,38 @@ async def test_card_pti_not_computable_without_credit_history(
     assert card["reason_code"] == "BKI_NOT_CONFIGURED"
     assert card["pti"] is None
     assert card["pti_status"] == "no_credit_history"
+
+
+async def test_pti_83_percent_by_credit_history_rejects_with_reason_text(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """T22, скриншот T21: ПДН 83% по КИ давал «Серую зону» (pti_max = 60%
+    действовал только на заявленный ПДН). Теперь — отказ PTI_TOO_HIGH:
+    (34 000 по трём кредитам КИ + 7 500 платёж по рассрочке) / 50 000 = 83%.
+    Заявленный ПДН (0 + 7 500) / 50 000 = 15% — фильтр до БКИ проходит."""
+    from app.sources.bki import overloaded_report
+
+    payload = {
+        **_DEFAULT_STAGE_B_PAYLOAD,
+        "deal": {**_DEFAULT_STAGE_B_PAYLOAD["deal"], "monthly_payment": 7500},
+        "income": {"declared_monthly": "50000"},
+    }
+    external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+    )
+    await _link_applicant_to_client(
+        session_factory, application_id, series=unique_valid_passport_series(),
+        number=f"{uuid.uuid4().int % 1000000:06d}",
+    )
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(overloaded_report()))
+    final_status = await run_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=provider)
+
+    assert final_status == "rejected_b"
+    card = await _card_decision(admin_client, session_factory, application_id, "rm_pti83@example.com")
+    assert card["outcome"] == "reject"
+    assert card["reason_code"] == "PTI_TOO_HIGH"
+    assert card["pti"] == 0.83
+    assert card["triggered_rules_text"] == ["Долговая нагрузка по кредитной истории 83% выше порога отказа 60%."]
+
+    decision_sent = await _last_decision(partner_admin, external_id)
+    assert decision_sent["status"] == "rejected"

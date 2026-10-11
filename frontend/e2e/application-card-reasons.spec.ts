@@ -30,7 +30,7 @@ test("одобрение: пройденные сравнения — «В но�
   expect(e.causes).toEqual([]);
   expect(e.passed).toEqual([
     "Балл БКИ 780 — не ниже порога одобрения 700",
-    "ПДН 31% — в пределах порога 60%",
+    "ПДН 31% — в пределах порога отказа 60%",
   ]);
   expect(e.help).toBe("Одобрено: балл 780 выше порога 700 и ПДН 31% в пределах 60%, стоп-факторов нет.");
 });
@@ -61,7 +61,7 @@ test("отказ по баллу: причина не дублируется в 
   });
   expect(e.reason).toBe("Скоринговый балл 420 ниже порога автоотказа 450.");
   expect(e.causes).toEqual([]);
-  expect(e.passed).toEqual(["ПДН 31% — в пределах порога 60%"]);
+  expect(e.passed).toEqual(["ПДН 31% — в пределах порога отказа 60%"]);
   expect(e.help).toBe("Отказ: ПДН 31% в пределах 60%, но балл 420 ниже порога отказа 450 — это ведёт к отказу.");
 });
 
@@ -75,24 +75,23 @@ test("отказ по стоп-фактору: проваленное сравн
     pti: 0.7,
   });
   expect(e.reason).toContain("Долг по исполнительному производству");
-  expect(e.causes).toEqual(["ПДН 70% — выше порога 60%"]);
+  expect(e.causes).toEqual(["ПДН 70% — выше порога отказа 60%"]);
   expect(e.passed).toEqual(["Балл БКИ 780 — не ниже порога одобрения 700"]);
 });
 
-test("ПДН с рассрочкой (T21): сумма платежа в строке, пометка, если он рассчитан по тарифу", () => {
+test("ПДН с рассрочкой (T21): сумма платежа в строке ПДН, источник — только в «Сделке»", () => {
   const fromPartner = explainDecision({ ...base, pti: 0.48, installment_payment: "6500.00", installment_payment_source: "partner" });
-  expect(fromPartner.passed).toContain(`ПДН 48% (с учётом платежа по рассрочке ${formatAmount("6500")} ₽) — порог 60%`);
+  expect(fromPartner.passed).toContain(`ПДН 48% (с учётом платежа по рассрочке ${formatAmount("6500")} ₽) — порог отказа 60%`);
 
   const fromTariff = explainDecision({ ...base, pti: 0.48, installment_payment: "4500.00", installment_payment_source: "tariff" });
-  expect(fromTariff.passed).toContain(
-    `ПДН 48% (с учётом платежа по рассрочке ${formatAmount("4500")} ₽; платёж рассчитан по тарифу, не из системы заказчика) — порог 60%`,
-  );
+  // Источник платежа — только в «Сделке» (T22, без повтора в строке ПДН).
+  expect(fromTariff.passed).toContain(`ПДН 48% (с учётом платежа по рассрочке ${formatAmount("4500")} ₽) — порог отказа 60%`);
 
   const over = explainDecision({
     ...base, outcome: "manual_review", reason_code: "PTI_HIGH", pti: 0.65,
     installment_payment: "6500.00", installment_payment_source: "partner",
   });
-  expect(over.help).toContain("ПДН 65% выше порога 60%");
+  expect(over.help).toContain("ПДН 65% выше порога отказа 60%");
 
   // Сработало правило ручной проверки по ПДН (55%) — порог в подсказке его,
   // не порог отказа (60%); сумма платежа — деталью в «Причине», раз в строке
@@ -109,6 +108,18 @@ test("ПДН с рассрочкой (T21): сумма платежа в стр�
   );
   expect(softRule.causes).toEqual([`ПДН 83% — с учётом платежа по рассрочке ${formatAmount("4500")} ₽`]);
 
+  // T22: ПДН по КИ 83% выше порога отказа (limits.pti_max = 60%) — отказ;
+  // порог в подсказке и детали — отказа, не ручной проверки.
+  const reject = explainDecision({
+    ...base, outcome: "reject", reason_code: "PTI_TOO_HIGH", pti: 0.83,
+    triggered_rules: [{ id: "pti_max", field: "features.pti", expected: 0.6, action: "reject" }],
+    triggered_rules_text: ["Долговая нагрузка по кредитной истории 83% выше порога отказа 60%."],
+    installment_payment: "4500.00", installment_payment_source: "partner",
+  });
+  expect(reject.reason).toBe("Долговая нагрузка по кредитной истории 83% выше порога отказа 60%.");
+  expect(reject.help).toBe("Отказ: балл 780 выше порога 700, но ПДН 83% выше порога отказа 60% — это ведёт к отказу.");
+  expect(reject.causes).toEqual([`ПДН 83% — с учётом платежа по рассрочке ${formatAmount("4500")} ₽`]);
+
   const unknown = explainDecision({ ...base, pti: null, pti_status: "no_installment" });
   expect(unknown.unknown[0]).toMatch(/^ПДН: не вычислимо \(нет платежа по рассрочке/);
 });
@@ -119,7 +130,7 @@ test("ПДН: нет дохода — «не вычислимо», а не 0%; 0
   expect([...noIncome.passed, ...noIncome.causes].join(" ")).not.toContain("ПДН");
 
   const noLoans = explainDecision({ ...base, pti: 0, bki_active_contracts_count: 0 });
-  expect(noLoans.passed).toContain("ПДН 0% — действующих кредитов в КИ нет (порог 60%)");
+  expect(noLoans.passed).toContain("ПДН 0% — действующих кредитов в КИ нет (порог отказа 60%)");
   expect(noLoans.unknown).toEqual([]);
 
   const noBki = explainDecision({ ...base, pti: null, pti_status: "no_credit_history" });
@@ -137,7 +148,13 @@ test("карточка серой зоны: «В норме» отдельно, 
   await expect(page.getByTestId("decision-causes")).toHaveCount(0);
   const passed = page.getByTestId("decision-passed");
   await expect(passed).toContainText("Балл БКИ 760 — не ниже порога одобрения 700");
-  await expect(passed).toContainText("ПДН 42% — в пределах порога 60%");
+  await expect(passed).toContainText(`ПДН 42% (с учётом платежа по рассрочке ${formatAmount("4500")} ₽) — порог отказа 60%`);
+  await expect(passed).not.toContainText("рассчитан по тарифу");
+
+  // T22: платёж по рассрочке — в «Сделке», с пометкой, что рассчитан по тарифу.
+  await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toContainText(
+    `${formatAmount("4500")} ₽ (рассчитан по тарифу, не из системы заказчика)`,
+  );
 
   // «Нужно сделать» — одна строка с кнопкой сразу под вердиктом.
   await expect(page.locator(".next-step")).toHaveCount(1);
@@ -159,4 +176,8 @@ test("карточка без дохода: «ПДН: не вычислимо»,
 
   await expect(page.getByTestId("decision-unknown")).toHaveText("ПДН: не вычислимо (нет данных о доходе)");
   await expect(page.getByText("ПДН 0%")).toHaveCount(0);
+  // T22: без «Нужно решение…» после «Нужно сделать:».
+  await expect(page.locator(".next-step")).toHaveText("Нужно сделать:решение риск-менеджера или оператора");
+  // Платежа в снимке нет — строки «Платёж в месяц» нет (не «0 ₽»).
+  await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toHaveCount(0);
 });

@@ -10,6 +10,8 @@ from app.engine.schema import MatrixEntry, Operator, RuleDef, RulesetConfig
 _MISSING = object()
 
 _OUTCOME_REJECT = "reject"
+# T22: отказ по ПДН из КИ выше limits.pti_max (см. evaluate_financial).
+PTI_TOO_HIGH = "PTI_TOO_HIGH"
 _OUTCOME_MANUAL_REVIEW = "manual_review"
 _OUTCOME_APPROVE = "approve"
 
@@ -190,7 +192,31 @@ class FinancialOutcome:
 
 
 def evaluate_financial(config: RulesetConfig, features: dict[str, Any]) -> FinancialOutcome:
-    """Стадия Б после БКИ: soft_rules -> порог скора (с учётом матрицы)."""
+    """Стадия Б после БКИ: ПДН по КИ выше limits.pti_max -> отказ (T22) ->
+    soft_rules -> порог скора (с учётом матрицы)."""
+    # T22 (ваше решение, ТЗ «Начальные значения»: «ПДН, отказ — выше 60%»):
+    # тот же limits.pti_max, что у заявленного ПДН до БКИ, — один порог отказа
+    # на оба ПДН; число и включение (pti_max_applies_to_credit_history) — из
+    # версии правил, в коде только сравнение (как пороги скора ниже). Записываем как сработавшее правило с фактом и
+    # порогом — текст причины и карточка показывают «83% при допустимых 60%».
+    pti = get_field(features, "features.pti")
+    if (
+        config.limits.pti_max_applies_to_credit_history
+        and isinstance(pti, (int, float)) and not isinstance(pti, bool)
+        and pti > config.limits.pti_max
+    ):
+        return FinancialOutcome(
+            outcome=_OUTCOME_REJECT,
+            reason_code=PTI_TOO_HIGH,
+            triggered_rules=[
+                TriggeredRule(
+                    id="pti_max", field="features.pti", op=Operator.GT, expected=config.limits.pti_max,
+                    actual=pti, reason=PTI_TOO_HIGH, action=_OUTCOME_REJECT, freeze=False,
+                )
+            ],
+            missing_fields=[],
+        )
+
     triggered, missing = evaluate_rule_list(config.soft_rules, features)
     if triggered:
         first = triggered[0]

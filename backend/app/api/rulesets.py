@@ -89,8 +89,11 @@ _TYPED_FIELD_LABELS: dict[str, str] = {
     "amount_max": "Макс. сумма",
     "term_min": "Мин. срок, мес.",
     "term_max": "Макс. срок, мес.",
-    "pti_max": "ПДН: отказ выше",
-    "pti_high": "ПДН: ручная проверка выше",
+    # T22: точно, к какому ПДН относится порог — pti_max действует и на
+    # заявленный ПДН до БКИ, и на ПДН по КИ; pti_high — только по КИ.
+    "pti_max": "ПДН (заявленный до БКИ и по КИ): отказ выше",
+    "pti_high": "ПДН по КИ: ручная проверка выше",
+    "pti_max_applies_to_credit_history": "Отказ по ПДН из КИ выше порога",
 }
 
 
@@ -108,12 +111,15 @@ def _typed_values(config: dict[str, Any] | None) -> dict[str, Any]:
         "term_max": limits.get("term_max"),
         "pti_max": limits.get("pti_max"),
         "pti_high": pti_high.get("value"),
+        "pti_max_applies_to_credit_history": bool(limits.get("pti_max_applies_to_credit_history", False)),
     }
 
 
 def _format_typed_value(key: str, value: Any) -> str:
     if value is None:
         return "—"
+    if isinstance(value, bool):
+        return "включён" if value else "выключен"
     if key in ("pti_max", "pti_high"):
         return f"{round(float(value) * 100, 1):g}%"
     if isinstance(value, float) and value.is_integer():

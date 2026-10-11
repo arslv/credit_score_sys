@@ -96,7 +96,7 @@ export function ApplicationDetailPage() {
     if (latestDecision.reason_code === "FSSP_NOT_CHECKED") {
       actionItems.push({ key: "fssp", text: "Проверить ФССП — без этого одобрение недоступно", href: "#fssp", button: "К проверке ФССП" });
     } else {
-      actionItems.push({ key: "gray", text: "Нужно решение риск-менеджера или оператора" });
+      actionItems.push({ key: "gray", text: "решение риск-менеджера или оператора" });
     }
   }
   if (latestDecision?.freeze) {
@@ -139,6 +139,8 @@ export function ApplicationDetailPage() {
     approvedTerm: latestDecision?.approved_term ?? null,
     approvedTariff: latestDecision?.offered_tariff ?? null,
     approvedDownPay: latestDecision?.required_down_pay ?? null,
+    installmentPayment: latestDecision?.installment_payment ?? null,
+    installmentSource: latestDecision?.installment_payment_source ?? null,
   });
 
   return (
