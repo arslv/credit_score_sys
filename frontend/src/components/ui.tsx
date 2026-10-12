@@ -4,6 +4,7 @@
 // местом) — отсюда разнобой. Все размеры — токенами index.css.
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Search, X } from "lucide-react";
+import { highlightRanges } from "../lib/search";
 
 export function PageHeader({
   title,
@@ -193,11 +194,20 @@ export function Pagination({
   );
 }
 
-// Поиск по строке без учёта регистра и «ё» — для локальной фильтрации
-// небольших справочников (сотрудники, категории, чёрный список).
-export function matches(query: string, ...values: (string | null | undefined)[]): boolean {
-  const normalize = (s: string) => s.toLowerCase().replace(/ё/g, "е").trim();
-  const q = normalize(query);
-  if (!q) return true;
-  return values.some((v) => v && normalize(v).includes(q));
+// Поиск по словам — правила в lib/search.ts (один для всех экранов).
+export { matches } from "../lib/search";
+
+/** Подсветка найденных кусочков (тот же поиск, что и matches). */
+export function Highlight({ text, query }: { text: string; query: string }) {
+  const ranges = highlightRanges(text, query);
+  if (ranges.length === 0) return <>{text}</>;
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  ranges.forEach(([start, end], i) => {
+    if (start > cursor) parts.push(text.slice(cursor, start));
+    parts.push(<mark key={i}>{text.slice(start, end)}</mark>);
+    cursor = end;
+  });
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return <>{parts}</>;
 }

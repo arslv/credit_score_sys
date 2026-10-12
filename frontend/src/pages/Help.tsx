@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
-import { EmptyState, PageHeader, SearchInput, Toolbar, matches } from "../components/ui";
+import { EmptyState, Highlight, PageHeader, SearchInput, Toolbar, matches } from "../components/ui";
 
 // T17, часть 6: «Как работает система» — одна страница, на которую можно
 // сослаться вместо того, чтобы пересказывать путь заявки в разговоре.
@@ -113,20 +113,6 @@ const SECTIONS = [
   { id: "terms", title: "Термины" },
 ];
 
-function Highlight({ text, query }: { text: string; query: string }) {
-  const q = query.trim();
-  if (!q) return <>{text}</>;
-  const index = text.toLowerCase().indexOf(q.toLowerCase());
-  if (index < 0) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, index)}
-      <mark>{text.slice(index, index + q.length)}</mark>
-      {text.slice(index + q.length)}
-    </>
-  );
-}
-
 export function HelpPage() {
   const { employee } = useAuth();
   const [termQuery, setTermQuery] = useState("");
@@ -150,7 +136,10 @@ export function HelpPage() {
     return () => observer.disconnect();
   }, []);
 
-  const terms = GLOSSARY.filter((g) => matches(termQuery, g.term, g.text));
+  // Совпадение в названии термина — выше совпадения только в описании.
+  const terms = GLOSSARY.filter((g) => matches(termQuery, g.term, g.text)).sort(
+    (a, b) => Number(matches(termQuery, b.term)) - Number(matches(termQuery, a.term)),
+  );
 
   // Поиск стоит внизу страницы: при фильтрации список короче, страница
   // уменьшалась, браузер подтягивал прокрутку — экран «прыгал». Держим
