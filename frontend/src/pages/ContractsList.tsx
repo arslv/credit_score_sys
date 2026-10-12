@@ -3,19 +3,23 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { Badge } from "../components/Badge";
+import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination, Segmented } from "../components/ui";
 import { contractStatusLabel } from "../lib/labels";
 import { formatAmount, formatDate } from "../lib/format";
 
 const PAGE_SIZE = 25;
+const STATUSES = ["", "active", "closed", "defaulted", "repossessed"] as const;
+type StatusFilter = (typeof STATUSES)[number];
 
 export function ContractsListPage() {
   const [page, setPage] = useState(1);
+  const [status, setStatus] = useState<StatusFilter>("");
 
   const query = useQuery({
-    queryKey: ["contracts", page],
+    queryKey: ["contracts", status, page],
     queryFn: async () => {
       const { data, error } = await api.GET("/api/contracts", {
-        params: { query: { page, page_size: PAGE_SIZE } },
+        params: { query: { page, page_size: PAGE_SIZE, status_filter: status || undefined } },
       });
       if (error) throw error;
       return data;
@@ -24,23 +28,38 @@ export function ContractsListPage() {
 
   return (
     <section>
-      <h1>Договоры</h1>
+      <PageHeader
+        title="Договоры"
+        description="Договоры рассрочки из учётной системы заказчика (раздел «Импорт»). Просрочка пересчитывается ежедневно по графику и платежам."
+      />
+      <Segmented
+        label="Состояние договора"
+        value={status}
+        onChange={(next) => {
+          setPage(1);
+          setStatus(next);
+        }}
+        options={STATUSES.map((s) => ({ value: s, label: s ? contractStatusLabel(s) : "Все" }))}
+      />
 
-      {query.isLoading && <p className="muted">Загрузка…</p>}
-      {query.isError && <p role="alert" className="alert">Не удалось загрузить список договоров.</p>}
+      {query.isLoading && <LoadingState />}
+      {query.isError && <ErrorState message="Не удалось загрузить список договоров." onRetry={() => void query.refetch()} />}
       {query.data && query.data.items.length === 0 && (
-        <p className="muted">Договоров нет — появятся после импорта платежей (T15).</p>
+        <EmptyState
+          title={status ? "Договоров в этом состоянии нет" : "Договоров пока нет"}
+          hint={status ? undefined : "Появятся после загрузки выгрузки договоров в Настройках → Импорт."}
+        />
       )}
 
       {query.data && query.data.items.length > 0 && (
-        <table className="table">
+        <table className="table table--list">
           <thead>
             <tr>
               <th>№ у заказчика</th>
-              <th>Сумма</th>
-              <th>Срок</th>
-              <th>Состояние</th>
               <th>Выдан</th>
+              <th className="num">Сумма</th>
+              <th className="num">Срок</th>
+              <th>Состояние</th>
             </tr>
           </thead>
           <tbody>
@@ -49,35 +68,19 @@ export function ContractsListPage() {
                 <td>
                   <Link to={`/contracts/${item.id}`}>{item.external_number ?? item.id}</Link>
                 </td>
-                <td>{formatAmount(item.total_amount)}</td>
-                <td>{item.term_months} мес.</td>
+                <td className="muted">{formatDate(item.issued_at)}</td>
+                <td className="num">{formatAmount(item.total_amount)} ₽</td>
+                <td className="num">{item.term_months} мес.</td>
                 <td>
                   <Badge value={item.status} label={contractStatusLabel(item.status)} />
                 </td>
-                <td className="muted">{formatDate(item.issued_at)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
 
-      {query.data && query.data.total > 0 && (
-        <div className="pagination">
-          <button className="btn btn-small" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            ← назад
-          </button>
-          <span>
-            Страница {query.data.page} из {Math.max(1, Math.ceil(query.data.total / query.data.page_size))}
-          </span>
-          <button
-            className="btn btn-small"
-            disabled={page * PAGE_SIZE >= query.data.total}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            вперёд →
-          </button>
-        </div>
-      )}
+      {query.data && <Pagination page={page} pageSize={PAGE_SIZE} total={query.data.total} onPage={setPage} />}
     </section>
   );
 }

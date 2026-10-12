@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import * as yaml from "js-yaml";
 import { api } from "../api/client";
+import { EmptyState, ErrorState, LoadingState, PageHeader } from "../components/ui";
 import { formatDateTime } from "../lib/format";
 
 // Ответы этих эндпоинтов не типизированы в схеме (обычные dict, не Pydantic
@@ -408,25 +409,25 @@ export function RulesetsPage() {
     },
   });
 
-  if (activeQuery.isLoading) return <p className="muted">Загрузка…</p>;
+  if (activeQuery.isLoading) return <LoadingState />;
   if (activeQuery.isError || !activeQuery.data) {
     const forbidden = activeQuery.error instanceof Error && activeQuery.error.message === "FORBIDDEN";
-    return (
-      <p role="alert" className="alert">
-        {forbidden ? "Недостаточно прав." : "Не удалось загрузить активную версию правил."}
-      </p>
-    );
+    return <ErrorState message={forbidden ? "Недостаточно прав." : "Не удалось загрузить активную версию правил."} />;
   }
 
   const fileConflict = versionsQuery.data?.file_conflict;
 
   return (
     <section>
-      <h1>Скоринг</h1>
-      <p className="muted">
-        Активная версия: {activeQuery.data.version}
-        {activeQuery.data.comment && ` — ${activeQuery.data.comment}`}
-      </p>
+      <PageHeader
+        title="Скоринг"
+        description={
+          <>
+            Активная версия: {activeQuery.data.version}
+            {activeQuery.data.comment && ` — ${activeQuery.data.comment}`}
+          </>
+        }
+      />
 
       {fileConflict?.conflict && (
         <div className="alert" role="alert">
@@ -443,11 +444,12 @@ export function RulesetsPage() {
         <p role="alert" className="alert">Файл конфига на диске не проходит схему: {fileConflict.error}</p>
       )}
 
-      <div className="grid-2 stack">
+      <div className="grid-2 rules-layout">
         <div>
           {(["thresholds", "limits", "pti"] as const).map((section) => (
-            <div key={section}>
+            <div key={section} className="rules-section">
               <h2>{SECTION_TITLES[section]}</h2>
+              <div className="form-grid">
               {QUICK_FIELDS.filter((f) => f.section === section).map((f) => {
                 const raw = parsed ? f.get(parsed) : null;
                 const displayed = raw == null ? "" : f.percent ? Math.round(Number(raw) * 1000) / 10 : (raw as number);
@@ -468,6 +470,7 @@ export function RulesetsPage() {
                   </label>
                 );
               })}
+              </div>
               {section === "thresholds" && orderError && (
                 <p role="alert" className="alert">{orderError}</p>
               )}
@@ -485,33 +488,35 @@ export function RulesetsPage() {
             {parseError && <p role="alert" className="alert">YAML не читается: {parseError}</p>}
           </details>
 
-          <div className="stack">
+          <div className="rules-publish">
+            <p className="muted text-xs">
+              1. Проверьте изменения на истории заявок. 2. Опишите, что и зачем меняете. 3. Опубликуйте.
+            </p>
             <button
-              className="btn btn-primary"
+              className="btn"
               disabled={simulateMutation.isPending || hasInputErrors}
               onClick={() => simulateMutation.mutate()}
             >
               Проверить на истории
             </button>
-          </div>
-
-          <label className="field">
-            Комментарий к версии (обязательно)
-            <input
-              type="text"
-              value={publishComment}
-              onChange={(e) => setPublishComment(e.target.value)}
-              placeholder="что меняете и зачем"
-            />
-          </label>
-          <div className="row stack">
-            <button
-              className="btn btn-primary"
-              disabled={!simulation || !publishComment.trim() || saveMutation.isPending}
-              onClick={() => saveMutation.mutate()}
-            >
-              Опубликовать
-            </button>
+            <label className="field">
+              Комментарий к версии (обязательно)
+              <input
+                type="text"
+                value={publishComment}
+                onChange={(e) => setPublishComment(e.target.value)}
+                placeholder="что меняете и зачем"
+              />
+            </label>
+            <div className="row stack">
+              <button
+                className="btn btn-primary"
+                disabled={!simulation || !publishComment.trim() || saveMutation.isPending}
+                onClick={() => saveMutation.mutate()}
+              >
+                Опубликовать
+              </button>
+            </div>
           </div>
           {simulateError && <p role="alert" className="alert">{simulateError}</p>}
           {saveError && <p role="alert" className="alert">{saveError}</p>}
@@ -520,7 +525,12 @@ export function RulesetsPage() {
 
         <div>
           <h2>Результат симуляции</h2>
-          {!simulation && <p className="muted">Прогоните симуляцию, чтобы увидеть результат.</p>}
+          {!simulation && (
+            <EmptyState
+              title="Симуляции ещё не было"
+              hint="Измените пороги слева и нажмите «Проверить на истории» — здесь появится, сколько решений поменяется."
+            />
+          )}
           {simulation && (
             <>
               {(() => {
@@ -653,7 +663,7 @@ export function RulesetsPage() {
       </div>
 
       <h2>История версий</h2>
-      {versionsQuery.isLoading && <p className="muted">Загрузка…</p>}
+      {versionsQuery.isLoading && <LoadingState />}
       {versionsQuery.data && (
         <table className="table">
           <thead>

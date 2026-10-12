@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
+import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination } from "../components/ui";
 import { formatAmount, formatElapsed } from "../lib/format";
 import { applicationStatusLabel } from "../lib/labels";
 
@@ -24,8 +25,12 @@ const QUEUE_ROLES = ["operator", "compliance", "risk_manager"];
 
 // Колонки, которые у роли всегда пусты, не показываем: у комплаенса очередь —
 // заморозки по перечню, без балла БКИ и без итога оператора.
+// T23: у ролей без очереди (наблюдатель, администратор) «Нужно сделать» и
+// «Ждёт» всегда пусты — не занимаем ими ширину.
 const HIDDEN_COLUMNS_BY_ROLE: Record<string, Set<string>> = {
   compliance: new Set(["score", "override"]),
+  viewer: new Set(["action", "waiting"]),
+  admin: new Set(["action", "waiting"]),
 };
 
 // Тон пилюли статуса: одобрено — зелёный, отказ — красный, серая зона — янтарный,
@@ -100,8 +105,12 @@ export function ApplicationsListPage() {
 
   const counts = countsQuery.data;
   const hidden = HIDDEN_COLUMNS_BY_ROLE[employee?.role ?? ""] ?? new Set<string>();
+  // T23: одна строка на заявку (~36px) — номер у заказчика и товар отдельными
+  // колонками, наш порядковый номер — в подсказке; раньше вторая строка под ФИО.
   const columns = [
+    { key: "number", title: "№ у заказчика" },
     { key: "client", title: "Клиент" },
+    { key: "goods", title: "Товар" },
     { key: "amount", title: "Сумма / срок" },
     { key: "status", title: "Статус" },
     { key: "score", title: "Балл БКИ" },
@@ -113,7 +122,14 @@ export function ApplicationsListPage() {
 
   return (
     <section>
-      <h1>Заявки</h1>
+      <PageHeader
+        title="Заявки"
+        description={
+          hasQueue
+            ? "«Требуют действия» — ваша очередь: то, что ждёт именно вашей роли. Остальные вкладки — вся картина."
+            : "Все заявки, пришедшие от заказчика, и решения по ним."
+        }
+      />
 
       <div className="chips" role="group" aria-label="Быстрые фильтры">
         {views.map((key) => (
@@ -172,12 +188,29 @@ export function ApplicationsListPage() {
         </div>
       </details>
 
-      {query.isLoading && <p className="muted">Загрузка…</p>}
-      {query.isError && <p role="alert" className="alert">Не удалось загрузить список заявок.</p>}
-      {query.data && query.data.items.length === 0 && <p className="muted">Ничего не найдено.</p>}
+      {query.isLoading && <LoadingState />}
+      {query.isError && <ErrorState message="Не удалось загрузить список заявок." onRetry={() => void query.refetch()} />}
+      {query.data && query.data.items.length === 0 && (
+        <EmptyState
+          title={view === "action" ? "Очередь пуста — всё разобрано" : "Заявок не нашлось"}
+          action={
+            view !== "all" || filters !== EMPTY_FILTERS ? (
+              <button
+                className="btn"
+                onClick={() => {
+                  setFilters(EMPTY_FILTERS);
+                  selectView("all");
+                }}
+              >
+                Показать все заявки
+              </button>
+            ) : undefined
+          }
+        />
+      )}
 
       {query.data && query.data.items.length > 0 && (
-        <table className="table">
+        <table className="table table--list">
           <thead>
             <tr>
               {columns.map((column) => (
@@ -188,14 +221,18 @@ export function ApplicationsListPage() {
           <tbody>
             {query.data.items.map((item) => (
               <tr key={item.id}>
-                <td>
+                <td className="muted cell-ellipsis cell-id" title={`Заявка №${item.number}`}>
+                  {item.external_id}
+                </td>
+                <td className="cell-ellipsis">
                   <Link to={`/applications/${item.id}`}>{item.client_name ?? "—"}</Link>
-                  <div className="muted text-xs">
-                    №{item.number} · у заказчика {item.external_id} · {item.goods_name}
-                  </div>
+                </td>
+                <td className="cell-ellipsis muted" title={item.goods_name}>
+                  {item.goods_name}
                 </td>
                 <td className="num">
-                  {formatAmount(item.requested_amount)} ₽ / {item.term_months} мес.
+                  {/* До «Рассмотреть» сделки ещё нет (T18: нули-заглушки) — прочерк, не «0 ₽». */}
+                  {item.term_months > 0 ? `${formatAmount(item.requested_amount)} ₽ / ${item.term_months} мес.` : "—"}
                 </td>
                 <td>
                   <span className={`status-pill status-pill--${statusTone(item.status)}`}>
@@ -205,20 +242,24 @@ export function ApplicationsListPage() {
                 {!hidden.has("score") && (
                   <td className="num">{item.score != null ? Math.round(Number(item.score)) : ""}</td>
                 )}
-                <td>
-                  {item.action_text && (
-                    <>
-                      <span className={`action-dot action-dot--${item.action_kind}`} aria-hidden="true" />
-                      {item.action_text}
-                    </>
-                  )}
-                </td>
-                <td className="muted num">
-                  {/* «Ждёт» — только у заявок очереди роли: момент встал в очередь. */}
-                  {item.action_text && item.waiting_since ? formatElapsed(item.waiting_since) : ""}
-                </td>
-                {!hidden.has("override") && (
+                {!hidden.has("action") && (
                   <td>
+                    {item.action_text && (
+                      <>
+                        <span className={`action-dot action-dot--${item.action_kind}`} aria-hidden="true" />
+                        {item.action_text}
+                      </>
+                    )}
+                  </td>
+                )}
+                {!hidden.has("waiting") && (
+                  <td className="muted num">
+                    {/* «Ждёт» — только у заявок очереди роли: момент встал в очередь. */}
+                    {item.action_text && item.waiting_since ? formatElapsed(item.waiting_since) : ""}
+                  </td>
+                )}
+                {!hidden.has("override") && (
+                  <td className="cell-wrap">
                     {item.has_override && item.override_matches_system === false ? (
                       <span title="Итог оператора не совпадает с последним решением системы">
                         Оператор изменил статус
@@ -232,22 +273,8 @@ export function ApplicationsListPage() {
         </table>
       )}
 
-      {query.data && query.data.total > 0 && (
-        <div className="pagination">
-          <button className="btn btn-small" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            ← назад
-          </button>
-          <span>
-            Страница {query.data.page} из {Math.max(1, Math.ceil(query.data.total / query.data.page_size))}
-          </span>
-          <button
-            className="btn btn-small"
-            disabled={page * PAGE_SIZE >= query.data.total}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            вперёд →
-          </button>
-        </div>
+      {query.data && (
+        <Pagination page={page} pageSize={PAGE_SIZE} total={query.data.total} onPage={setPage} />
       )}
     </section>
   );

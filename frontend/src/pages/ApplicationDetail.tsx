@@ -8,6 +8,7 @@ import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
 import { VerdictTitle } from "../components/VerdictTitle";
+import { ErrorState, LoadingState } from "../components/ui";
 import { clientRows, dealRows, latestStageBPayload } from "../lib/card";
 import { explainDecision } from "../lib/explain";
 import { formatAmount, formatDate, formatDateTime } from "../lib/format";
@@ -67,9 +68,9 @@ export function ApplicationDetailPage() {
     },
   });
 
-  if (query.isLoading) return <p className="muted">Загрузка…</p>;
+  if (query.isLoading) return <LoadingState />;
   if (query.isError || !query.data) {
-    return <p role="alert" className="alert">Не удалось загрузить заявку.</p>;
+    return <ErrorState message="Не удалось загрузить заявку." onRetry={() => void query.refetch()} />;
   }
 
   const app = query.data;

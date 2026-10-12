@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { Badge } from "../components/Badge";
+import { EmptyState, ErrorState, LoadingState, PageHeader } from "../components/ui";
 import { applicationStatusLabel } from "../lib/labels";
 import { formatDate, formatDateTime } from "../lib/format";
 
@@ -20,28 +21,25 @@ export function ClientDetailPage() {
     enabled: Boolean(id),
   });
 
-  if (query.isLoading) return <p className="muted">Загрузка…</p>;
-  if (query.isError || !query.data) return <p role="alert" className="alert">Не удалось загрузить клиента.</p>;
+  if (query.isLoading) return <LoadingState />;
+  if (query.isError || !query.data) return <ErrorState message="Не удалось загрузить клиента." />;
 
   const client = query.data;
 
   return (
     <section>
-      <p>
+      <p className="back-link">
         <Link to="/clients">← к списку клиентов</Link>
       </p>
-      <header className="card">
-        <h1>{client.name}</h1>
-        <p className="muted">
-          Дата рождения: {client.birth_date ? formatDate(client.birth_date) : "—"} · Телефон:{" "}
-          {client.phone ?? "—"}
-        </p>
-      </header>
+      <PageHeader
+        title={client.name}
+        description={`Дата рождения: ${client.birth_date ? formatDate(client.birth_date) : "—"} · Телефон: ${client.phone ?? "—"}`}
+      />
 
       <h2>История обращений</h2>
-      {client.applications.length === 0 && <p className="muted">Заявок нет.</p>}
+      {client.applications.length === 0 && <EmptyState title="Заявок нет" />}
       {client.applications.length > 0 && (
-        <table className="table">
+        <table className="table table--list">
           <thead>
             <tr>
               <th>№</th>

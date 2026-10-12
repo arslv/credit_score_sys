@@ -31,6 +31,12 @@ class TriggerNewApplicationRequest(BaseModel):
     phone: str = "+79990000000"
     birth_date: date | None = None  # для сценариев, завязанных на возраст
     photo_mode: str = "base64"  # "base64" | "url" — какой способ передачи фото проверяем
+    # T23: поля, которые рисуются на синтетических фото паспорта (серия,
+    # номер, дата выдачи, код подразделения, адрес…) — поверх случайных
+    # значений по умолчанию. Демо-сид (app.cli.seed_demo) передаёт те же
+    # поля, что потом «распознаёт» OCR-фикстура, — картинка и распознанное
+    # совпадают.
+    passport: dict[str, str] | None = None
 
 
 class TriggerReviewRequest(BaseModel):

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { EmptyState, ErrorState, LoadingState, PageHeader } from "../components/ui";
 import { formatDateTime } from "../lib/format";
 
 // Ответы этих эндпоинтов — обычные dict (app/api/imports.py), не Pydantic
@@ -54,9 +55,7 @@ function ResultReport({ result, title }: { result: ImportResult; title: string }
       )}
       {result.errors.length > 0 && (
         <div>
-          <p role="alert" className="alert">
-            Ошибок при разборе: {result.errors.length}
-          </p>
+          <ErrorState message={`Ошибок при разборе: ${result.errors.length}`} />
           <ul className="muted">
             {result.errors.slice(0, 20).map((e, i) => (
               <li key={i}>{e}</li>
@@ -175,24 +174,21 @@ export function ImportsPage() {
 
   return (
     <section>
-      <h1>Импорт данных</h1>
-      <p className="muted">
-        Формат выгрузки задаётся в config/import_mappings/*.yaml. Повторная загрузка того же файла не создаёт
-        дублей.
-      </p>
-      {uploadError && <p role="alert" className="alert">{uploadError}</p>}
+      <PageHeader
+        title="Импорт данных"
+        description="Выгрузки из учётной системы заказчика: договоры, графики, платежи и исторические заявки. Формат колонок — config/import_mappings/*.yaml; повторная загрузка того же файла дублей не создаёт."
+      />
+      {uploadError && <ErrorState message={uploadError} />}
 
-      <div className="grid-4 stack">
-        <div className="card">
+      <div className="upload-grid">
+        <div className="upload-card">
           <h2>Договоры</h2>
+          <p>Новые договоры и текущее состояние уже известных (статус, закрытие).</p>
           <label className="field">
             Дата выгрузки (необязательно)
             <input type="date" value={dataAsOf} onChange={(e) => setDataAsOf(e.target.value)} />
+            <span className="field-hint">Та же дата, что у платежей, — иначе не сработает проверка полноты.</span>
           </label>
-          <p className="muted">
-            Чтобы сработало предупреждение о неполноте выгрузки платежей, дата здесь и дата при загрузке платежей
-            должны совпадать.
-          </p>
           <input
             type="file"
             accept=".csv"
@@ -200,21 +196,9 @@ export function ImportsPage() {
           />
         </div>
 
-        <div className="card">
-          <h2>График платежей</h2>
-          <p className="muted">
-            Необязательно — если не загружен, используется график, сгенерированный равными платежами
-            (schedule_source = generated).
-          </p>
-          <input
-            type="file"
-            accept=".csv"
-            onChange={(e) => e.target.files?.[0] && void uploadFile("payment-schedule", e.target.files[0])}
-          />
-        </div>
-
-        <div className="card">
+        <div className="upload-card">
           <h2>Платежи</h2>
+          <p>Фактические платежи — из них ежедневно считается просрочка.</p>
           <label className="field">
             Данные по дату (включительно)
             <input type="date" value={dataAsOf} onChange={(e) => setDataAsOf(e.target.value)} />
@@ -226,8 +210,19 @@ export function ImportsPage() {
           />
         </div>
 
-        <div className="card">
+        <div className="upload-card">
+          <h2>График платежей</h2>
+          <p>Необязательно: без файла график строится равными платежами.</p>
+          <input
+            type="file"
+            accept=".csv"
+            onChange={(e) => e.target.files?.[0] && void uploadFile("payment-schedule", e.target.files[0])}
+          />
+        </div>
+
+        <div className="upload-card">
           <h2>Исторические заявки</h2>
+          <p>Заявки до запуска сервиса, включая отказы, — для будущей модели.</p>
           <input
             type="file"
             accept=".csv"
@@ -241,60 +236,63 @@ export function ImportsPage() {
       {paymentsResult && <ResultReport result={paymentsResult} title="Результат загрузки платежей" />}
       {historicalResult && <ResultReport result={historicalResult} title="Результат загрузки исторических заявок" />}
 
-      <h2>Кандидаты на привязку договора к заявке</h2>
-      <p className="muted">
-        Автоматически договор привязывается только по однозначному идентификатору из выгрузки. Совпадение по
-        телефону/ФИО — ниже, подтвердите или отклоните вручную.
-      </p>
-      {candidatesQuery.isLoading && <p className="muted">Загрузка…</p>}
-      {candidatesQuery.data && candidatesQuery.data.candidates.length === 0 && (
-        <p className="muted">Нет кандидатов, ожидающих решения.</p>
-      )}
-      {candidatesQuery.data && candidatesQuery.data.candidates.length > 0 && (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Договор</th>
-              <th>Заявка</th>
-              <th>Причина совпадения</th>
-              <th>ФИО / телефон из выгрузки</th>
-              <th>Найден</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {candidatesQuery.data.candidates.map((c) => (
-              <tr key={c.id}>
-                <td>{c.contract_external_number ?? c.contract_id}</td>
-                <td>
-                  <Link to={`/applications/${c.application_id}`}>открыть заявку</Link>
-                </td>
-                <td>{c.match_reason}</td>
-                <td>
-                  {c.source_name ?? "—"} / {c.source_phone ?? "—"}
-                </td>
-                <td className="muted">{formatDateTime(c.created_at)}</td>
-                <td className="row">
-                  <button
-                    className="btn btn-primary btn-small"
-                    disabled={confirmMutation.isPending}
-                    onClick={() => confirmMutation.mutate(c.id)}
-                  >
-                    Подтвердить
-                  </button>
-                  <button
-                    className="btn btn-small"
-                    disabled={rejectMutation.isPending}
-                    onClick={() => rejectMutation.mutate(c.id)}
-                  >
-                    Отклонить
-                  </button>
-                </td>
+      <div className="section">
+        <h2>Кандидаты на привязку договора к заявке</h2>
+        <p className="muted">
+          Автоматически договор привязывается только по однозначному номеру заявки из выгрузки. Совпадения по
+          телефону или ФИО — здесь: подтвердите или отклоните.
+        </p>
+        {candidatesQuery.isLoading && <LoadingState />}
+        {candidatesQuery.isError && <ErrorState message="Не удалось загрузить кандидатов на привязку." />}
+        {candidatesQuery.data && candidatesQuery.data.candidates.length === 0 && (
+          <EmptyState title="Нет кандидатов, ожидающих решения" hint="Появятся после загрузки договоров без номера заявки." />
+        )}
+        {candidatesQuery.data && candidatesQuery.data.candidates.length > 0 && (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Договор</th>
+                <th>Заявка</th>
+                <th>Причина совпадения</th>
+                <th>ФИО / телефон из выгрузки</th>
+                <th>Найден</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {candidatesQuery.data.candidates.map((c) => (
+                <tr key={c.id}>
+                  <td>{c.contract_external_number ?? c.contract_id}</td>
+                  <td>
+                    <Link to={`/applications/${c.application_id}`}>открыть заявку</Link>
+                  </td>
+                  <td>{c.match_reason}</td>
+                  <td>
+                    {c.source_name ?? "—"} / {c.source_phone ?? "—"}
+                  </td>
+                  <td className="muted">{formatDateTime(c.created_at)}</td>
+                  <td className="cell-actions">
+                    <button
+                      className="btn btn-primary btn-small"
+                      disabled={confirmMutation.isPending}
+                      onClick={() => confirmMutation.mutate(c.id)}
+                    >
+                      Подтвердить
+                    </button>{" "}
+                    <button
+                      className="btn btn-small"
+                      disabled={rejectMutation.isPending}
+                      onClick={() => rejectMutation.mutate(c.id)}
+                    >
+                      Отклонить
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </section>
   );
 }

@@ -22,6 +22,7 @@ docker compose up -d                          # поднять всё
 docker compose exec api alembic upgrade head  # миграции
 scripts/run_tests.sh                          # тесты: backend + fake_partner (T22)
 docker compose exec api alembic revision --autogenerate -m "..."  # новая миграция
+docker compose stop worker beat && docker compose exec api python -m app.cli.seed_demo --password '...' && docker compose start worker beat  # демо-данные (T23), только на пустой базе
 ```
 
 ## Как устроен поток

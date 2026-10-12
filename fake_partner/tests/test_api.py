@@ -36,6 +36,8 @@ def test_health_requires_no_auth(client):
         ("post", "/_test/manual-status/X"),
         ("post", "/_test/trigger-new-application"),
         ("post", "/_test/trigger-review/X"),
+        ("post", "/_test/compose-new-application"),
+        ("post", "/_test/compose-review/X"),
     ],
 )
 def test_service_endpoints_require_service_token(client, method, path):
@@ -194,3 +196,37 @@ def test_trigger_review_reports_our_rejection_as_502(client, auth_headers):
         respx.post(_our_api("/api/v1/partner/review")).mock(return_value=Response(404, json={"detail": "x"}))
         response = client.post("/_test/trigger-review/APP-8", json={}, headers=auth_headers)
     assert response.status_code == 502
+
+
+# --- T23: собрать тело без отправки (демо-сид доставляет его сам) -----------------
+
+
+def test_compose_new_application_returns_body_without_sending(client, auth_headers):
+    passport = {"passport_series": "0512", "passport_number": "123456", "department_code": "050-001"}
+    with respx.mock:  # любой исходящий вызов здесь — ошибка: respx не замокал ни одного маршрута
+        response = client.post(
+            "/_test/compose-new-application",
+            json={"external_id": "DEMO-1", "last_name": "Демов", "passport": passport},
+            headers=auth_headers,
+        )
+    assert response.status_code == 200
+    body = response.json()["body"]
+    assert body["external_id"] == "DEMO-1"
+    assert body["last_name"] == "Демов"
+    assert body["event_id"]
+    assert set(body["photos"]) == {"passport_main", "passport_reg"}
+    for photo in body["photos"].values():
+        assert base64.b64decode(photo["base64"]).startswith(_PNG)
+
+
+def test_compose_review_returns_same_body_as_trigger_without_sending(client, auth_headers):
+    payload = {"goods_price": 50000, "down_payment": 5000, "term_months": 9, "declared_monthly_income": 70000}
+    with respx.mock:
+        response = client.post("/_test/compose-review/DEMO-2", json=payload, headers=auth_headers)
+    assert response.status_code == 200
+    composed = response.json()["body"]
+    sent = _review_body(client, auth_headers, payload)
+    for key in ("deal", "employment", "income", "obligations", "guarantor"):
+        assert composed[key] == sent[key]
+    assert composed["external_id"] == "DEMO-2"
+    assert composed["deal"]["monthly_payment"] == 5000.0

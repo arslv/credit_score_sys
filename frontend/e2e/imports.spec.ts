@@ -27,25 +27,29 @@ test("импорт договоров через форму — загрузка
   await expect(page.getByText(/загружено: 1/)).toBeVisible({ timeout: 10_000 });
 });
 
-test("admin видит вкладку «Импорт» в разделе «Портфель»", async ({ page }) => {
+test("admin видит «Импорт» в подменю Настроек", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
 
-  // T17, шаг 3: «Импорт» — вкладка внутри раздела «Портфель», не отдельный
-  // пункт верхнего меню — появляется, когда раздел открыт (вторичная
-  // навигация), не на любой странице.
-  await page.goto("/contracts");
-  await expect(page.getByRole("link", { name: "Импорт" })).toBeVisible();
-
-  await page.goto("/imports");
+  // T23: «Импорт» перенесён из вкладок Портфеля в левое подменю Настроек.
+  await page.goto("/employees");
+  const settingsNav = page.getByRole("navigation", { name: "Настройки" });
+  await expect(settingsNav.getByRole("link", { name: "Импорт" })).toBeVisible();
+  await settingsNav.getByRole("link", { name: "Импорт" }).click();
   await expect(page.getByRole("heading", { name: "Импорт данных" })).toBeVisible();
+
+  // В Портфеле вкладки «Импорт» больше нет.
+  await page.goto("/contracts");
+  await expect(page.getByRole("link", { name: "Договоры" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Импорт" })).toHaveCount(0);
 });
 
-test("viewer не видит вкладку «Импорт» в разделе «Портфель»", async ({ page }) => {
+test("viewer не видит «Импорт» нигде", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.viewer.email, seed.viewer.password);
 
   await page.goto("/contracts");
   await expect(page.getByRole("link", { name: "Договоры" })).toBeVisible(); // раздел открыт, подвкладки видны
   await expect(page.getByRole("link", { name: "Импорт" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Настройки" })).toHaveCount(0);
 });

@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { BarChart3, Briefcase, ClipboardList, HelpCircle, Settings, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
+import { roleLabel } from "../lib/labels";
 
 // T17, шаг 3 (навигация+роли): 5 разделов вместо плоского списка из 11
 // вкладок (ваш брифинг — «Пустых разделов, которые роль не может
@@ -8,6 +9,8 @@ import { useAuth } from "../auth/AuthProvider";
 // Настройки) получают вторичную строку вкладок внутри раздела — те же
 // маршруты, что и раньше, просто сгруппированы по смыслу, а не по тому, в
 // каком порядке появлялись в задачах.
+// T23: у Настроек вместо вкладок — подменю слева (Сотрудники, Справочники,
+// Импорт, Комплаенс, Аудит, Состояние системы — что доступно роли).
 interface NavItem {
   to: string;
   label: string;
@@ -49,7 +52,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/contracts", label: "Договоры", roles: ["risk_manager", "admin", "viewer", "compliance"] },
       { to: "/clients", label: "Клиенты", roles: ["risk_manager", "admin", "viewer", "compliance"] },
-      { to: "/imports", label: "Импорт", roles: ["admin", "risk_manager"] },
     ],
   },
   {
@@ -70,6 +72,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/employees", label: "Сотрудники", roles: ["admin"] },
       { to: "/references", label: "Справочники", roles: ["risk_manager", "admin"] },
+      // T23: «Импорт» — в Настройках (было — вкладкой Портфеля).
+      { to: "/imports", label: "Импорт", roles: ["admin", "risk_manager"] },
       { to: "/compliance", label: "Комплаенс", roles: ["compliance"] },
       { to: "/audit", label: "Аудит", roles: ["admin"] },
       { to: "/system", label: "Состояние системы", roles: ["admin"] },
@@ -110,18 +114,23 @@ export function Layout() {
             </Link>
           );
         })}
+        {/* T23: пользователь и «Выйти» — внизу меню; верхняя полоса только
+            под вкладки раздела, без пустой строки ради одной кнопки. */}
         <div className="sidebar-foot">
           {employee && (
-            <>
-              {employee.full_name}
-              <br />
-              <span className="muted">{employee.role}</span>
-            </>
+            <div className="sidebar-foot__user">
+              <div className="sidebar-foot__name" title={employee.full_name}>{employee.full_name}</div>
+              <div>{roleLabel(employee.role)}</div>
+            </div>
           )}
+          <button className="btn btn-small" onClick={() => void logout()}>
+            Выйти
+          </button>
         </div>
       </nav>
       <div className="app-shell-v2__body">
-        {activeGroup && activeGroup.items.length > 1 && (
+        {/* Портфель — вкладки сверху; Настройки — подменю слева (T23). */}
+        {activeGroup && activeGroup.key !== "settings" && activeGroup.items.length > 1 && (
           <div className="subnav">
             {activeGroup.items.map((item) => (
               <Link
@@ -132,21 +141,34 @@ export function Layout() {
                 {item.label}
               </Link>
             ))}
-            <button className="btn btn-small subnav-logout" onClick={() => void logout()}>
-              Выйти
-            </button>
-          </div>
-        )}
-        {(!activeGroup || activeGroup.items.length <= 1) && (
-          <div className="subnav subnav--minimal">
-            <span />
-            <button className="btn btn-small subnav-logout" onClick={() => void logout()}>
-              Выйти
-            </button>
           </div>
         )}
         <main className="app-main-v2">
-          <Outlet />
+          {activeGroup?.key === "settings" ? (
+            <div className="settings-layout">
+              <nav className="settings-nav" aria-label="Настройки">
+                <div className="settings-nav__title">Настройки</div>
+                {activeGroup.items.map((item) => (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={
+                      location.pathname.startsWith(item.to)
+                        ? "settings-nav__item settings-nav__item--active"
+                        : "settings-nav__item"
+                    }
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+              <div>
+                <Outlet />
+              </div>
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </div>

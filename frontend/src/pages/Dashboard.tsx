@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { BarList } from "../components/BarList";
+import { ErrorState, LoadingState, PageHeader } from "../components/ui";
 import { SourceBadge } from "../components/SourceBadge";
 import { funnelStepLabel, reasonCodeLabel, sourceMeta } from "../lib/labels";
 import { formatDate, formatMonth } from "../lib/format";
@@ -46,7 +47,10 @@ export function DashboardPage() {
 
   return (
     <section>
-      <h1>Аналитика</h1>
+      <PageHeader
+        title="Аналитика"
+        description="Воронка, причины отказов, балл БКИ и качество портфеля за выбранный период. Недели и месяцы — по московскому времени."
+      />
 
       <div className="toolbar">
         <label>
@@ -62,11 +66,10 @@ export function DashboardPage() {
           <input type="date" lang="ru" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
           <span className="muted">{formatDate(periodTo)}</span>
         </label>
-        <span className="muted">Недели и месяцы — по московскому времени.</span>
       </div>
 
-      {query.isLoading && <p className="muted">Загрузка…</p>}
-      {query.isError && <p role="alert" className="alert">Не удалось загрузить аналитику.</p>}
+      {query.isLoading && <LoadingState />}
+      {query.isError && <ErrorState message="Не удалось загрузить аналитику." onRetry={() => void query.refetch()} />}
 
       {query.data && (
         <div className="dashboard-grid">

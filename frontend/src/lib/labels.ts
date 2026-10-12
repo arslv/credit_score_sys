@@ -293,8 +293,12 @@ export function employmentLabel(value: string | null | undefined): string {
   return (value && EMPLOYMENT_LABELS[value]) || "—";
 }
 
+// T23: все тарифы из config/rulesets/dev.yaml — раньше «Выгодный» в карточке
+// выводился прочерком.
 const TARIFF_LABELS: Record<string, string> = {
   standard: "стандартный",
+  advantageous: "выгодный",
+  repeat_client: "постоянному клиенту",
 };
 
 export function tariffLabel(value: string | null | undefined): string {
@@ -338,3 +342,70 @@ export function reasonCodeKindLabel(value: string): string {
   return REASON_CODE_KIND_LABELS[value] ?? value;
 }
 
+
+// T23: роли сотрудников (app/models/employee.py EMPLOYEE_ROLES) — на экране
+// «Сотрудники» и в подвале меню вместо кода роли.
+export const EMPLOYEE_ROLES = ["operator", "risk_manager", "compliance", "admin", "viewer"] as const;
+
+const ROLE_LABELS: Record<string, string> = {
+  operator: "Оператор",
+  risk_manager: "Риск-менеджер",
+  compliance: "Комплаенс",
+  admin: "Администратор",
+  viewer: "Наблюдатель",
+};
+
+export function roleLabel(role: string | null | undefined): string {
+  return (role && ROLE_LABELS[role]) || "—";
+}
+
+// T23: действия журнала аудита (app/security/audit.py record_audit, action=…).
+export const AUDIT_ACTION_LABELS: Record<string, string> = {
+  login: "Вход",
+  login_failed: "Неудачный вход",
+  logout: "Выход",
+  view_application: "Просмотр заявки",
+  view_document: "Просмотр фото документа",
+  view_credit_report: "Просмотр кредитного отчёта",
+  lift_freeze: "Снятие заморозки",
+  mark_false_positive: "Разбор совпадения с перечнем",
+  manage_employee: "Изменение сотрудника",
+  manage_reference: "Изменение справочника",
+  retry_check: "Повтор проверки",
+  change_ruleset: "Изменение правил",
+  fssp_search_started: "ФССП: запрос капчи",
+  fssp_code_submitted: "ФССП: ввод кода",
+  import_data: "Импорт файла",
+  link_contract: "Привязка договора к заявке",
+};
+
+export function auditActionLabel(action: string): string {
+  return AUDIT_ACTION_LABELS[action] ?? action;
+}
+
+const AUDIT_OBJECT_LABELS: Record<string, string> = {
+  application: "заявка",
+  employee: "сотрудник",
+  decision: "решение",
+  client: "клиент",
+  ruleset_version: "версия правил",
+  goods_category: "категория товара",
+  blacklist: "чёрный список",
+  document: "документ",
+  import_batch: "пакет импорта",
+  check: "проверка",
+  contract: "договор",
+};
+
+export function auditObjectLabel(objectType: string | null | undefined): string {
+  return (objectType && AUDIT_OBJECT_LABELS[objectType]) || objectType || "—";
+}
+
+const COMPLIANCE_VERDICT_LABELS: Record<string, string> = {
+  false_positive: "ложное совпадение",
+  confirmed: "совпадение подтверждено",
+};
+
+export function complianceVerdictLabel(verdict: string | null | undefined): string {
+  return (verdict && COMPLIANCE_VERDICT_LABELS[verdict]) || "не разобрано";
+}

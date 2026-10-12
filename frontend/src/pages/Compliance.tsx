@@ -2,13 +2,17 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { EmptyState, ErrorState, LoadingState, PageHeader, SearchInput, Segmented, Toolbar, matches } from "../components/ui";
 import { formatDateTime } from "../lib/format";
+import { complianceVerdictLabel, reasonCodeLabel } from "../lib/labels";
 
 export function CompliancePage() {
   const queryClient = useQueryClient();
   const [openReasonFor, setOpenReasonFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [freezeFilter, setFreezeFilter] = useState<"" | "frozen">("");
 
   const query = useQuery({
     queryKey: ["compliance-matches"],
@@ -54,67 +58,106 @@ export function CompliancePage() {
     liftFreezeMutation.mutate({ clientId, decisionId, reason });
   }
 
-  if (query.isLoading) return <p className="muted">Загрузка…</p>;
-  if (query.isError || !query.data) return <p role="alert" className="alert">Не удалось загрузить совпадения.</p>;
+  // Замороженные — сверху: это очередь работы; снятые остаются ниже для истории.
+  const items = (query.data?.items ?? [])
+    .filter(
+      (m) =>
+        matches(search, m.external_id, m.client_name) && (freezeFilter === "" || m.freeze_active),
+    )
+    .sort((a, b) => Number(b.freeze_active) - Number(a.freeze_active));
+  const frozenCount = (query.data?.items ?? []).filter((m) => m.freeze_active).length;
 
   return (
     <section>
-      <h1>Комплаенс — совпадения по перечням</h1>
-      {query.data.items.length === 0 && <p className="muted">Совпадений с активной заморозкой нет.</p>}
-      {query.data.items.map((m) => (
-        <article key={m.decision_id} className="card">
-          <p>
-            <Link to={`/applications/${m.application_id}`}>{m.external_id}</Link> · {m.client_name ?? "—"} ·{" "}
-            <span className="muted">{formatDateTime(m.decided_at)}</span>
-          </p>
-          <p className="muted">
-            Причина: {m.reason_code ?? "—"} ·{" "}
-            <span className={`badge ${m.freeze_active ? "badge-danger" : "badge-neutral"}`}>
-              {m.freeze_active ? "заморожено" : "снято"}
-            </span>
-            {m.latest_review_verdict && ` · разбор: ${m.latest_review_verdict}`}
-          </p>
+      <PageHeader
+        title="Комплаенс"
+        description="Совпадения заявителей с перечнем Росфинмониторинга. Совпадение замораживает клиента: разберите его и, если это не он, снимите заморозку с указанием причины."
+      />
+      <Toolbar>
+        <SearchInput value={search} onChange={setSearch} placeholder="Номер заявки или ФИО" />
+        <Segmented
+          label="Заморозка"
+          value={freezeFilter}
+          onChange={setFreezeFilter}
+          options={[
+            { value: "", label: "Все", count: query.data?.items.length },
+            { value: "frozen", label: "Заморожено", count: frozenCount },
+          ]}
+        />
+      </Toolbar>
+      {query.isLoading && <LoadingState />}
+      {query.isError && <ErrorState message="Не удалось загрузить совпадения." onRetry={() => void query.refetch()} />}
+      {query.data && items.length === 0 && (
+        <EmptyState
+          title={freezeFilter === "frozen" ? "Активных заморозок нет" : "Совпадений нет"}
+          hint="Новые совпадения появятся здесь автоматически после стадии А."
+        />
+      )}
+      {items.length > 0 && (
+        <div className="match-list">
+          {items.map((m) => (
+            <article key={m.decision_id} className="match">
+              <div>
+                <div className="match__title">
+                  <Link to={`/applications/${m.application_id}`}>{m.external_id}</Link> · {m.client_name ?? "—"}
+                </div>
+                <div className="match__meta">
+                  {m.reason_code ? reasonCodeLabel(m.reason_code) : "—"} · {formatDateTime(m.decided_at)} ·{" "}
+                  <span className={`badge ${m.freeze_active ? "badge-danger" : "badge-neutral"}`}>
+                    {m.freeze_active ? "заморожено" : "снято"}
+                  </span>{" "}
+                  · разбор: {complianceVerdictLabel(m.latest_review_verdict)}
+                </div>
+              </div>
+              <div className="match__actions">
+                <button
+                  className="btn btn-small"
+                  disabled={reviewMutation.isPending}
+                  onClick={() => reviewMutation.mutate({ decisionId: m.decision_id, verdict: "false_positive" })}
+                >
+                  Пометить ложным
+                </button>
+                <button
+                  className="btn btn-small"
+                  disabled={reviewMutation.isPending}
+                  onClick={() => reviewMutation.mutate({ decisionId: m.decision_id, verdict: "confirmed" })}
+                >
+                  Подтвердить совпадение
+                </button>
+                {m.freeze_active && m.client_id && (
+                  <button className="btn btn-small btn-primary" onClick={() => setOpenReasonFor(m.decision_id)}>
+                    Снять заморозку
+                  </button>
+                )}
+              </div>
 
-          <div className="row stack">
-            <button
-              className="btn btn-small"
-              disabled={reviewMutation.isPending}
-              onClick={() => reviewMutation.mutate({ decisionId: m.decision_id, verdict: "false_positive" })}
-            >
-              Пометить ложным
-            </button>
-            <button
-              className="btn btn-small"
-              disabled={reviewMutation.isPending}
-              onClick={() => reviewMutation.mutate({ decisionId: m.decision_id, verdict: "confirmed" })}
-            >
-              Подтвердить совпадение
-            </button>
-            {m.freeze_active && m.client_id && (
-              <button className="btn btn-small" onClick={() => setOpenReasonFor(m.decision_id)}>
-                Снять заморозку
-              </button>
-            )}
-          </div>
-
-          {openReasonFor === m.decision_id && m.client_id && (
-            <div className="stack">
-              <label className="field">
-                Причина снятия (обязательна)
-                <input value={reason} onChange={(e) => setReason(e.target.value)} />
-              </label>
-              {reasonError && <p role="alert" className="alert">{reasonError}</p>}
-              <button
-                className="btn btn-primary btn-small stack"
-                disabled={liftFreezeMutation.isPending || !reason.trim()}
-                onClick={() => submitLiftFreeze(m.client_id!, m.decision_id)}
-              >
-                Подтвердить снятие
-              </button>
-            </div>
-          )}
-        </article>
-      ))}
+              {openReasonFor === m.decision_id && m.client_id && (
+                <div className="match__lift">
+                  <label className="field">
+                    Причина снятия (обязательна)
+                    <input value={reason} onChange={(e) => setReason(e.target.value)} />
+                  </label>
+                  <button
+                    className="btn btn-primary"
+                    disabled={liftFreezeMutation.isPending || !reason.trim()}
+                    onClick={() => submitLiftFreeze(m.client_id!, m.decision_id)}
+                  >
+                    Подтвердить снятие
+                  </button>
+                  <button className="btn" onClick={() => setOpenReasonFor(null)}>
+                    Отмена
+                  </button>
+                </div>
+              )}
+              {openReasonFor === m.decision_id && reasonError && (
+                <div className="match__lift">
+                  <ErrorState message={reasonError} />
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

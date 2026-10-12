@@ -55,6 +55,9 @@ test("пол, занятость, тариф, статус договора — 
   expect(employmentLabel("employed")).toBe("Работает по найму");
   expect(employmentLabel("some_unknown_code")).toBe("—");
   expect(tariffLabel("standard")).toBe("стандартный");
+  // T23: «Выгодный» в карточке выводился прочерком.
+  expect(tariffLabel("advantageous")).toBe("выгодный");
+  expect(tariffLabel("repeat_client")).toBe("постоянному клиенту");
   expect(contractStatusLabel("defaulted")).toBe("Дефолт");
 });
 

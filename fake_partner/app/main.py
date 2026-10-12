@@ -119,6 +119,7 @@ def _default_passport_fields(payload: TriggerNewApplicationRequest) -> dict:
         "issued_by": "УМВД России по тестовому региону",
         "department_code": "770-001",
         "registration_address": "г. Тестоград, ул. Примерная, д. 1, кв. 1",
+        **(payload.passport or {}),
     }
 
 
@@ -129,17 +130,12 @@ def _photo_ref(data: bytes, mode: str) -> dict:
     return {"base64": base64.b64encode(data).decode("ascii")}
 
 
-@app.post("/_test/trigger-new-application", dependencies=[Depends(require_service_account)])
-async def trigger_new_application(payload: TriggerNewApplicationRequest) -> dict:
-    """Имитирует заказчика: собирает тело POST .../api/v1/partner/applications
-    и сама его отправляет (ТЗ T18: «fake_partner шлёт нам»)."""
-    external_id = payload.external_id or f"WEB-{uuid.uuid4().hex[:10]}"
-    event_id = str(uuid.uuid4())
+def _build_new_application_body(payload: TriggerNewApplicationRequest) -> dict:
+    """Тело POST .../api/v1/partner/applications — как его собрал бы заказчик."""
     fields = _default_passport_fields(payload)
-
-    body = {
-        "external_id": external_id,
-        "event_id": event_id,
+    return {
+        "external_id": payload.external_id or f"WEB-{uuid.uuid4().hex[:10]}",
+        "event_id": str(uuid.uuid4()),
         "last_name": payload.last_name,
         "first_name": payload.first_name,
         "middle_name": payload.middle_name,
@@ -150,28 +146,12 @@ async def trigger_new_application(payload: TriggerNewApplicationRequest) -> dict
         },
     }
 
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(
-            f"{settings.dialog_api_base_url}/api/v1/partner/applications",
-            json=body, headers={"Authorization": f"Bearer {settings.dialog_api_token}"},
-        )
-    # Правило 14 CLAUDE.md — ответ проверяется явно, даже в тестовом хелпере.
-    if response.status_code != 202:
-        raise HTTPException(
-            status_code=502, detail=f"dialog-scoring отклонил заявку: {response.status_code} {response.text}"
-        )
-    return {"external_id": external_id, "event_id": event_id}
 
-
-@app.post("/_test/trigger-review/{external_id}", dependencies=[Depends(require_service_account)])
-async def trigger_review(external_id: str, payload: TriggerReviewRequest) -> dict:
-    """Имитирует оператора, нажавшего «Принять на рассмотрение» — собирает
-    тело POST .../api/v1/partner/review и сама его отправляет."""
-    event_id = str(uuid.uuid4())
-    body = {
+def _build_review_body(external_id: str, payload: TriggerReviewRequest) -> dict:
+    """Тело POST .../api/v1/partner/review — «Принять на рассмотрение»."""
+    return {
         "external_id": external_id,
-        "event_id": event_id,
+        "event_id": str(uuid.uuid4()),
         "status": payload.status,
         "deal": {
             "goods_category_code": payload.goods_category_code,
@@ -196,6 +176,53 @@ async def trigger_review(external_id: str, payload: TriggerReviewRequest) -> dic
         },
         "guarantor": payload.guarantor,
     }
+
+
+@app.post("/_test/compose-new-application", dependencies=[Depends(require_service_account)])
+def compose_new_application(payload: TriggerNewApplicationRequest) -> dict:
+    """T23: то же тело, что шлёт trigger-new-application, но БЕЗ отправки —
+    его доставляет сам вызывающий. Нужно демо-сиду (app.cli.seed_demo): он
+    доставляет вебхук в наш API в своём процессе под «виртуальными часами»
+    (заявки за прошедшие 60 дней), а сетевой POST отсюда пришёл бы с
+    сегодняшним временем."""
+    return {"body": _build_new_application_body(payload)}
+
+
+@app.post("/_test/compose-review/{external_id}", dependencies=[Depends(require_service_account)])
+def compose_review(external_id: str, payload: TriggerReviewRequest) -> dict:
+    """T23: тело trigger-review без отправки — см. compose_new_application.
+    bki_consent.at — время вызывающего не знает: сид подставляет своё."""
+    return {"body": _build_review_body(external_id, payload)}
+
+
+@app.post("/_test/trigger-new-application", dependencies=[Depends(require_service_account)])
+async def trigger_new_application(payload: TriggerNewApplicationRequest) -> dict:
+    """Имитирует заказчика: собирает тело POST .../api/v1/partner/applications
+    и сама его отправляет (ТЗ T18: «fake_partner шлёт нам»)."""
+    body = _build_new_application_body(payload)
+    external_id = body["external_id"]
+    event_id = body["event_id"]
+
+    settings = get_settings()
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.post(
+            f"{settings.dialog_api_base_url}/api/v1/partner/applications",
+            json=body, headers={"Authorization": f"Bearer {settings.dialog_api_token}"},
+        )
+    # Правило 14 CLAUDE.md — ответ проверяется явно, даже в тестовом хелпере.
+    if response.status_code != 202:
+        raise HTTPException(
+            status_code=502, detail=f"dialog-scoring отклонил заявку: {response.status_code} {response.text}"
+        )
+    return {"external_id": external_id, "event_id": event_id}
+
+
+@app.post("/_test/trigger-review/{external_id}", dependencies=[Depends(require_service_account)])
+async def trigger_review(external_id: str, payload: TriggerReviewRequest) -> dict:
+    """Имитирует оператора, нажавшего «Принять на рассмотрение» — собирает
+    тело POST .../api/v1/partner/review и сама его отправляет."""
+    body = _build_review_body(external_id, payload)
+    event_id = body["event_id"]
 
     settings = get_settings()
     async with httpx.AsyncClient(timeout=15.0) as client:

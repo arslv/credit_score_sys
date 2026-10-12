@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { components } from "../api/schema";
+import { ErrorState, LoadingState, PageHeader } from "../components/ui";
 import { healthProblems } from "../lib/health";
 
 type SystemStatus = components["schemas"]["SystemStatus"];
@@ -28,15 +29,28 @@ export function SystemStatusPage() {
     refetchInterval: 30_000,
   });
 
-  if (query.isLoading) return <p className="muted">Загрузка…</p>;
-  if (query.isError || !query.data) return <p role="alert" className="alert">Не удалось загрузить состояние системы.</p>;
+  const header = (
+    <PageHeader
+      title="Состояние системы"
+      description="Работает ли конвейер: источники, реестры, интеграция с заказчиком, зависшие заявки. Обновляется каждые 30 секунд."
+    />
+  );
+  if (query.isLoading) return <section>{header}<LoadingState /></section>;
+  if (query.isError || !query.data) {
+    return (
+      <section>
+        {header}
+        <ErrorState message="Не удалось загрузить состояние системы." onRetry={() => void query.refetch()} />
+      </section>
+    );
+  }
 
   const s: SystemStatus = query.data;
   const problems = healthProblems(s);
 
   return (
     <section>
-      <h1>Состояние системы</h1>
+      {header}
       <p
         className={problems.length > 0 ? "health-summary health-summary--bad" : "health-summary"}
         data-testid="health-summary"

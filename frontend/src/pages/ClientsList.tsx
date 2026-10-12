@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination } from "../components/ui";
 
 const PAGE_SIZE = 25;
 
@@ -21,18 +22,23 @@ export function ClientsListPage() {
 
   return (
     <section>
-      <h1>Клиенты</h1>
+      <PageHeader
+        title="Клиенты"
+        description="Один клиент — один человек по паспорту: все его заявки собраны вместе, повторный клиент виден сразу."
+      />
 
-      {query.isLoading && <p className="muted">Загрузка…</p>}
-      {query.isError && <p role="alert" className="alert">Не удалось загрузить список клиентов.</p>}
-      {query.data && query.data.items.length === 0 && <p className="muted">Клиентов нет.</p>}
+      {query.isLoading && <LoadingState />}
+      {query.isError && <ErrorState message="Не удалось загрузить список клиентов." onRetry={() => void query.refetch()} />}
+      {query.data && query.data.items.length === 0 && (
+        <EmptyState title="Клиентов пока нет" hint="Клиент появляется после распознавания паспорта по первой заявке." />
+      )}
 
       {query.data && query.data.items.length > 0 && (
-        <table className="table">
+        <table className="table table--list">
           <thead>
             <tr>
               <th>ФИО</th>
-              <th>Заявок</th>
+              <th className="num">Заявок</th>
             </tr>
           </thead>
           <tbody>
@@ -41,30 +47,14 @@ export function ClientsListPage() {
                 <td>
                   <Link to={`/clients/${item.id}`}>{item.name}</Link>
                 </td>
-                <td>{item.applications_count}</td>
+                <td className="num">{item.applications_count}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
 
-      {query.data && query.data.total > 0 && (
-        <div className="pagination">
-          <button className="btn btn-small" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            ← назад
-          </button>
-          <span>
-            Страница {query.data.page} из {Math.max(1, Math.ceil(query.data.total / query.data.page_size))}
-          </span>
-          <button
-            className="btn btn-small"
-            disabled={page * PAGE_SIZE >= query.data.total}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            вперёд →
-          </button>
-        </div>
-      )}
+      {query.data && <Pagination page={page} pageSize={PAGE_SIZE} total={query.data.total} onPage={setPage} />}
     </section>
   );
 }
