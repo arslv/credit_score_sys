@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { EmptyState, PageHeader, SearchInput, Toolbar, matches } from "../components/ui";
@@ -152,6 +152,19 @@ export function HelpPage() {
 
   const terms = GLOSSARY.filter((g) => matches(termQuery, g.term, g.text));
 
+  // Поиск стоит внизу страницы: при фильтрации список короче, страница
+  // уменьшалась, браузер подтягивал прокрутку — экран «прыгал». Держим
+  // высоту области терминов равной полному списку (меряем без фильтра).
+  const termsRef = useRef<HTMLDivElement>(null);
+  const [termsMinHeight, setTermsMinHeight] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (termQuery || !termsRef.current) return;
+    const measure = () => termsRef.current && setTermsMinHeight(termsRef.current.offsetHeight);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [termQuery]);
+
   return (
     <section>
       <PageHeader
@@ -275,20 +288,22 @@ export function HelpPage() {
                 </span>
               )}
             </Toolbar>
-            {terms.length === 0 ? (
-              <EmptyState title="Такого термина нет" hint="Попробуйте другое слово — например, «ПДН» или «серая зона»." />
-            ) : (
-              <dl className="help-glossary-grid">
-                {terms.map((g) => (
-                  <div key={g.term}>
-                    <dt>{termQuery ? <Highlight text={g.term} query={termQuery} /> : g.term}</dt>
-                    <dd>
-                      <Highlight text={g.text} query={termQuery} />
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
+            <div ref={termsRef} style={{ minHeight: termQuery ? termsMinHeight : undefined }}>
+              {terms.length === 0 ? (
+                <EmptyState title="Такого термина нет" hint="Попробуйте другое слово — например, «ПДН» или «серая зона»." />
+              ) : (
+                <dl className="help-glossary-grid">
+                  {terms.map((g) => (
+                    <div key={g.term}>
+                      <dt>{termQuery ? <Highlight text={g.term} query={termQuery} /> : g.term}</dt>
+                      <dd>
+                        <Highlight text={g.text} query={termQuery} />
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
           </section>
         </div>
       </div>

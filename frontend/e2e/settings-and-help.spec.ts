@@ -72,7 +72,14 @@ test("справка: поиск по терминам и оглавление",
   const toc = page.getByRole("navigation", { name: "Оглавление справки" });
   await expect(toc.getByRole("link", { name: "Термины" })).toBeVisible();
 
-  await page.getByRole("searchbox", { name: "Найти термин" }).fill("ПДН");
+  // Поиск внизу страницы: при фильтрации экран не должен прыгать —
+  // поле остаётся на том же месте окна.
+  const search = page.getByRole("searchbox", { name: "Найти термин" });
+  await search.scrollIntoViewIfNeeded();
+  const before = (await search.boundingBox())!.y;
+  await search.fill("ПДН");
+  await page.waitForTimeout(100);
+  expect(Math.abs((await search.boundingBox())!.y - before)).toBeLessThan(2);
   await expect(page.getByText("Найдено:")).toBeVisible();
   await expect(page.getByText("Стоп-фактор", { exact: true })).toHaveCount(0);
 
