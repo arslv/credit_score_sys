@@ -5,6 +5,7 @@ import * as yaml from "js-yaml";
 import { api } from "../api/client";
 import { EmptyState, ErrorState, LoadingState, PageHeader } from "../components/ui";
 import { formatDateTime } from "../lib/format";
+import { reasonCodeLabel } from "../lib/labels";
 
 // Ответы этих эндпоинтов не типизированы в схеме (обычные dict, не Pydantic
 // response_model — не было смысла заводить отдельные схемы под каждый ответ
@@ -203,53 +204,166 @@ const SECTION_TITLES: Record<QuickField["section"], string> = {
   pti: "Долговая нагрузка (ПДН)",
 };
 
+function OutcomeWithReason({ outcome, reason }: { outcome: string; reason: string | null }) {
+  return (
+    <>
+      {outcomeLabel(outcome)}
+      {reason && <span className="cell-secondary">{reasonCodeLabel(reason)}</span>}
+    </>
+  );
+}
+
 function ApplicationRowView({ row }: { row: ApplicationRow }) {
   return (
     <tr>
-      <td>
+      <td className="cell-top">
         <Link to={`/applications/${row.application_id}`}>{row.external_id}</Link>
+        {row.client_name && <span className="cell-secondary">{row.client_name}</span>}
       </td>
-      <td>{row.client_name ?? "—"}</td>
-      <td>
-        {outcomeLabel(row.active_outcome)}
-        {row.active_reason_code && <span className="muted"> ({row.active_reason_code})</span>}
+      <td className="cell-top">
+        <OutcomeWithReason outcome={row.active_outcome} reason={row.active_reason_code} />
       </td>
-      <td>
-        {outcomeLabel(row.candidate_outcome)}
-        {row.candidate_reason_code && <span className="muted"> ({row.candidate_reason_code})</span>}
-      </td>
-      <td className="muted">
-        {row.actual_decision_outcome ? outcomeLabel(row.actual_decision_outcome) : "—"}
-        {row.actual_decision_reason_code && ` (${row.actual_decision_reason_code})`}
+      <td className="cell-top sim-arrow">→</td>
+      <td className="cell-top">
+        <OutcomeWithReason outcome={row.candidate_outcome} reason={row.candidate_reason_code} />
       </td>
     </tr>
   );
 }
 
-function ApplicationsTable({ title, rows, emptyText }: { title: string; rows: ApplicationRow[]; emptyText: string }) {
+function ApplicationsTable({ title, rows }: { title: string; rows: ApplicationRow[] }) {
   return (
-    <div className="stack">
-      <h3>{title}</h3>
-      {rows.length === 0 ? (
-        <p className="muted">{emptyText}</p>
-      ) : (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Заявка</th>
-              <th>Клиент</th>
-              <th>Сейчас</th>
-              <th>По новому конфигу</th>
-              <th>Фактическое решение (справочно)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <ApplicationRowView key={r.application_id} row={r} />
-            ))}
-          </tbody>
-        </table>
+    <div className="sim-block">
+      {title && (
+        <h3>
+          {title} <span className="muted">· {rows.length}</span>
+        </h3>
       )}
+      <table className="table table--compact">
+        <thead>
+          <tr>
+            <th>Заявка</th>
+            <th>Сейчас</th>
+            <th />
+            <th>По новым правилам</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <ApplicationRowView key={r.application_id} row={r} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// T23 (правка по скриншоту): сверху — главный вывод крупно и три показателя
+// карточками; списки заявок — только непустые; всё, что объясняет, ПОЧЕМУ
+// часть заявок не сравнивалась, — в свёрнутых «Подробностях». Данные те же.
+function SimulationResult({ simulation }: { simulation: SimulateResponse }) {
+  const s = simulation.summary;
+  const notCompared = s.unknown_after_stage_a_pass_total + s.insufficient_data_count;
+  const rateDelta =
+    s.approval_rate_active != null && s.approval_rate_candidate != null
+      ? s.approval_rate_candidate - s.approval_rate_active
+      : null;
+  const tone = s.changed_count === 0 ? "same" : s.swap_out.length > s.swap_in.length ? "down" : "up";
+  const defaults = s.defaultness_by_known_outcome;
+  const approvedBad = defaults.available
+    ? { active: defaults.by_active_outcome.approved, candidate: defaults.by_candidate_outcome.approved }
+    : null;
+
+  return (
+    <div className="sim">
+      <div className={`sim-headline sim-headline--${tone}`}>
+        <div className="sim-headline__value">
+          {s.changed_count === 0 ? "Без изменений" : `${s.changed_count} из ${s.known_denominator}`}
+        </div>
+        <div className="sim-headline__label">
+          {s.changed_count === 0
+            ? `ни одно из ${s.known_denominator} сравненных решений не поменяется`
+            : `${countWord(s.changed_count)} получили бы другое решение по новым правилам`}
+        </div>
+      </div>
+
+      <div className="kpi-row">
+        <div className="kpi">
+          <div className="kpi__label">Доля одобрений</div>
+          <div className="kpi__value">
+            {formatRate(s.approval_rate_active)} <span className="kpi__arrow">→</span>{" "}
+            {formatRate(s.approval_rate_candidate)}
+          </div>
+          <div className={`kpi__delta${rateDelta && rateDelta < 0 ? " kpi__delta--down" : rateDelta ? " kpi__delta--up" : ""}`}>
+            {rateDelta == null || Math.abs(rateDelta) < 0.0005
+              ? "не меняется"
+              : `${rateDelta > 0 ? "+" : "−"}${Math.abs(rateDelta * 100).toFixed(1)} п.п.`}
+          </div>
+        </div>
+        <div className="kpi">
+          <div className="kpi__label">Станут одобрены</div>
+          <div className="kpi__value">{s.swap_in.length}</div>
+          <div className="kpi__delta">{s.swap_in.length ? "см. список ниже" : "никто"}</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi__label">Перестанут одобряться</div>
+          <div className="kpi__value">{s.swap_out.length}</div>
+          <div className="kpi__delta">{s.swap_out.length ? "см. список ниже" : "никто"}</div>
+        </div>
+        {approvedBad && (approvedBad.active || approvedBad.candidate) && (
+          <div className="kpi">
+            <div className="kpi__label">Плохой исход у одобренных</div>
+            <div className="kpi__value">
+              {approvedBad.active ? formatRate(approvedBad.active.bad_rate) : "—"} <span className="kpi__arrow">→</span>{" "}
+              {approvedBad.candidate ? formatRate(approvedBad.candidate.bad_rate) : "—"}
+            </div>
+            <div className="kpi__delta">
+              по {approvedBad.active?.known ?? 0} зрелым договорам
+            </div>
+          </div>
+        )}
+      </div>
+
+      <p className="hint">
+        В выборке {s.sample_size_actual} {countWord(s.sample_size_actual)}, сравнили {s.known_denominator}
+        {notCompared > 0 && `, ещё ${notCompared} сравнить нельзя (см. подробности)`}. Результат действует до{" "}
+        {formatDateTime(simulation.expires_at)}.
+      </p>
+
+      {s.swap_in.length > 0 && <ApplicationsTable title="Станут одобрены" rows={s.swap_in} />}
+      {s.swap_out.length > 0 && <ApplicationsTable title="Перестанут одобряться" rows={s.swap_out} />}
+
+      <details className="disclosure">
+        <summary>Подробности: что не вошло в сравнение</summary>
+        <ul className="sim-notes">
+          <li>
+            Запрошено {s.sample_size_requested}, в выборке {s.sample_size_actual}{" "}
+            {countWord(s.sample_size_actual)}; обе версии дают известный исход у {s.known_denominator}.
+          </li>
+          {s.insufficient_data_count > 0 && (
+            <li>
+              {s.insufficient_data_count} {countWord(s.insufficient_data_count)} ещё ждут звонка оператора — до
+              стадии Б не дошли, рано сравнивать.
+            </li>
+          )}
+          {s.unknown_after_stage_a_pass_total > 0 && (
+            <li>
+              {s.unknown_after_stage_a_pass_total} {countWord(s.unknown_after_stage_a_pass_total)} по новым правилам
+              прошли бы стадию А, но в реальности отклонены на ней — дальнейшее решение предсказать нельзя.
+            </li>
+          )}
+          {s.not_computable.map((r) => (
+            <li key={r.rule_id}>
+              Правило «{r.rule_id}» нельзя посчитать для {r.count} {ofWord(r.count)}: в старых снимках нет нужного
+              признака (правило появилось позже). Это не значит, что оно бы не сработало.
+            </li>
+          ))}
+          {!defaults.available && <li>Плохие исходы: {defaults.note}</li>}
+        </ul>
+        {s.unknown_after_stage_a_pass.length > 0 && (
+          <ApplicationsTable title="Прошли бы стадию А" rows={s.unknown_after_stage_a_pass} />
+        )}
+      </details>
     </div>
   );
 }
@@ -531,134 +645,7 @@ export function RulesetsPage() {
               hint="Измените пороги слева и нажмите «Проверить на истории» — здесь появится, сколько решений поменяется."
             />
           )}
-          {simulation && (
-            <>
-              {(() => {
-                const s = simulation.summary;
-                const notCompared = s.unknown_after_stage_a_pass_total + s.insufficient_data_count;
-                return (
-                  <>
-                    <p className="muted">
-                      В выборке {s.sample_size_actual} {countWord(s.sample_size_actual)} из{" "}
-                      {s.sample_size_requested} запрошенных: для {s.known_denominator} {ofWord(s.known_denominator)}{" "}
-                      обе версии правил дают известный исход, они сравнивались; для {notCompared}{" "}
-                      {ofWord(notCompared)} сравнение невозможно (подробности ниже). Симуляция действует до{" "}
-                      {formatDateTime(simulation.expires_at)}.
-                    </p>
-                    <p className="stack">
-                      Новый конфиг одобрил бы{" "}
-                      {s.swap_in.length > 0 ? `ещё ${s.swap_in.length} ${countWord(s.swap_in.length)}` : "никого дополнительно"}
-                      {s.swap_out.length > 0 && `, и не одобрил бы ${s.swap_out.length} ${countWord(s.swap_out.length)}`}.
-                    </p>
-                    <table className="table table--kv">
-                      <tbody>
-                        <tr>
-                          <td>Решение изменилось бы</td>
-                          <td>
-                            {s.changed_count} {countWord(s.changed_count)} из {s.known_denominator} сравненных{" "}
-                            {ofWord(s.known_denominator)}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td>Доля одобрений сейчас</td>
-                          <td>{formatRate(s.approval_rate_active)}</td>
-                        </tr>
-                        <tr>
-                          <td>Доля одобрений по новому конфигу</td>
-                          <td>{formatRate(s.approval_rate_candidate)}</td>
-                        </tr>
-                        {!s.defaultness_by_known_outcome.available && (
-                          <tr>
-                            <td>Дефолтность по известным исходам</td>
-                            <td className="muted">{s.defaultness_by_known_outcome.note}</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-
-                    {s.defaultness_by_known_outcome.available && (
-                      <div className="stack">
-                        <h3>Дефолтность по известным исходам (зрелые договоры)</h3>
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th>Исход</th>
-                              <th>Сейчас</th>
-                              <th>По новому конфигу</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Array.from(
-                              new Set([
-                                ...Object.keys(s.defaultness_by_known_outcome.by_active_outcome),
-                                ...Object.keys(s.defaultness_by_known_outcome.by_candidate_outcome),
-                              ]),
-                            ).map((outcome) => {
-                              const a = s.defaultness_by_known_outcome.available
-                                ? s.defaultness_by_known_outcome.by_active_outcome[outcome]
-                                : undefined;
-                              const c = s.defaultness_by_known_outcome.available
-                                ? s.defaultness_by_known_outcome.by_candidate_outcome[outcome]
-                                : undefined;
-                              return (
-                                <tr key={outcome}>
-                                  <td>{outcomeLabel(outcome)}</td>
-                                  <td>{a ? `${formatRate(a.bad_rate)} (${a.bad} из ${a.known})` : "—"}</td>
-                                  <td>{c ? `${formatRate(c.bad_rate)} (${c.bad} из ${c.known})` : "—"}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    <ApplicationsTable title="Swap-in — теперь одобрили бы" rows={s.swap_in} emptyText="Нет заявок." />
-                    <ApplicationsTable
-                      title="Swap-out — теперь не одобрили бы"
-                      rows={s.swap_out}
-                      emptyText="Нет заявок."
-                    />
-
-                    <div className="stack">
-                      <h3>Прошла бы стадию А, дальше решение неизвестно</h3>
-                      <p className="muted">
-                        Для {s.unknown_after_stage_a_pass_total} {ofWord(s.unknown_after_stage_a_pass_total)} снимка
-                        стадии Б нет (в реальности отклонены на стадии А) — дальнейший исход по новому конфигу
-                        непредсказуем, не считается ни «изменилось», ни «не изменилось».
-                      </p>
-                      {s.unknown_after_stage_a_pass.length > 0 && (
-                        <ApplicationsTable title="" rows={s.unknown_after_stage_a_pass} emptyText="" />
-                      )}
-                    </div>
-
-                    {s.not_computable.length > 0 && (
-                      <div className="stack">
-                        <h3>Не вычислимо по старым снимкам</h3>
-                        <p className="hint">
-                          В старых снимках признаков нет нужного поля (например, правило появилось позже) — посчитать
-                          правило по ним нельзя. Это не значит, что оно бы не сработало.
-                        </p>
-                        <ul>
-                          {s.not_computable.map((r) => (
-                            <li key={r.rule_id}>
-                              Правило «{r.rule_id}» — для {r.count} {ofWord(r.count)} нет нужного признака в
-                              сохранённых снимках.
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    <p className="muted stack">
-                      Для {s.insufficient_data_count} {ofWord(s.insufficient_data_count)} обе версии правил ещё не
-                      дошли до стадии Б (заявка пока ждёт звонка оператора) — рано сравнивать.
-                    </p>
-                  </>
-                );
-              })()}
-            </>
-          )}
+          {simulation && <SimulationResult simulation={simulation} />}
         </div>
       </div>
 

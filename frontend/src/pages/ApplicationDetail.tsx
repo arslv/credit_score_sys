@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -152,6 +153,9 @@ export function ApplicationDetailPage() {
 
       <div className={`verdict ${decisionVerdictClass(latestDecision?.outcome)}`}>
         <div className="verdict-main">
+          <div className="verdict-kicker">
+            {latestDecision ? `Решение системы · стадия ${stageLabel(latestDecision.stage)}` : "Заявка в обработке"}
+          </div>
           <VerdictTitle
             title={latestDecision ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome) : "В обработке"}
             help={explanation?.help ?? null}
@@ -162,7 +166,6 @@ export function ApplicationDetailPage() {
             <span>{app.client_name ?? "Клиент скрыт"}</span>
             {app.term_months > 0 && <span>{formatAmount(app.requested_amount)} ₽ на {app.term_months} мес.</span>}
             <span>подана {formatDateTime(app.submitted_at)}</span>
-            {latestDecision && <span>стадия {stageLabel(latestDecision.stage)}</span>}
           </p>
         </div>
         {latestDecision?.score != null && (
@@ -172,7 +175,16 @@ export function ApplicationDetailPage() {
             </div>
             {latestDecision.score_auto_approve_above != null && latestDecision.score_auto_reject_below != null && (
               <>
-                <div className="score-scale">
+                {/* Зоны шкалы — отказ / серая / одобрение по порогам ЭТОГО решения. */}
+                <div
+                  className="score-scale"
+                  style={
+                    {
+                      "--reject-at": `${(Number(latestDecision.score_auto_reject_below) / 999) * 100}%`,
+                      "--approve-at": `${(Number(latestDecision.score_auto_approve_above) / 999) * 100}%`,
+                    } as React.CSSProperties
+                  }
+                >
                   <div
                     className="marker"
                     style={{

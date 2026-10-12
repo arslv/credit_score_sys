@@ -141,7 +141,12 @@ export function ApplicationsListPage() {
             onClick={() => selectView(key)}
           >
             {VIEW_LABELS[key]}
-            {counts && counts[key] != null && <span className="chip-count"> · {counts[key]}</span>}
+            {counts && counts[key] != null && (
+              <span className="chip-count">
+                <span className="sr-only"> · </span>
+                {counts[key]}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -243,7 +248,7 @@ export function ApplicationsListPage() {
                   <td className="num">{item.score != null ? Math.round(Number(item.score)) : ""}</td>
                 )}
                 {!hidden.has("action") && (
-                  <td>
+                  <td className="cell-wrap">
                     {item.action_text && (
                       <>
                         <span className={`action-dot action-dot--${item.action_kind}`} aria-hidden="true" />
