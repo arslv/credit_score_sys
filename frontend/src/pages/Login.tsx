@@ -1,12 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { ArrowRight, Eye, EyeOff, KeyRound, Lock, Mail, Scale, ShieldCheck, Zap } from "lucide-react";
+import { Icon } from "../components/icons";
 import { useAuth } from "../auth/AuthProvider";
+import { Logo } from "../components/Logo";
 import { ErrorState } from "../components/ui";
 
-// T23: экран входа — слева бренд (сетка на градиенте, тезисы и мини-карточка
-// решения как пример того, что внутри), справа форма в отдельной карточке:
-// крупные поля с иконками, показ символов пароля, крупная кнопка.
+// T23: экран входа — слева бренд (сетка на градиенте, три тезиса, пример
+// карточки решения), справа форма: крупные поля с иконками, показ символов
+// пароля, крупная кнопка. Иконки — Phosphor (components/icons), знак — свой SVG
+// (components/Logo).
 export function LoginPage() {
   const { employee, login } = useAuth();
   const location = useLocation();
@@ -33,70 +35,72 @@ export function LoginPage() {
   return (
     <main className="login">
       <aside className="login__brand" aria-hidden="true">
-        <div className="login__logo">
-          <span className="login__logo-mark">
-            <ShieldCheck size={18} strokeWidth={2.25} />
-          </span>
-          DIALOG Scoring
-        </div>
+        <Logo variant="light" />
 
         <div className="login__pitch">
-          <p className="login__eyebrow">Автоматические решения по рассрочке</p>
-          <p className="login__headline">Решение по заявке — за минуты, с понятной причиной</p>
+          <p className="login__headline">Решения по заявкам на рассрочку — быстро и с понятной причиной</p>
           <ul className="login__points">
             <li>
               <span className="login__point-icon">
-                <Zap size={15} />
+                <Icon name="Timer" weight="duotone" />
               </span>
-              Стадия А — сразу после подачи, без ожидания внешних сайтов
+              <span>
+                <strong>Решение за минуты.</strong> Паспорт и реестры проверяются сразу после подачи заявки.
+              </span>
             </li>
             <li>
               <span className="login__point-icon">
-                <Scale size={15} />
+                <Icon name="SealCheck" weight="duotone" />
               </span>
-              Правила и пороги — в версиях, каждое решение объяснимо
+              <span>
+                <strong>Каждое решение объяснено.</strong> Причина и пороги видны в карточке заявки.
+              </span>
             </li>
             <li>
               <span className="login__point-icon">
-                <Lock size={15} />
+                <Icon name="UserCircleGear" weight="duotone" />
               </span>
-              Персданные видят только те роли, которым они нужны
+              <span>
+                <strong>Доступ по ролям.</strong> Персональные данные видят только те, кому они нужны для работы.
+              </span>
             </li>
           </ul>
 
-          {/* Пример карточки решения — иллюстрация, не данные. */}
+          {/* Пример карточки решения — иллюстрация, не реальные данные. */}
           <div className="login__preview">
-            <div className="login__preview-head">
-              <span className="login__preview-dot" />
-              Решение системы · стадия Б
+            <div className="login__preview-top">
+              <span className="login__preview-badge">
+                <Icon name="SealCheck" weight="fill" size={14} /> Одобрено
+              </span>
+              <span className="login__preview-id">Заявка №1042</span>
             </div>
-            <div className="login__preview-title">Одобрено</div>
+            <div className="login__preview-score">
+              <span className="login__preview-number">788</span>
+              <span className="login__preview-unit">баллов БКИ</span>
+            </div>
             <div className="login__preview-scale">
               <span style={{ left: "79%" }} />
             </div>
             <div className="login__preview-meta">
-              <span>Балл БКИ 788</span>
               <span>ПДН 24%</span>
               <span>ФССП: чисто</span>
+              <span>65 500 ₽ · 12 мес.</span>
             </div>
           </div>
         </div>
 
-        <p className="login__foot">Исламская рассрочка · мурабаха</p>
+        <span />
       </aside>
 
       <section className="login__panel">
         <form className="login__card" onSubmit={handleSubmit}>
-          <div className="login__card-icon">
-            <KeyRound size={20} />
-          </div>
           <h1>Вход в админку</h1>
-          <p className="login__subtitle">Введите рабочий email и пароль. Учётную запись выдаёт администратор.</p>
+          <p className="login__subtitle">Введите рабочий email и пароль.</p>
 
           <label className="login__field">
             <span className="login__label">Email</span>
             <span className="login__input">
-              <Mail size={18} aria-hidden="true" />
+              <Icon name="EnvelopeSimple" weight="regular" />
               <input
                 type="email"
                 value={email}
@@ -112,14 +116,14 @@ export function LoginPage() {
           <label className="login__field">
             <span className="login__label">Пароль</span>
             <span className="login__input">
-              <Lock size={18} aria-hidden="true" />
+              <Icon name="LockSimple" weight="regular" />
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                placeholder="••••••••••••"
+                placeholder="Ваш пароль"
               />
               <button
                 type="button"
@@ -129,7 +133,7 @@ export function LoginPage() {
                 aria-label={showPassword ? "Скрыть символы" : "Показать символы"}
                 onClick={() => setShowPassword((v) => !v)}
               >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                {showPassword ? <Icon name="EyeSlash" weight="regular" /> : <Icon name="Eye" weight="regular" />}
               </button>
             </span>
           </label>
@@ -138,11 +142,13 @@ export function LoginPage() {
 
           <button type="submit" disabled={submitting} className="btn btn-primary login__submit">
             {submitting ? "Входим…" : "Войти"}
-            {!submitting && <ArrowRight size={18} />}
+            {!submitting && <Icon name="ArrowRight" weight="bold" size={18} />}
           </button>
 
+          <div className="login__divider" />
           <p className="login__hint">
-            <ShieldCheck size={14} aria-hidden="true" /> Все входы записываются в журнал аудита
+            <Icon name="ShieldCheck" weight="duotone" size={16} />
+            Нет доступа — обратитесь к администратору. Все входы записываются в журнал аудита.
           </p>
         </form>
       </section>

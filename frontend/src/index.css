@@ -1995,10 +1995,37 @@ mark {
 
 /* Вход: слева — бренд, справа — форма в карточке. */
 
+/* Знак + название (components/Logo.tsx) — в меню и на экране входа. */
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+}
+
+.logo svg {
+  flex-shrink: 0;
+}
+
+.logo__accent {
+  font-weight: var(--weight-medium);
+  opacity: 0.7;
+}
+
+.logo--light {
+  color: #ffffff;
+  font-size: 17px;
+}
+
+.sidebar-logo .logo {
+  font-size: var(--font-md);
+}
+
 .login {
   min-height: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   background: var(--color-bg);
 }
 
@@ -2012,9 +2039,9 @@ mark {
   overflow: hidden;
   color: #ffffff;
   background:
-    radial-gradient(circle at 85% 10%, rgba(255, 255, 255, 0.18), transparent 40%),
-    radial-gradient(circle at 10% 95%, rgba(124, 92, 255, 0.55), transparent 45%),
-    linear-gradient(150deg, #1a37c4 0%, #3a3fd8 45%, #6a46e0 100%);
+    radial-gradient(circle at 85% 8%, rgba(255, 255, 255, 0.16), transparent 40%),
+    radial-gradient(circle at 5% 100%, rgba(140, 100, 255, 0.5), transparent 45%),
+    linear-gradient(155deg, #1d3cd0 0%, #3b44dc 50%, #6447df 100%);
 }
 
 /* Тонкая сетка поверх градиента. */
@@ -2023,10 +2050,10 @@ mark {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
-  background-size: 40px 40px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.2));
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at 30% 50%, #000 30%, transparent 80%);
   pointer-events: none;
 }
 
@@ -2034,44 +2061,15 @@ mark {
   position: relative;
 }
 
-.login__logo {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  font-size: var(--font-lg);
-  font-weight: var(--weight-bold);
-  letter-spacing: -0.01em;
-}
-
-.login__logo-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-}
-
 .login__pitch {
-  max-width: 480px;
-}
-
-.login__eyebrow {
-  margin: 0 0 var(--space-3);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.72);
+  max-width: 500px;
 }
 
 .login__headline {
-  margin: 0 0 var(--space-5);
+  margin: 0 0 var(--space-6);
   font-size: 34px;
   font-weight: var(--weight-bold);
-  line-height: 1.15;
+  line-height: 1.18;
   letter-spacing: -0.025em;
 }
 
@@ -2081,15 +2079,21 @@ mark {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
   font-size: var(--font-md);
-  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .login__points li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
+}
+
+.login__points strong {
+  color: #ffffff;
+  font-weight: var(--weight-bold);
 }
 
 .login__point-icon {
@@ -2097,47 +2101,63 @@ mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 
-/* Мини-карточка решения — иллюстрация «что внутри». */
+/* Пример карточки решения — ровная, чёткая. */
 .login__preview {
-  max-width: 340px;
-  padding: var(--space-4);
+  max-width: 360px;
+  padding: var(--space-4) var(--space-4) var(--space-3);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
+  background: #ffffff;
   color: #1c2430;
-  box-shadow: 0 24px 48px rgba(10, 16, 60, 0.35);
-  transform: rotate(-1.5deg);
+  box-shadow: 0 24px 48px rgba(10, 16, 60, 0.32), 0 2px 6px rgba(10, 16, 60, 0.2);
 }
 
-.login__preview-head {
+.login__preview-top {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: 11px;
+  justify-content: space-between;
+}
+
+.login__preview-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: #ecfdf3;
+  color: #067647;
+  font-size: 12px;
   font-weight: var(--weight-bold);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+}
+
+.login__preview-id {
+  font-size: 12px;
   color: #667085;
 }
 
-.login__preview-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #12805c;
+.login__preview-score {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: var(--space-3) 0 var(--space-2);
 }
 
-.login__preview-title {
-  margin: var(--space-1) 0 var(--space-3);
-  font-size: 22px;
+.login__preview-number {
+  font-size: 28px;
   font-weight: var(--weight-bold);
-  color: #12805c;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.login__preview-unit {
+  font-size: 13px;
+  color: #667085;
 }
 
 .login__preview-scale {
@@ -2161,77 +2181,59 @@ mark {
 .login__preview-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 6px;
   margin-top: var(--space-3);
 }
 
 .login__preview-meta span {
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 999px;
   background: #f2f4f7;
   font-size: 12px;
   color: #344054;
 }
 
-.login__foot {
-  margin: 0;
-  font-size: var(--font-sm);
-  color: rgba(255, 255, 255, 0.7);
-}
-
-/* Правая часть: мягкий фон, форма — заметная карточка. */
+/* Правая часть: мягкий фон, форма — карточка. */
 .login__panel {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-6) var(--space-5);
   background:
-    radial-gradient(circle at 50% 0%, var(--color-accent-soft), transparent 60%),
+    radial-gradient(circle at 50% 0%, rgba(47, 91, 255, 0.07), transparent 55%),
     var(--color-subtle);
 }
 
 .login__card {
   width: 100%;
-  max-width: 440px;
-  padding: var(--space-6) var(--space-6) var(--space-5);
+  max-width: 460px;
+  padding: 44px 44px 32px;
   border: var(--line);
-  border-radius: 16px;
+  border-radius: 20px;
   background: var(--color-surface);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 20px 48px rgba(16, 24, 40, 0.1);
-}
-
-.login__card-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  margin-bottom: var(--space-4);
-  border-radius: 12px;
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 24px 56px rgba(16, 24, 40, 0.1);
 }
 
 .login__card h1 {
   margin: 0;
-  font-size: 26px;
-  letter-spacing: -0.02em;
+  font-size: 28px;
+  letter-spacing: -0.025em;
 }
 
 .login__subtitle {
-  margin: var(--space-2) 0 var(--space-5);
-  font-size: var(--font-md);
+  margin: var(--space-2) 0 var(--space-6);
+  font-size: 15px;
   color: var(--color-text-muted);
 }
 
 .login__field {
   display: block;
-  margin-top: var(--space-4);
+  margin-top: 20px;
 }
 
 .login__label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   font-size: var(--font-sm);
   font-weight: var(--weight-bold);
   color: var(--color-text);
@@ -2240,14 +2242,18 @@ mark {
 .login__input {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  height: 48px;
-  padding: 0 var(--space-2) 0 var(--space-4);
-  border: 1.5px solid var(--color-border-strong);
-  border-radius: 10px;
+  gap: 12px;
+  height: 52px;
+  padding: 0 6px 0 16px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 12px;
   background: var(--color-surface);
   color: var(--color-text-muted);
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.login__input:hover {
+  border-color: var(--color-text-muted);
 }
 
 .login__input:focus-within {
@@ -2260,27 +2266,39 @@ mark {
   flex: 1;
   min-width: 0;
   height: 100%;
+  padding: 0;
   border: none;
   outline: none;
   background: transparent;
   font: inherit;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--color-text);
 }
 
 .login__input input::placeholder {
   color: var(--color-text-muted);
-  opacity: 0.7;
+  opacity: 0.6;
+}
+
+/* Автозаполнение Chrome красит фон самого input голубым — внутри рамки
+   поля получалась синяя полоса. Перекрываем фон цветом поля. */
+.login__input input:-webkit-autofill,
+.login__input input:-webkit-autofill:hover,
+.login__input input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--color-surface) inset;
+  -webkit-text-fill-color: var(--color-text);
+  caret-color: var(--color-text);
+  transition: background-color 9999s ease-out 0s;
 }
 
 .login__reveal {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border: none;
-  border-radius: 8px;
+  border-radius: 9px;
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -2297,22 +2315,47 @@ mark {
 
 .login__submit {
   width: 100%;
-  height: 48px;
-  margin-top: var(--space-5);
-  border-radius: 10px;
-  font-size: 15px;
+  height: 52px;
+  margin-top: 28px;
+  gap: 10px;
+  border-radius: 12px;
+  font-size: 16px;
   font-weight: var(--weight-bold);
-  box-shadow: 0 6px 16px rgba(41, 82, 227, 0.28);
+  background: linear-gradient(180deg, #3563ff 0%, #2952e3 100%);
+  border-color: #2952e3;
+  box-shadow: 0 8px 20px rgba(41, 82, 227, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+.login__submit:hover {
+  background: linear-gradient(180deg, #2f5bf5 0%, #1f3fc0 100%);
+  box-shadow: 0 10px 24px rgba(41, 82, 227, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.login__submit:active {
+  transform: translateY(1px);
+}
+
+.login__divider {
+  height: 1px;
+  margin: 28px 0 16px;
+  background: var(--color-border);
 }
 
 .login__hint {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: var(--space-4) 0 0;
-  font-size: var(--font-xs);
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--font-sm);
+  line-height: 1.45;
   color: var(--color-text-muted);
+}
+
+.login__hint svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--color-accent);
 }
 
 @media (max-width: 960px) {
@@ -2325,7 +2368,7 @@ mark {
   }
 
   .login__card {
-    padding: var(--space-5) var(--space-4);
+    padding: var(--space-6) var(--space-5);
   }
 }
 

@@ -1,0 +1,8 @@
+# Зависимости ставит сам образ (npm install) — хостовый node_modules в
+# контекст сборки не нужен: на Windows его передача занимала минуты.
+node_modules
+dist
+test-results
+playwright-report
+e2e/.seed.json
+e2e/.active-ruleset.json

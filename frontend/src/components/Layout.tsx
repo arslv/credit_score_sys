@@ -2,6 +2,7 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 import { BarChart3, Briefcase, ClipboardList, HelpCircle, Settings, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import { roleLabel } from "../lib/labels";
+import { Logo } from "./Logo";
 
 // T17, шаг 3 (навигация+роли): 5 разделов вместо плоского списка из 11
 // вкладок (ваш брифинг — «Пустых разделов, которые роль не может
@@ -98,7 +99,9 @@ export function Layout() {
   return (
     <div className="app-shell-v2">
       <nav className="sidebar">
-        <div className="sidebar-logo">DIALOG Scoring</div>
+        <div className="sidebar-logo">
+          <Logo />
+        </div>
         {visibleGroups.map((group) => {
           const Icon = group.icon;
           const isActive = group.key === activeGroup?.key;
