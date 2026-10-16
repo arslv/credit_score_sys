@@ -242,6 +242,92 @@ class DashboardConfig(BaseModel):
     source_unavailable_warn_threshold: float = Field(ge=0, le=1, default=0.05)
 
 
+# --- T23: рейтинг клиента («Рейтинг клиента.docx» от заказчика) -----------------
+# Экспертная скоркарта заказчика: баллы по возрасту, контактам, работе и
+# прописке складываются в одну сумму. ПОКА ИНФОРМАЦИОННО — показывается в
+# карточке заявки, на решение не влияет: пороги суммы (с какой одобрять /
+# отказывать) заказчик ещё не назвал (affects_decision — задел, сейчас false).
+
+
+class RatingAgeBand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    min: int = Field(ge=0)
+    max: int = Field(ge=0)
+    points: int
+    # Баллы, если поручитель есть («до 21: −500, с поручителем 0»).
+    points_with_guarantor: int | None = None
+    requires_guarantor: bool = False
+
+
+class RatingContactRule(BaseModel):
+    """Правило по контактам из анкеты. Применяется ПЕРВОЕ подошедшее по порядку."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    label: str
+    points: int
+    age_min: int | None = None
+    age_max: int | None = None
+    has_all: list[str] = Field(default_factory=list)  # все эти виды контактов есть
+    has_any: list[str] = Field(default_factory=list)  # хотя бы один есть
+    lacks: list[str] = Field(default_factory=list)  # ни одного из этих нет
+    only: list[str] = Field(default_factory=list)  # все контакты — только из этих видов
+
+
+class RatingWorkCategory(BaseModel):
+    """Категория работы. Первая подошедшая по порядку: по словам в месте
+    работы/должности (начало слова) или по типу занятости из анкеты."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    label: str
+    points: int
+    keywords: list[str] = Field(default_factory=list)
+    employment_types: list[str] = Field(default_factory=list)
+
+
+class RatingPlaceGroup(BaseModel):
+    """Группа мест прописки (города/районы/сёла). Совпадение — целым словом или
+    фразой в адресе регистрации из паспорта. Первая подошедшая по порядку."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    points: int | None = None  # None — у группы нет баллов (отказная прописка)
+    places: list[str] = Field(min_length=1)
+    requires_guarantor: bool = False
+    refused: bool = False
+
+
+class RatingGuarantorProductRule(BaseModel):
+    """Автозапрос поручителя по товару: категория + сумма + возраст."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    goods_category_codes: list[str] = Field(min_length=1)
+    financed_amount_min: Decimal
+    age_max: int
+
+
+class ClientRatingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    affects_decision: bool = False
+    age_bands: list[RatingAgeBand] = Field(min_length=1)
+    contact_relations: dict[str, str] = Field(default_factory=dict)  # код -> подпись
+    contact_rules: list[RatingContactRule] = Field(default_factory=list)
+    work_categories: list[RatingWorkCategory] = Field(default_factory=list)
+    registration_groups: list[RatingPlaceGroup] = Field(default_factory=list)
+    guarantor_product_rules: list[RatingGuarantorProductRule] = Field(default_factory=list)
+    # Критерии из документа заказчика, которые ещё не считаются (ждут уточнений) —
+    # только подписи для карточки, чтобы сумма не выглядела полной.
+    not_yet_counted: list[str] = Field(default_factory=list)
+
+
 class RulesetConfig(BaseModel):
     """Полная схема YAML-конфига правил (ТЗ, «Конфиг правил и пороги»)."""
 
@@ -270,6 +356,9 @@ class RulesetConfig(BaseModel):
     # (app/engine/stage_b_pipeline.py). По умолчанию true — выключить можно
     # явно новой версией конфига, не кодом (правило 2 CLAUDE.md).
     fssp_required_for_approval: bool = True
+    # T23: рейтинг клиента — информационно, см. ClientRatingConfig. Необязателен:
+    # версии правил до T23 его не содержат.
+    client_rating: ClientRatingConfig | None = None
 
 
 def parse_ruleset(raw: dict[str, Any]) -> RulesetConfig:

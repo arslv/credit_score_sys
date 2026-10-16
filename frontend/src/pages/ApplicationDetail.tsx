@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
+import { ClientRatingPanel } from "../components/ClientRating";
 import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
@@ -249,6 +250,8 @@ export function ApplicationDetailPage() {
             )}
           </section>
         )}
+
+      {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
 
       {(clientBlock.length > 0 || dealBlock.length > 0) && (
         <div className="section-columns">

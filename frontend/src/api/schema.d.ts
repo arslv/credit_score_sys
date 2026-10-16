@@ -858,6 +858,7 @@ export interface components {
             guarantor_profile: {
                 [key: string]: unknown;
             } | null;
+            client_rating?: components["schemas"]["ClientRatingOut"] | null;
         };
         /** ApplicationListItem */
         ApplicationListItem: {
@@ -1085,6 +1086,58 @@ export interface components {
             name: string;
             /** Applications Count */
             applications_count: number;
+        };
+        /** ClientRatingItemOut */
+        ClientRatingItemOut: {
+            /** Criterion */
+            criterion: string;
+            /** Title */
+            title: string;
+            /** Value */
+            value: string | null;
+            /** Label */
+            label: string;
+            /** Points */
+            points: number | null;
+        };
+        /**
+         * ClientRatingOut
+         * @description T23: рейтинг клиента по скоркарте заказчика — информационно, на решение
+         *     не влияет (affects_decision=false), см. app/engine/client_rating.py.
+         */
+        ClientRatingOut: {
+            /** Total */
+            total: number;
+            /** Items */
+            items: components["schemas"]["ClientRatingItemOut"][];
+            /** Guarantor Reasons */
+            guarantor_reasons: components["schemas"]["GuarantorReasonOut"][];
+            /** Guarantor Present */
+            guarantor_present: boolean;
+            /** Not Yet Counted */
+            not_yet_counted: string[];
+            /** Affects Decision */
+            affects_decision: boolean;
+            /** Ruleset Version */
+            ruleset_version: number;
+        };
+        /**
+         * ContactIn
+         * @description T23: контактное лицо из анкеты (ТЗ, «Анкета» → «Контакты»). relation —
+         *     кем приходится: parent | sibling | relative | spouse | friend | colleague |
+         *     other (подписи — client_rating.contact_relations в правилах); нужен для
+         *     рейтинга клиента («дал номера родителей», «только друзья»).
+         */
+        ContactIn: {
+            /** Name */
+            name?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /**
+             * Relation
+             * @default other
+             */
+            relation: string;
         };
         /** ContractDetail */
         ContractDetail: {
@@ -1486,6 +1539,13 @@ export interface components {
             /** Phone */
             phone?: string | null;
         };
+        /** GuarantorReasonOut */
+        GuarantorReasonOut: {
+            /** Reason */
+            reason: string;
+            /** Satisfied */
+            satisfied: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1811,6 +1871,8 @@ export interface components {
             };
             bki_consent: components["schemas"]["BkiConsentIn"];
             guarantor?: components["schemas"]["GuarantorIn"] | null;
+            /** Contacts */
+            contacts?: components["schemas"]["ContactIn"][];
         };
         /** RollbackRequest */
         RollbackRequest: {

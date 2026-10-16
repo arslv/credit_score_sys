@@ -55,6 +55,11 @@ class TriggerReviewRequest(BaseModel):
     monthly_payment: float | None = None
     send_monthly_payment: bool = True
     employment_type: str = "employed"
+    # T23: для рейтинга клиента — место работы, должность, контакты
+    # ([{"name", "phone", "relation": parent|sibling|relative|spouse|friend|colleague|other}]).
+    employer: str | None = None
+    position: str | None = None
+    contacts: list[dict[str, Any]] | None = None
     declared_monthly_income: float = 90000.0
     declared_monthly_obligations: float = 0.0
     bki_consent: bool = True

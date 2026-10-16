@@ -118,11 +118,12 @@
     "tariff": "standard",
     "monthly_payment": 4950
   },
-  "employment": { "type": "employed" },
+  "employment": { "type": "employed", "employer": "Школа № 12", "position": "учитель" },
   "income": { "declared_monthly": 90000 },
   "obligations": { "monthly_payment_total": 15000 },
   "bki_consent": { "given": true, "at": "2026-10-10T09:15:00+00:00" },
-  "guarantor": null
+  "guarantor": null,
+  "contacts": [{ "name": "Мама", "phone": "+79991234567", "relation": "parent" }]
 }
 ```
 
@@ -145,6 +146,8 @@
 | `bki_consent.given` | bool | да | Согласие клиента на запрос в БКИ. |
 | `bki_consent.at` | дата-время ISO 8601 | нет | Когда дано согласие. Если `given=true` и `at` не прислан — берём момент получения запроса. |
 | `guarantor` | объект или `null` | нет | Если есть поручитель: `last_name`, `first_name`, `middle_name`, `birth_date`, `passport_series`, `passport_number`, `issue_date`, `registration_address`, `phone` — все опциональны внутри объекта, но чем полнее, тем раньше пройдут проверки поручителя. |
+| `employment.employer`, `employment.position` | строки | нет | Место работы и должность — для рейтинга клиента (T23): «врач», «учитель», «МВД», «Сбер», «таксист» и т.п. Чем точнее, тем точнее рейтинг. |
+| `contacts` | массив | нет | Контактные лица: `name`, `phone`, `relation` — кем приходится: `parent` (родители), `sibling` (брат/сестра), `relative` (другие родственники), `spouse`, `friend`, `colleague`, `other`. Для рейтинга клиента (T23): «дал номера родителей», «только друзья». |
 
 Ответ: `202 {"status": "accepted"}`.
 

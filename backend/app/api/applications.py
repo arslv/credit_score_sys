@@ -19,7 +19,8 @@ from app.config import get_settings
 from app.db import get_session
 from app.engine.pipeline import _subject_from_ocr, unwrap_ocr_fields
 from app.engine.rules import resolve_matrix_overrides
-from app.engine.versions import load_config
+from app.engine.client_rating import compute_client_rating
+from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.status_mapping import _render_rule_text, build_operator_comment, get_all_reason_notes
 from app.models import (
     Application,
@@ -582,6 +583,34 @@ class ExternalSnapshotOut(BaseModel):
     received_at: datetime
 
 
+class ClientRatingItemOut(BaseModel):
+    criterion: str
+    title: str
+    # Что именно учтено (возраст, место работы, район прописки) — ПД, только
+    # ролям с полным доступом к карточке; остальным null (баллы видны всем).
+    value: str | None
+    label: str
+    points: int | None
+
+
+class GuarantorReasonOut(BaseModel):
+    reason: str
+    satisfied: bool
+
+
+class ClientRatingOut(BaseModel):
+    """T23: рейтинг клиента по скоркарте заказчика — информационно, на решение
+    не влияет (affects_decision=false), см. app/engine/client_rating.py."""
+
+    total: int
+    items: list[ClientRatingItemOut]
+    guarantor_reasons: list[GuarantorReasonOut]
+    guarantor_present: bool
+    not_yet_counted: list[str]
+    affects_decision: bool
+    ruleset_version: int
+
+
 class ApplicationDetail(BaseModel):
     id: UUID
     number: int
@@ -625,6 +654,73 @@ class ApplicationDetail(BaseModel):
     # однофамильца. Список заявок, клиенты, сотрудники/аудит/правила/импорт —
     # по-прежнему закрыты (_DETAIL_PII_ROLES используется только здесь).
     guarantor_profile: dict[str, Any] | None
+    # T23: None — в действующей версии правил нет раздела client_rating.
+    client_rating: ClientRatingOut | None = None
+
+
+async def _client_rating(session: AsyncSession, application: Application, *, full_pii: bool) -> ClientRatingOut | None:
+    """По ДЕЙСТВУЮЩЕЙ версии правил (рейтинг информационный и появился позже
+    большинства решений — по версии решения его часто было бы не посчитать)."""
+    ruleset_row = await get_active_ruleset_version(session)
+    if ruleset_row is None:
+        return None
+    try:
+        config = load_config(ruleset_row).client_rating
+    except ValidationError:
+        return None
+    if config is None:
+        return None
+
+    ocr_row = (
+        await session.execute(
+            select(OcrResult).where(OcrResult.application_id == application.id)
+            .order_by(OcrResult.created_at.desc()).limit(1)
+        )
+    ).scalars().first()
+    fields = unwrap_ocr_fields(ocr_row.fields) if ocr_row is not None else {}
+    birth_raw = (fields.get("birth_date") or {}).get("value")
+    try:
+        birth_date = date.fromisoformat(birth_raw) if birth_raw else None
+    except ValueError:
+        birth_date = None
+    address = (fields.get("registration_address") or {}).get("value")
+
+    snapshot = (
+        await session.execute(
+            select(ExternalSnapshot)
+            .where(ExternalSnapshot.application_id == application.id, ExternalSnapshot.stage == "B")
+            .order_by(ExternalSnapshot.received_at.desc()).limit(1)
+        )
+    ).scalars().first()
+    stage_b = (snapshot.payload_raw or {}).get("stage_b") if snapshot is not None else None
+    as_of = (snapshot.received_at if snapshot is not None else application.submitted_at).date()
+
+    rating = compute_client_rating(
+        config, birth_date=birth_date, as_of=as_of, registration_address=address, stage_b=stage_b,
+        financed_amount=application.requested_amount if stage_b else None,
+    )
+    return ClientRatingOut(
+        total=rating.total,
+        items=[
+            ClientRatingItemOut(
+                criterion=i.criterion, title=i.title, value=i.value if full_pii else None,
+                label=i.label, points=i.points,
+            )
+            for i in rating.items
+        ],
+        guarantor_reasons=[
+            GuarantorReasonOut(
+                # Причина называет возраст/село — ПД; без доступа — без подробностей.
+                reason=r.reason if full_pii else "условие заказчика для поручителя",
+                satisfied=r.satisfied,
+            )
+            for r in rating.guarantor_reasons
+        ],
+        guarantor_present=rating.guarantor_present,
+        not_yet_counted=rating.not_yet_counted,
+        affects_decision=rating.affects_decision,
+        ruleset_version=ruleset_row.version,
+    )
 
 
 @router.get("/{application_id}", response_model=ApplicationDetail)
@@ -863,6 +959,7 @@ async def get_application(
         profile=profile,
         ocr_result=ocr_result,
         external_snapshots=external_snapshots,
+        client_rating=await _client_rating(session, application, full_pii=full_pii),
     )
 
 

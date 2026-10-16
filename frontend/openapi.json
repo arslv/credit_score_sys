@@ -2491,6 +2491,16 @@
               }
             ],
             "title": "Guarantor Profile"
+          },
+          "client_rating": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientRatingOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -3241,6 +3251,140 @@
           "applications_count"
         ],
         "title": "ClientListItem"
+      },
+      "ClientRatingItemOut": {
+        "properties": {
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "criterion",
+          "title",
+          "value",
+          "label",
+          "points"
+        ],
+        "title": "ClientRatingItemOut"
+      },
+      "ClientRatingOut": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClientRatingItemOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "guarantor_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/GuarantorReasonOut"
+            },
+            "type": "array",
+            "title": "Guarantor Reasons"
+          },
+          "guarantor_present": {
+            "type": "boolean",
+            "title": "Guarantor Present"
+          },
+          "not_yet_counted": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Not Yet Counted"
+          },
+          "affects_decision": {
+            "type": "boolean",
+            "title": "Affects Decision"
+          },
+          "ruleset_version": {
+            "type": "integer",
+            "title": "Ruleset Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "items",
+          "guarantor_reasons",
+          "guarantor_present",
+          "not_yet_counted",
+          "affects_decision",
+          "ruleset_version"
+        ],
+        "title": "ClientRatingOut",
+        "description": "T23: рейтинг клиента по скоркарте заказчика — информационно, на решение\nне влияет (affects_decision=false), см. app/engine/client_rating.py."
+      },
+      "ContactIn": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "relation": {
+            "type": "string",
+            "title": "Relation",
+            "default": "other"
+          }
+        },
+        "type": "object",
+        "title": "ContactIn",
+        "description": "T23: контактное лицо из анкеты (ТЗ, «Анкета» → «Контакты»). relation —\nкем приходится: parent | sibling | relative | spouse | friend | colleague |\nother (подписи — client_rating.contact_relations в правилах); нужен для\nрейтинга клиента («дал номера родителей», «только друзья»)."
       },
       "ContractDetail": {
         "properties": {
@@ -4502,6 +4646,24 @@
         "type": "object",
         "title": "GuarantorIn"
       },
+      "GuarantorReasonOut": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "satisfied": {
+            "type": "boolean",
+            "title": "Satisfied"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason",
+          "satisfied"
+        ],
+        "title": "GuarantorReasonOut"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -5402,6 +5564,13 @@
                 "type": "null"
               }
             ]
+          },
+          "contacts": {
+            "items": {
+              "$ref": "#/components/schemas/ContactIn"
+            },
+            "type": "array",
+            "title": "Contacts"
           }
         },
         "type": "object",

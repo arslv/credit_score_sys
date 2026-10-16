@@ -369,6 +369,7 @@ class DemoSeeder:
             "goods_name": deal.goods.name, "goods_price": float(deal.price),
             "down_payment": float(deal.down_payment), "term_months": deal.term_months, "tariff": deal.tariff,
             "monthly_payment": float(deal.monthly_payment), "employment_type": app.employment_type,
+            "employer": app.employer, "position": app.position, "contacts": app.contacts,
             "declared_monthly_income": float(app.declared_income),
             "declared_monthly_obligations": float(app.declared_obligations), "bki_consent": True,
             "guarantor": app.guarantor.guarantor_payload() if app.guarantor else None,

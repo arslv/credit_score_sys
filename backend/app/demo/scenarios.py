@@ -112,6 +112,24 @@ _CHEAP_GOODS = (
 _TERMS = (3, 6, 9, 10, 12, 12, 12, 18, 18, 24)
 _EMPLOYMENT = ("employed",) * 7 + ("self_employed",) * 2 + ("individual_entrepreneur", "pensioner")
 
+# T23: место работы и должность для рейтинга клиента — вымышленные
+# организации («Школа № 12», «ООО «Стройдом»»), по типу занятости.
+_JOBS = {
+    "employed": (
+        ("Школа № 12", "учитель"), ("Городская поликлиника № 3", "врач-терапевт"), ("ОМВД по району", "инспектор"),
+        ("Администрация района", "специалист"), ("Сбербанк, отделение", "менеджер"), ("РЖД, депо", "слесарь"),
+        ("Супермаркет «Ассорти»", "кассир"), ("ООО «Стройдом»", "строитель"), ("Кафе «Каспий»", "официант"),
+        ("ООО «Доставка 24»", "курьер"), ("ЧОП «Щит»", "охранник"), ("Салон красоты «Лотос»", "мастер"),
+    ),
+    "self_employed": (("Такси", "таксист"), ("—", "швея"), ("—", "кондитер на заказ")),
+    "individual_entrepreneur": (("ИП", "продажа стройматериалов"), ("ИП", "грузоперевозки, дальнобойщик")),
+    "pensioner": (("—", "пенсия"),),
+}
+_CONTACT_SETS = (
+    ("parent", "sibling"), ("parent",), ("sibling", "friend"), ("friend", "colleague"), ("relative",),
+    ("spouse", "parent"), ("friend",),
+)
+
 # --- план ----------------------------------------------------------------------------
 
 
@@ -140,6 +158,9 @@ class DemoApplication:
     # стадия Б (None — до /review дело не дошло)
     deal: Deal | None = None
     employment_type: str = "employed"
+    employer: str | None = None
+    position: str | None = None
+    contacts: list[dict] = field(default_factory=list)
     declared_income: Decimal = Decimal("0")
     declared_obligations: Decimal = Decimal("0")
     guarantor: Person | None = None
@@ -453,6 +474,14 @@ def _fill_stage_b(app: DemoApplication, rng: random.Random, people: PeopleFactor
     deal = _pick_deal(rng, kind)
     app.deal = deal
     app.employment_type = rng.choice(_EMPLOYMENT)
+    # Отдельный генератор: основная последовательность (доход, балл, ПДН) не
+    # сдвигается — исходы плана остаются прежними.
+    work_rng = random.Random(f"work-{app.index}")
+    app.employer, app.position = work_rng.choice(_JOBS[app.employment_type])
+    app.contacts = [
+        {"name": f"Контакт {i + 1}", "phone": f"+7999100{app.index:03d}{i}", "relation": relation}
+        for i, relation in enumerate(work_rng.choice(_CONTACT_SETS))
+    ]
     income, declared, active_total = _income_and_obligations(rng, kind, deal.monthly_payment)
     app.declared_income = income
     app.declared_obligations = declared

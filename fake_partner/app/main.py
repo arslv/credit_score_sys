@@ -167,7 +167,11 @@ def _build_review_body(external_id: str, payload: TriggerReviewRequest) -> dict:
                 else {}
             ),
         },
-        "employment": {"type": payload.employment_type},
+        "employment": {
+            "type": payload.employment_type,
+            **({"employer": payload.employer} if payload.employer else {}),
+            **({"position": payload.position} if payload.position else {}),
+        },
         "income": {"declared_monthly": payload.declared_monthly_income},
         "obligations": {"monthly_payment_total": payload.declared_monthly_obligations},
         "bki_consent": {
@@ -175,6 +179,7 @@ def _build_review_body(external_id: str, payload: TriggerReviewRequest) -> dict:
             "at": datetime.now(timezone.utc).isoformat() if payload.bki_consent else None,
         },
         "guarantor": payload.guarantor,
+        "contacts": payload.contacts or [],
     }
 
 

@@ -230,3 +230,18 @@ def test_compose_review_returns_same_body_as_trigger_without_sending(client, aut
         assert composed[key] == sent[key]
     assert composed["external_id"] == "DEMO-2"
     assert composed["deal"]["monthly_payment"] == 5000.0
+
+
+def test_review_body_carries_employer_position_and_contacts(client, auth_headers):
+    """T23: рейтинг клиента — место работы, должность и контакты в анкете."""
+    payload = {
+        "employer": "Школа № 12", "position": "учитель",
+        "contacts": [{"name": "Мама", "phone": "+79990001122", "relation": "parent"}],
+    }
+    with respx.mock:
+        response = client.post("/_test/compose-review/DEMO-3", json=payload, headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()["body"]
+    assert body["employment"] == {"type": "employed", "employer": "Школа № 12", "position": "учитель"}
+    assert body["contacts"] == payload["contacts"]
+    assert _review_body(client, auth_headers, {})["contacts"] == []

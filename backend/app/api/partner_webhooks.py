@@ -106,6 +106,17 @@ class GuarantorIn(BaseModel):
     phone: str | None = None
 
 
+class ContactIn(BaseModel):
+    """T23: контактное лицо из анкеты (ТЗ, «Анкета» → «Контакты»). relation —
+    кем приходится: parent | sibling | relative | spouse | friend | colleague |
+    other (подписи — client_rating.contact_relations в правилах); нужен для
+    рейтинга клиента («дал номера родителей», «только друзья»)."""
+
+    name: str | None = None
+    phone: str | None = None
+    relation: str = "other"
+
+
 class ReviewDealIn(BaseModel):
     goods_category_code: str | None = None
     goods_name: str | None = None
@@ -131,6 +142,9 @@ class ReviewIn(BaseModel):
     obligations: dict[str, Any] = Field(default_factory=dict)
     bki_consent: BkiConsentIn
     guarantor: GuarantorIn | None = None
+    # T23: контакты для рейтинга клиента; необязательны (старый формат тела
+    # без них по-прежнему принимается).
+    contacts: list[ContactIn] = Field(default_factory=list)
 
 
 # T21: фото — только JPEG или PNG. Проверяем и заголовок ответа (для url), и
@@ -366,6 +380,7 @@ async def receive_review(payload: ReviewIn, session: AsyncSession = Depends(get_
         "income": payload.income,
         "obligations": payload.obligations,
         "guarantor": payload.guarantor.model_dump(exclude_none=True) if payload.guarantor else None,
+        "contacts": [c.model_dump(exclude_none=True) for c in payload.contacts],
     }
     payload_raw = {"stage_b": stage_b_payload}
     session.add(
