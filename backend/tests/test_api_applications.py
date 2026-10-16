@@ -521,3 +521,20 @@ async def test_list_queues_are_per_role_and_sorted_by_waiting_time(
     today = (await admin_client.get("/api/applications", params={"view": "today", "page_size": 50})).json()
     assert {str(waiting_id), str(frozen_id)} <= ids(today)
     assert (await admin_client.get("/api/applications", params={"view": "bogus"})).status_code == 422
+
+
+def test_reason_context_drops_empty_values_and_trailing_zeros():
+    """T23: текст причины в карточке — с баллом и порогами решения, без
+    «None» и без «629.00» (раньше выходило «…порогом автоодобрения .»)."""
+    from decimal import Decimal
+
+    from app.api.applications import _reason_context
+    from app.integrations.status_mapping import build_operator_comment
+
+    context = _reason_context(
+        score=Decimal("629.00"), auto_approve_above=720.0, auto_reject_below=450.0, required_down_pay=None,
+    )
+    assert context == {"score": 629, "auto_approve_above": 720, "auto_reject_below": 450}
+    text = build_operator_comment(reason_code="SCORE_GRAY_ZONE", context=context)
+    assert "629" in text and "450" in text and "720" in text
+    assert " ." not in text

@@ -537,6 +537,19 @@ class DecisionOut(BaseModel):
     installment_payment_source: Literal["partner", "tariff"] | None
 
 
+def _reason_context(**values: Any) -> dict[str, Any]:
+    """Подстановки для текста причины: пустые не передаём (останется
+    плейсхолдер-заглушка, а не «None»), целые баллы/пороги — без «.00»."""
+    context: dict[str, Any] = {}
+    for key, value in values.items():
+        if value is None:
+            continue
+        if isinstance(value, (Decimal, float)) and value == int(value) and key != "required_down_pay":
+            value = int(value)
+        context[key] = value
+    return context
+
+
 class PassportCheckOut(BaseModel):
     """T23: одна проверка паспорта стадии А — видна и когда всё в порядке
     (раньше паспорт появлялся в карточке только при отказе). status: ok —
@@ -978,7 +991,15 @@ async def get_application(
                         pti_status = "no_credit_history"
         reason_text = None
         if d.outcome != "approve" and (d.triggered_rules or d.reason_code):
-            reason_text = build_operator_comment(reason_code=d.reason_code, triggered_rules=d.triggered_rules)
+            # T23: без контекста шаблоны вида «балл {score} между порогом {…}»
+            # выходили с пустыми местами («…порогом автоодобрения .»).
+            reason_text = build_operator_comment(
+                reason_code=d.reason_code, triggered_rules=d.triggered_rules,
+                context=_reason_context(
+                    score=d.score, auto_approve_above=approve_above, auto_reject_below=reject_below,
+                    required_down_pay=d.required_down_pay,
+                ),
+            )
         decisions_out.append(
             DecisionOut(
                 id=d.id, stage=d.stage, outcome=d.outcome, reason_code=d.reason_code, freeze=d.freeze,

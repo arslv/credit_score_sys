@@ -5,12 +5,13 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
+from app.importers.blacklist import BlacklistImportError, import_blacklist_csv_report
 from app.models import Blacklist, Employee, GoodsCategory, ReasonCode
 from app.security.audit import record_audit
 from app.security.deps import require_roles
@@ -170,6 +171,37 @@ async def list_blacklist(
         ],
         total=total, page=params.page, page_size=params.page_size,
     )
+
+
+class BlacklistImportOut(BaseModel):
+    imported: int
+    skipped: int
+
+
+@router.post("/blacklist/import", response_model=BlacklistImportOut)
+async def import_blacklist(
+    request: Request,
+    file: UploadFile = File(...),
+    employee: Employee = Depends(require_roles(*_VIEW_ROLES)),
+    session: AsyncSession = Depends(get_session),
+) -> BlacklistImportOut:
+    """T23: загрузка чёрного списка файлом (CSV). Формат предварительный —
+    уточняется с заказчиком (app/importers/blacklist.py). Ошибка в строке —
+    400 с номером строки, ничего не добавляется."""
+    raw = await file.read()
+    try:
+        result = await import_blacklist_csv_report(session, raw, added_by=employee.id)
+    except BlacklistImportError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await record_audit(
+        session, employee_id=employee.id, action="import_data", object_type="blacklist", request=request,
+        details={
+            "kind": "blacklist", "filename": file.filename,
+            "imported": result.imported, "skipped": result.skipped,
+        },
+    )
+    await session.commit()
+    return BlacklistImportOut(imported=result.imported, skipped=result.skipped)
 
 
 @router.post("/blacklist", response_model=BlacklistOut, status_code=status.HTTP_201_CREATED)

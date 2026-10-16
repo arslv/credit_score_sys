@@ -211,8 +211,8 @@ const REASON_CODE_LABELS: Record<string, string> = {
   RISK_TARIFF_DOWN_PAYMENT_REQUIRED: "Требуется больший первый взнос",
   // Ручной итог оператора (app/integrations/adapter.py) — пишется, когда оператор
   // в системе заказчика сменил решение нашего сервиса.
-  PARTNER_OPERATOR_OVERRIDE_APPROVE: "Оператор одобрил вручную",
-  PARTNER_OPERATOR_OVERRIDE_REJECT: "Оператор отказал вручную",
+  PARTNER_OPERATOR_OVERRIDE_APPROVE: "Оператор заказчика одобрил заявку вручную",
+  PARTNER_OPERATOR_OVERRIDE_REJECT: "Оператор заказчика отказал вручную",
 };
 
 export function reasonCodeLabel(reasonCode: string): string {
@@ -228,6 +228,23 @@ export function decisionOutcomeLabel(stage: string | null | undefined, outcome: 
   if (outcome === "reject") return "Отказ";
   if (outcome === "manual_review") return stage === "A" ? "Передано оператору" : "Серая зона";
   return outcome;
+}
+
+// T23: статусы заявки в системе заказчика (config/status_mapping.yaml:
+// new | on_call | on_review | rejected | manual_decision | approved). В
+// manual_overrides из/в пишутся именно они, когда оператор сменил статус у себя.
+const PARTNER_STATUS_LABELS: Record<string, string> = {
+  new: "Новая",
+  on_call: "Передано оператору на звонок",
+  on_review: "На рассмотрении",
+  rejected: "Отказ",
+  manual_decision: "Серая зона — решение за оператором",
+  approved: "Одобрено",
+};
+
+// Исход в записи о решении оператора: статус заказчика или наш исход решения.
+export function overrideOutcomeLabel(stage: string | null | undefined, value: string): string {
+  return PARTNER_STATUS_LABELS[value] ?? decisionOutcomeLabel(stage, value);
 }
 
 // Стадии — кириллицей, как в ТЗ («стадия А», «стадия Б»), не латиницей из кода.

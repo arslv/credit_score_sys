@@ -304,6 +304,7 @@ function BlacklistSection() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const query = useQuery({
     queryKey: ["blacklist"],
@@ -322,6 +323,9 @@ function BlacklistSection() {
       <Toolbar>
         <SearchInput value={search} onChange={setSearch} placeholder="Фамилия, имя или причина" />
         <span className="toolbar__spacer" />
+        <button className="btn" onClick={() => setImporting(true)}>
+          Загрузить из файла
+        </button>
         <button className="btn btn-primary" onClick={() => setCreating(true)}>
           Добавить в список
         </button>
@@ -369,6 +373,11 @@ function BlacklistSection() {
           </tbody>
         </table>
       )}
+      <BlacklistImportModal
+        open={importing}
+        onClose={() => setImporting(false)}
+        onImported={() => void queryClient.invalidateQueries({ queryKey: ["blacklist"] })}
+      />
       <BlacklistModal
         open={creating}
         onClose={() => setCreating(false)}
@@ -378,6 +387,123 @@ function BlacklistSection() {
         }}
       />
     </>
+  );
+}
+
+// T23: загрузка чёрного списка файлом. Формат предварительный (уточняется с
+// заказчиком) — app/importers/blacklist.py: CSV, первая строка — названия колонок.
+const BLACKLIST_COLUMNS = [
+  "last_name", "first_name", "middle_name", "birth_date", "passport_series", "passport_number", "phone", "reason",
+];
+
+function downloadBlacklistTemplate() {
+  const csv = `${BLACKLIST_COLUMNS.join(";")}\nИванов;Иван;Иванович;01.02.1985;8201;123456;+79990000000;Причина\n`;
+  const url = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "blacklist-template.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function BlacklistImportModal({
+  open,
+  onClose,
+  onImported,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+
+  function close() {
+    setFile(null);
+    setError(null);
+    setResult(null);
+    onClose();
+  }
+
+  async function upload() {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch("/api/references/blacklist/import", {
+        method: "POST",
+        body: form,
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
+      const body = await response.json().catch(() => ({ detail: response.statusText }));
+      if (!response.ok) {
+        setError(typeof body.detail === "string" ? body.detail : "не удалось загрузить файл");
+        return;
+      }
+      setResult(body as { imported: number; skipped: number });
+      onImported();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="Загрузить чёрный список из файла"
+      open={open}
+      onClose={close}
+      footer={
+        <>
+          <button className="btn" onClick={close}>
+            {result ? "Готово" : "Отмена"}
+          </button>
+          {!result && (
+            <button className="btn btn-primary" disabled={!file || busy} onClick={() => void upload()}>
+              {busy ? "Загружаю…" : "Загрузить"}
+            </button>
+          )}
+        </>
+      }
+    >
+      <p className="muted">
+        Файл CSV, первая строка — названия колонок: {BLACKLIST_COLUMNS.join(", ")}. Обязательна только reason
+        (причина). Дата рождения — ДД.ММ.ГГГГ или ГГГГ-ММ-ДД. Строки, которые уже есть в списке, пропускаются.
+        Если в файле есть ошибка, не загружается ничего.
+      </p>
+      <p>
+        <button type="button" className="btn-link" onClick={downloadBlacklistTemplate}>
+          Скачать шаблон
+        </button>
+      </p>
+      <label className="field">
+        Файл
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          onChange={(e) => {
+            setFile(e.target.files?.[0] ?? null);
+            setError(null);
+            setResult(null);
+          }}
+        />
+      </label>
+      {error && (
+        <p className="manual-check__error" role="alert">
+          {error}
+        </p>
+      )}
+      {result && (
+        <p role="status">
+          Добавлено: <b>{result.imported}</b>
+          {result.skipped > 0 && <> · уже были в списке: {result.skipped}</>}
+        </p>
+      )}
+    </Modal>
   );
 }
 

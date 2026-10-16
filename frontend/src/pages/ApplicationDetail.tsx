@@ -23,6 +23,7 @@ import {
   decisionOutcomeLabel,
   documentKindLabel,
   humanizeFieldPath,
+  overrideOutcomeLabel,
   passportCheckLabel,
   passportCheckStatusLabel,
   reasonCodeLabel,
@@ -42,12 +43,37 @@ function decisionVerdictClass(outcome: string | undefined): string {
   return "verdict--pending";
 }
 
-// T23: заголовок зоны карточки — название и подсказка, что в ней.
-function ZoneHead({ title, hint }: { title: string; hint: string }) {
+// T23: заголовок зоны карточки.
+type ManualOverride = components["schemas"]["ManualOverrideOut"];
+
+// T23: оператор заказчика сменил статус у себя после решения системы — что
+// решила система, что поставил оператор и почему, обычными словами.
+function OperatorOverride({ override: o }: { override: ManualOverride }) {
+  const tone = o.reason_code === "PARTNER_OPERATOR_OVERRIDE_APPROVE" ? "approve" : "reject";
+  return (
+    <div className={`override override--${tone}`}>
+      <div className="override__head">
+        <span className="override__title">{reasonCodeLabel(o.reason_code)}</span>
+        <span className="override__date">{formatDateTime(o.created_at)}</span>
+      </div>
+      <dl className="override__rows">
+        <dt>Решение системы</dt>
+        <dd>{overrideOutcomeLabel(o.decision_stage, o.from_outcome)}</dd>
+        <dt>Итог оператора</dt>
+        <dd>
+          <b>{overrideOutcomeLabel(o.decision_stage, o.to_outcome)}</b>
+        </dd>
+        <dt>Причина</dt>
+        <dd>{o.comment ?? "оператор не указал"}</dd>
+      </dl>
+    </div>
+  );
+}
+
+function ZoneHead({ title }: { title: string }) {
   return (
     <div className="zone__head">
       <h2 className="zone__title">{title}</h2>
-      <span className="zone__hint">{hint}</span>
     </div>
   );
 }
@@ -283,7 +309,7 @@ export function ApplicationDetailPage() {
           анкета и документы. Зоны — div, не section: переход «К проверке …»
           подсвечивает ближайший section, то есть сам раздел, а не всю зону. */}
       <div className="zone zone--info">
-        <ZoneHead title="Решение" hint="Что решила система и почему" />
+        <ZoneHead title="Решение" />
         <div className={`verdict ${decisionVerdictClass(latestDecision?.outcome)}`}>
           <div className="verdict-main">
             <div className="verdict-kicker">
@@ -373,7 +399,6 @@ export function ApplicationDetailPage() {
               <header className="stage__head">
                 <div>
                   <div className="stage__name">Стадия А</div>
-                  <div className="stage__when">сразу после подачи · паспорт и реестры, без БКИ</div>
                 </div>
                 <StageOutcome decision={latestA} pending="в обработке" />
               </header>
@@ -395,25 +420,16 @@ export function ApplicationDetailPage() {
               <header className="stage__head">
                 <div>
                   <div className="stage__name">Стадия Б</div>
-                  <div className="stage__when">после звонка оператора · БКИ, долговая нагрузка, балл</div>
                 </div>
                 <StageOutcome
                   decision={latestB}
                   pending={rejectedAtA ? "не проводилась" : app.status === "stage_b" ? "идёт" : "ждёт звонка оператора"}
                 />
               </header>
-              {latestDecision?.stage === "B" && explanation ? (
-                <DecisionReasons explanation={explanation} />
-              ) : (
-                <p className="stage__reason muted">
-                  {rejectedAtA
-                    ? "Заявка отклонена на стадии А — до звонка и БКИ дело не дошло."
-                    : "Начнётся, когда оператор заказчика позвонит клиенту и нажмёт «Рассмотреть»."}
-                </p>
-              )}
+              {latestDecision?.stage === "B" && explanation && <DecisionReasons explanation={explanation} />}
               {decisionsB.length > 1 && (
                 <p className="stage__note">
-                  Стадию Б проходили {decisionsB.length} раза — показано последнее решение. Ранее:{" "}
+                  Ранее:{" "}
                   {decisionsB
                     .slice(0, -1)
                     .map((d) => `${decisionOutcomeLabel(d.stage, d.outcome)} (${formatDateTime(d.created_at)})`)
@@ -431,26 +447,17 @@ export function ApplicationDetailPage() {
 
         {app.manual_overrides.length > 0 && (
           <section className="section">
-            <h2>Итог оператора</h2>
-            <ul className="plain-list">
-              {app.manual_overrides.map((o) => (
-                <li key={o.id}>
-                  {decisionOutcomeLabel(o.decision_stage, o.from_outcome)} →{" "}
-                  {decisionOutcomeLabel(o.decision_stage, o.to_outcome)}{" "}
-                  <span className="muted">
-                    ({reasonCodeLabel(o.reason_code)})
-                    {o.comment && `: ${o.comment}`}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <h2>Решение оператора заказчика</h2>
+            {app.manual_overrides.map((o) => (
+              <OperatorOverride key={o.id} override={o} />
+            ))}
           </section>
         )}
 
       </div>
 
       <div className="zone zone--action">
-        <ZoneHead title="Нужно сделать" hint="Действия по заявке и ручные проверки" />
+        <ZoneHead title="Нужно сделать" />
         {/* T23: «Нужно сделать» — список дел по заявке с переходом к месту, где это делается. */}
         {actionItems.length > 0 ? (
           <ul className="todo-list">
@@ -525,7 +532,7 @@ export function ApplicationDetailPage() {
       </div>
 
       <div className="zone zone--data">
-        <ZoneHead title="Анкета и документы" hint="Данные клиента, все проверки, история" />
+        <ZoneHead title="Анкета и документы" />
         {(clientBlock.length > 0 || dealBlock.length > 0 || app.guarantor_profile) && (
           <section className="section">
             <h2>Клиент и сделка</h2>
@@ -569,7 +576,6 @@ export function ApplicationDetailPage() {
 
         <section className="section">
           <h2>Что проверили</h2>
-          <p className="muted">По стадиям — выше, в карточках стадий.</p>
           <details className="fold">
             <summary>Все проверки одной таблицей ({visibleChecks.length})</summary>
             <table className="table">
