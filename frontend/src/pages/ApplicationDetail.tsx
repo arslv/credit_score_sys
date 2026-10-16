@@ -3,6 +3,7 @@ import type React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
+import type { components } from "../api/schema";
 import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
 import { ClientRatingPanel } from "../components/ClientRating";
@@ -88,7 +89,6 @@ export function ApplicationDetailPage() {
   };
 
   const latestDecision = app.decisions.length > 0 ? app.decisions[app.decisions.length - 1] : null;
-  const earlierDecisions = app.decisions.length > 1 ? app.decisions.slice(0, -1) : [];
   const stageB = latestStageBPayload(app.external_snapshots);
 
   // «Нужно сделать» — только если что-то реально требуется. Стадия А «передано
@@ -145,6 +145,76 @@ export function ApplicationDetailPage() {
     installmentPayment: latestDecision?.installment_payment ?? null,
     installmentSource: latestDecision?.installment_payment_source ?? null,
   });
+
+  // T23 (правка по отзыву): стадии А и Б — отдельными карточками под шкалой
+  // «Путь заявки»; рейтинг клиента — цветной карточкой сразу под вердиктом;
+  // анкета, полная таблица проверок и история — по кнопке (<details>, содержимое
+  // остаётся в DOM — поиск по странице и тесты видят его и в свёрнутом виде).
+  const decisionsA = app.decisions.filter((d) => d.stage === "A");
+  const decisionsB = app.decisions.filter((d) => d.stage === "B");
+  const latestA = decisionsA.length > 0 ? decisionsA[decisionsA.length - 1] : null;
+  const latestB = decisionsB.length > 0 ? decisionsB[decisionsB.length - 1] : null;
+  const rejectedAtA = latestA?.outcome === "reject" && !latestB;
+  const reviewSnapshots = app.external_snapshots.filter((s) => s.stage === "B");
+  const reviewedAt = reviewSnapshots.length > 0 ? reviewSnapshots[reviewSnapshots.length - 1]!.received_at : null;
+  const callDone = Boolean(latestB) || reviewedAt != null;
+
+  const visibleChecks = app.checks.filter((c) => c.source !== "mvd");
+  const checksA = visibleChecks.filter((c) => c.subject_type !== "guarantor" && c.source !== "fssp");
+  const checksB = visibleChecks.filter((c) => c.subject_type === "guarantor" || c.source === "fssp");
+
+  const steps: { label: string; date: string | null; state: StepState }[] = [
+    { label: "Подача", date: app.submitted_at, state: "done" },
+    {
+      label: "Стадия А",
+      date: latestA?.created_at ?? null,
+      state: latestA ? (latestA.outcome === "reject" ? "bad" : "done") : "current",
+    },
+    {
+      label: "Звонок оператора",
+      date: reviewedAt,
+      state: callDone ? "done" : rejectedAtA ? "skipped" : latestA ? "current" : "pending",
+    },
+    {
+      label: "Стадия Б",
+      date: latestB?.created_at ?? null,
+      state: latestB
+        ? latestB.outcome === "approve" ? "done" : latestB.outcome === "reject" ? "bad" : "gray"
+        : app.status === "stage_b" ? "current" : rejectedAtA ? "skipped" : "pending",
+    },
+  ];
+
+  const applicantFssp = findLatestFsspCheck("applicant", null);
+  const guarantorNeeded = (app.client_rating?.guarantor_reasons.length ?? 0) > 0;
+  const facts: { label: string; value: string; hint?: string; tone?: Tone }[] = [
+    {
+      label: "ПДН",
+      value: latestB?.pti != null ? `${Math.round(latestB.pti * 100)}%` : "—",
+      hint: latestB?.pti != null && latestB.pti_max != null ? `порог отказа ${Math.round(latestB.pti_max * 100)}%` : "после стадии Б",
+      tone: latestB?.pti != null && latestB.pti_max != null ? (latestB.pti > latestB.pti_max ? "bad" : "ok") : undefined,
+    },
+    applicantFssp
+      ? {
+          label: "ФССП",
+          value: checkResultLabel("fssp", applicantFssp.status),
+          hint: formatDateTime(applicantFssp.started_at),
+          tone: applicantFssp.status === "hit" ? "bad" : "ok",
+        }
+      : rejectedAtA
+        ? { label: "ФССП", value: "не нужна", hint: "отказ на стадии А" }
+        : { label: "ФССП", value: "не проверено", hint: "без проверки одобрение недоступно", tone: "gray" },
+    {
+      label: "Поручитель",
+      value: app.has_guarantor ? "есть" : guarantorNeeded ? "нужен, нет" : "не нужен",
+      hint: guarantorNeeded ? "по условиям заказчика" : undefined,
+      tone: guarantorNeeded && !app.has_guarantor ? "bad" : app.has_guarantor ? "ok" : undefined,
+    },
+    {
+      label: "Сумма и срок",
+      value: app.term_months > 0 ? `${formatAmount(app.requested_amount)} ₽` : "—",
+      hint: app.term_months > 0 ? `на ${app.term_months} мес.` : "после «Рассмотреть»",
+    },
+  ];
 
   return (
     <section>
@@ -217,72 +287,91 @@ export function ApplicationDetailPage() {
         </div>
       ))}
 
-      {explanation &&
-        (explanation.causes.length > 0 || explanation.passed.length > 0 || explanation.unknown.length > 0) && (
-          <section className="section">
-            <h2>Почему такое решение</h2>
-            {explanation.causes.length > 0 && (
-              <>
-                <h3 className="subhead">Причина</h3>
-                <ul className="reason-list" data-testid="decision-causes">
-                  {explanation.causes.map((text) => (
-                    <li key={text} className="reason-item reason-item--cause">{text}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-            {explanation.passed.length > 0 && (
-              <>
-                <h3 className="subhead">В норме</h3>
-                <ul className="reason-list reason-list--minor" data-testid="decision-passed">
-                  {explanation.passed.map((text) => (
-                    <li key={text} className="reason-item reason-item--pass">{text}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-            {explanation.unknown.length > 0 && (
-              <ul className="reason-list reason-list--minor" data-testid="decision-unknown">
-                {explanation.unknown.map((text) => (
-                  <li key={text} className="reason-item">{text}</li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
+      <div className={app.client_rating ? "card-top" : "card-top card-top--facts-only"}>
+        {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
+        <ul className="facts">
+          {facts.map((f) => (
+            <li key={f.label} className={f.tone ? `fact fact--${f.tone}` : "fact"}>
+              <span className="fact__label">{f.label}</span>
+              <span className="fact__value">{f.value}</span>
+              {f.hint && <span className="fact__hint">{f.hint}</span>}
+            </li>
+          ))}
+        </ul>
+      </div>
 
-      {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
+      <section className="section">
+        <h2>Путь заявки</h2>
+        <ol className="stepper">
+          {steps.map((s, i) => (
+            <li key={s.label} className={`stepper__step stepper__step--${s.state}`}>
+              <span className="stepper__dot" aria-hidden="true">
+                {s.state === "done" ? "✓" : s.state === "bad" ? "✕" : s.state === "gray" ? "!" : i + 1}
+              </span>
+              <span className="stepper__text">
+                <span className="stepper__label">{s.label}</span>
+                <span className="stepper__date">
+                  {s.date ? formatDateTime(s.date) : STEP_STATE_TEXT[s.state]}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
 
-      {(clientBlock.length > 0 || dealBlock.length > 0) && (
-        <div className="section-columns">
-          {clientBlock.length > 0 && (
-            <section className="section">
-              <h2>Клиент</h2>
-              <KeyValue rows={clientBlock} />
-            </section>
-          )}
-          {dealBlock.length > 0 && (
-            <section className="section">
-              <h2>Сделка</h2>
-              <KeyValue rows={dealBlock} />
-            </section>
-          )}
+        <div className="stages">
+          <article className={`stage stage--${stageTone(latestA)}`}>
+            <header className="stage__head">
+              <div>
+                <div className="stage__name">Стадия А</div>
+                <div className="stage__when">сразу после подачи · паспорт и реестры, без БКИ</div>
+              </div>
+              <StageOutcome decision={latestA} pending="в обработке" />
+            </header>
+            {latestDecision?.stage === "A" && explanation ? (
+              <DecisionReasons explanation={explanation} />
+            ) : (
+              latestA?.reason_text && <p className="stage__reason">{latestA.reason_text}</p>
+            )}
+            <CheckList checks={checksA} canRetry={canRetry} retry={(checkId) => retryMutation.mutate(checkId)} busy={retryMutation.isPending} />
+          </article>
+
+          <article className={`stage stage--${latestB ? stageTone(latestB) : rejectedAtA ? "skipped" : "pending"}`}>
+            <header className="stage__head">
+              <div>
+                <div className="stage__name">Стадия Б</div>
+                <div className="stage__when">после звонка оператора · БКИ, долговая нагрузка, балл</div>
+              </div>
+              <StageOutcome
+                decision={latestB}
+                pending={rejectedAtA ? "не проводилась" : app.status === "stage_b" ? "идёт" : "ждёт звонка оператора"}
+              />
+            </header>
+            {latestDecision?.stage === "B" && explanation ? (
+              <DecisionReasons explanation={explanation} />
+            ) : (
+              <p className="stage__reason muted">
+                {rejectedAtA
+                  ? "Заявка отклонена на стадии А — до звонка и БКИ дело не дошло."
+                  : "Начнётся, когда оператор заказчика позвонит клиенту и нажмёт «Рассмотреть»."}
+              </p>
+            )}
+            {decisionsB.length > 1 && (
+              <p className="stage__note">
+                Стадию Б проходили {decisionsB.length} раза — показано последнее решение. Ранее:{" "}
+                {decisionsB
+                  .slice(0, -1)
+                  .map((d) => `${decisionOutcomeLabel(d.stage, d.outcome)} (${formatDateTime(d.created_at)})`)
+                  .join(", ")}
+                .
+              </p>
+            )}
+            {checksB.length > 0 && (
+              <CheckList checks={checksB} canRetry={canRetry} retry={(checkId) => retryMutation.mutate(checkId)} busy={retryMutation.isPending} />
+            )}
+          </article>
         </div>
-      )}
-
-      {earlierDecisions.length > 0 && (
-        <section className="section">
-          <h2>Предыдущие решения</h2>
-          <ul className="plain-list">
-            {earlierDecisions.map((d) => (
-              <li key={d.id} className="muted">
-                Стадия {stageLabel(d.stage)}: {decisionOutcomeLabel(d.stage, d.outcome)}
-                {d.freeze && " · заморожено"} — {formatDateTime(d.created_at)}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+        {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
+      </section>
 
       {app.manual_overrides.length > 0 && (
         <section className="section">
@@ -302,56 +391,33 @@ export function ApplicationDetailPage() {
         </section>
       )}
 
-      <section className="section">
-        <h2>Что проверили</h2>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Источник</th>
-              <th>Кто</th>
-              <th>Результат</th>
-              <th>Время</th>
-              <th>Ошибка</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {/* T17, шаг 3 (ваше явное указание): МВД не показываем — файл
-                недействительных паспортов отменён в 2023, источник по факту
-                не подключён, строка только вводила бы в заблуждение. */}
-            {app.checks.filter((c) => c.source !== "mvd").map((c) => (
-              <tr key={c.id}>
-                <td>
-                  <SourceBadge source={c.source} />
-                </td>
-                <td className="muted">{subjectTypeLabel(c.subject_type)}</td>
-                <td>{checkResultLabel(c.source, c.status)}</td>
-                <td className="muted">{formatDateTime(c.started_at)}</td>
-                <td className="muted">{c.error_text ?? "—"}</td>
-                <td>
-                  {c.can_retry && canRetry && (
-                    <button
-                      className="btn btn-small"
-                      disabled={retryMutation.isPending}
-                      onClick={() => retryMutation.mutate(c.id)}
-                    >
-                      Повторить
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
-        <p className="hint">
-          Федресурс (сведения о банкротстве) в автоматический конвейер не входит — проверьте вручную на{" "}
-          <a href="https://fedresurs.ru" target="_blank" rel="noreferrer">
-            fedresurs.ru
-          </a>
-          .
-        </p>
-      </section>
+      {(clientBlock.length > 0 || dealBlock.length > 0) && (
+        <section className="section">
+          <h2>Клиент и сделка</h2>
+          <p className="muted">
+            {[app.client_name ?? "Клиент скрыт", app.goods_name !== "—" ? app.goods_name : null, app.goods_category]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+          <details className="fold">
+            <summary>Показать анкету</summary>
+            <div className="section-columns">
+              {clientBlock.length > 0 && (
+                <div className="subsection">
+                  <h3 className="subhead">Клиент</h3>
+                  <KeyValue rows={clientBlock} />
+                </div>
+              )}
+              {dealBlock.length > 0 && (
+                <div className="subsection">
+                  <h3 className="subhead">Сделка</h3>
+                  <KeyValue rows={dealBlock} />
+                </div>
+              )}
+            </div>
+          </details>
+        </section>
+      )}
 
       <section className="section">
         <h2 id="fssp">ФССП</h2>
@@ -360,13 +426,13 @@ export function ApplicationDetailPage() {
           subjectType="applicant"
           subjectLabel="заявитель"
           subjectId={null}
-          latestCheck={findLatestFsspCheck("applicant", null)}
+          latestCheck={applicantFssp}
           canOperate={canOperateFssp}
           hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("applicant")}
         />
         {app.guarantor_profile && (
-          <div className="subsection">
-            <h3 className="subhead">Поручитель</h3>
+          <details className="fold">
+            <summary>Данные поручителя</summary>
             <KeyValue
               rows={Object.entries(app.guarantor_profile)
                 .filter(([, value]) => value != null && value !== "")
@@ -375,7 +441,7 @@ export function ApplicationDetailPage() {
                   value: field.endsWith("_date") ? formatDate(String(value)) : String(value),
                 }))}
             />
-          </div>
+          </details>
         )}
         {app.has_guarantor && app.guarantor_id && (
           <FsspPanel
@@ -391,6 +457,47 @@ export function ApplicationDetailPage() {
       </section>
 
       <section className="section">
+        <h2>Что проверили</h2>
+        <p className="muted">
+          По стадиям — выше, в карточках стадий. Федресурс (банкротство) в автоматический конвейер не входит —
+          проверьте вручную на{" "}
+          <a href="https://fedresurs.ru" target="_blank" rel="noreferrer">
+            fedresurs.ru
+          </a>
+          .
+        </p>
+        <details className="fold">
+          <summary>Все проверки одной таблицей ({visibleChecks.length})</summary>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Источник</th>
+                <th>Кто</th>
+                <th>Результат</th>
+                <th>Время</th>
+                <th>Ошибка</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* T17, шаг 3 (ваше явное указание): МВД не показываем — файл
+                  недействительных паспортов отменён в 2023. */}
+              {visibleChecks.map((c) => (
+                <tr key={c.id}>
+                  <td>
+                    <SourceBadge source={c.source} />
+                  </td>
+                  <td className="muted">{subjectTypeLabel(c.subject_type)}</td>
+                  <td>{checkResultLabel(c.source, c.status)}</td>
+                  <td className="muted">{formatDateTime(c.started_at)}</td>
+                  <td className="muted">{c.error_text ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      </section>
+
+      <section className="section">
         <h2>Документы</h2>
         {app.documents.length === 0 && <p className="muted">Документов нет.</p>}
         <ul className="plain-list">
@@ -399,8 +506,8 @@ export function ApplicationDetailPage() {
               <div className="row">
                 <span>{documentKindLabel(doc.kind)}</span>
                 <span className="muted">{formatDateTime(doc.uploaded_at)}</span>
-                <button className="btn btn-small" onClick={() => setOpenDocumentId(doc.id)}>
-                  Показать
+                <button className="btn btn-small" onClick={() => setOpenDocumentId(openDocumentId === doc.id ? null : doc.id)}>
+                  {openDocumentId === doc.id ? "Скрыть" : "Показать"}
                 </button>
               </div>
               {openDocumentId === doc.id && (
@@ -417,30 +524,33 @@ export function ApplicationDetailPage() {
 
       <section className="section">
         <h2>История</h2>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Из</th>
-              <th>В</th>
-              <th>Кто</th>
-              <th>Когда</th>
-            </tr>
-          </thead>
-          <tbody>
-            {app.status_history.map((h, i) => (
-              <tr key={i}>
-                <td>
-                  <Badge value={h.from_status} label={h.from_status ? applicationStatusLabel(h.from_status) : undefined} />
-                </td>
-                <td>
-                  <Badge value={h.to_status} label={applicationStatusLabel(h.to_status)} />
-                </td>
-                <td className="muted">{actorTypeLabel(h.actor_type)}</td>
-                <td className="muted">{formatDateTime(h.created_at)}</td>
+        <details className="fold">
+          <summary>Показать историю статусов ({app.status_history.length})</summary>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Из</th>
+                <th>В</th>
+                <th>Кто</th>
+                <th>Когда</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {app.status_history.map((h, i) => (
+                <tr key={i}>
+                  <td>
+                    <Badge value={h.from_status} label={h.from_status ? applicationStatusLabel(h.from_status) : undefined} />
+                  </td>
+                  <td>
+                    <Badge value={h.to_status} label={applicationStatusLabel(h.to_status)} />
+                  </td>
+                  <td className="muted">{actorTypeLabel(h.actor_type)}</td>
+                  <td className="muted">{formatDateTime(h.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
       </section>
 
       {/* Сырьё — не в основном виде (T17, часть 2): распознанные поля паспорта
@@ -483,6 +593,115 @@ export function ApplicationDetailPage() {
         <SnapshotHistory snapshots={app.external_snapshots} />
       </details>
     </section>
+  );
+}
+
+type Tone = "ok" | "bad" | "gray";
+type StepState = "done" | "bad" | "gray" | "current" | "pending" | "skipped";
+type Decision = components["schemas"]["DecisionOut"];
+type CheckRow = components["schemas"]["CheckOut"];
+
+const STEP_STATE_TEXT: Record<StepState, string> = {
+  done: "",
+  bad: "",
+  gray: "",
+  current: "сейчас",
+  pending: "ещё впереди",
+  skipped: "не понадобилась",
+};
+
+function stageTone(decision: Decision | null): string {
+  if (!decision) return "pending";
+  if (decision.outcome === "approve") return "ok";
+  if (decision.outcome === "reject") return "bad";
+  return decision.stage === "B" ? "gray" : "neutral";
+}
+
+function StageOutcome({ decision, pending }: { decision: Decision | null; pending: string }) {
+  if (!decision) return <span className="stage__outcome stage__outcome--pending">{pending}</span>;
+  return (
+    <span className={`stage__outcome stage__outcome--${stageTone(decision)}`}>
+      {decisionOutcomeLabel(decision.stage, decision.outcome)}
+      <span className="stage__outcome-date">{formatDateTime(decision.created_at)}</span>
+    </span>
+  );
+}
+
+function DecisionReasons({ explanation }: { explanation: NonNullable<ReturnType<typeof explainDecision>> }) {
+  if (explanation.causes.length === 0 && explanation.passed.length === 0 && explanation.unknown.length === 0) {
+    return null;
+  }
+  return (
+    <div className="stage__reasons">
+      {explanation.causes.length > 0 && (
+        <>
+          <h3 className="subhead">Причина</h3>
+          <ul className="reason-list" data-testid="decision-causes">
+            {explanation.causes.map((text) => (
+              <li key={text} className="reason-item reason-item--cause">{text}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {explanation.passed.length > 0 && (
+        <>
+          <h3 className="subhead">В норме</h3>
+          <ul className="reason-list reason-list--minor" data-testid="decision-passed">
+            {explanation.passed.map((text) => (
+              <li key={text} className="reason-item reason-item--pass">{text}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {explanation.unknown.length > 0 && (
+        <ul className="reason-list reason-list--minor" data-testid="decision-unknown">
+          {explanation.unknown.map((text) => (
+            <li key={text} className="reason-item">{text}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function checkTone(status: string): "ok" | "bad" | "warn" {
+  if (status === "hit") return "bad";
+  if (status === "source_unavailable" || status === "error") return "warn";
+  return "ok";
+}
+
+function CheckList({
+  checks,
+  canRetry,
+  retry,
+  busy,
+}: {
+  checks: CheckRow[];
+  canRetry: boolean;
+  retry: (checkId: string) => void;
+  busy: boolean;
+}) {
+  if (checks.length === 0) return <p className="stage__reason muted">Проверок пока нет.</p>;
+  return (
+    <ul className="checklist">
+      {checks.map((c) => (
+        <li key={c.id} className={`checklist__item checklist__item--${checkTone(c.status)}`}>
+          <span className="checklist__icon" aria-hidden="true">
+            {checkTone(c.status) === "ok" ? "✓" : checkTone(c.status) === "bad" ? "✕" : "!"}
+          </span>
+          <span className="checklist__source">
+            <SourceBadge source={c.source} />
+            {c.subject_type === "guarantor" && <span className="muted"> · поручитель</span>}
+          </span>
+          <span className="checklist__result">{checkResultLabel(c.source, c.status)}</span>
+          {c.can_retry && canRetry && (
+            <button className="btn btn-small" disabled={busy} onClick={() => retry(c.id)}>
+              Повторить
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

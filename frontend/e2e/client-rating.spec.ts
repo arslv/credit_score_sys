@@ -12,6 +12,9 @@ test("карточка: блок «Рейтинг клиента» с суммо
   const rating = page.getByTestId("client-rating");
   await expect(rating.getByRole("heading", { name: "Рейтинг клиента" })).toBeVisible();
   await expect(rating.getByText("информационно — на решение пока не влияет")).toBeVisible();
+  // Плашки критериев видны сразу, таблица с правилами — по кнопке.
+  await expect(rating.locator(".rating-chip")).toHaveCount(4);
+  await rating.getByRole("button", { name: "Разбивка по критериям" }).click();
   for (const criterion of ["Возраст", "Контакты", "Работа", "Прописка"]) {
     await expect(rating.getByRole("cell", { name: criterion, exact: true })).toBeVisible();
   }
