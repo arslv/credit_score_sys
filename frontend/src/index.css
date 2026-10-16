@@ -3483,3 +3483,99 @@ mark {
   border-color: color-mix(in srgb, var(--status-bad) 50%, var(--color-bg));
   color: var(--status-bad);
 }
+
+/* T23: карточка заявки — три зоны. Сверху «Решение» (сведения), в середине
+   «Нужно сделать» — рабочая область в рамке с акцентной полосой, снизу
+   «Анкета и документы». Фон рабочей зоны — фон страницы: подсветка раздела
+   при переходе (section--flash) гаснет в тот же цвет без скачка. */
+.zone {
+  margin-top: var(--space-8, 40px);
+}
+
+.zone:first-of-type {
+  margin-top: var(--space-2);
+}
+
+.zone__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
+  border-bottom: 2px solid var(--color-text);
+}
+
+.zone__title {
+  margin: 0;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.zone__hint {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.zone--action {
+  padding: var(--space-4) var(--space-5, 20px) var(--space-5, 20px);
+  border: 1px solid var(--color-border-strong);
+  border-top: 4px solid var(--color-accent);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+
+.zone--action .zone__head {
+  border-bottom-color: var(--color-border);
+}
+
+.zone--action .zone__title {
+  color: var(--color-accent);
+}
+
+.zone--action > .section:first-of-type {
+  margin-top: var(--space-4);
+}
+
+.zone--data .zone__head {
+  border-bottom-color: var(--color-border-strong);
+}
+
+.zone--data .zone__title {
+  color: var(--color-text-muted);
+}
+
+/* Список дел: каждая строка — дело и кнопка перехода. */
+.todo-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.todo-list .next-step {
+  margin-top: 0;
+  border-left: 3px solid var(--color-accent);
+}
+
+.next-step__text {
+  flex: 1;
+  font-weight: var(--weight-medium);
+}
+
+.todo-empty {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+/* Первый раздел зоны — без своей линии: её роль играет линия заголовка зоны. */
+.zone--data > .section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: var(--space-2);
+}

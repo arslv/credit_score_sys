@@ -179,8 +179,8 @@ test("карточка без дохода: «ПДН: не вычислимо»,
   await expect(page.getByTestId("decision-unknown")).toHaveText("ПДН: не вычислимо (нет данных о доходе)");
   await expect(page.getByText("ПДН 0%")).toHaveCount(0);
   // T22: без «Нужно решение…» после «Нужно сделать:».
-  await expect(page.locator(".next-step", { hasText: "решение оператора" })).toHaveText(
-    "Нужно сделать:решение оператора в системе заказчика",
+  await expect(page.locator(".next-step", { hasText: "Серая зона" })).toHaveText(
+    "Серая зона — решение принимает оператор в системе заказчика",
   );
   // Платежа в снимке нет — строки «Платёж в месяц» нет (не «0 ₽»).
   await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toHaveCount(0);

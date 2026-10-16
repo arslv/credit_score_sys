@@ -96,7 +96,7 @@ export function FedresursPanel({
       {state === "hit" && foundComment && <p className="manual-check__note">Что найдено: {foundComment}</p>}
       {state === "pending" && (
         <p className="manual-check__note">
-          Сайт Федресурса закрыт от автоматических запросов, поэтому проверяем вручную — это минута.
+          Сайт Федресурса закрыт от автоматических запросов, поэтому проверяем вручную.
           {!canOperate && " Проверяет оператор или администратор."}
         </p>
       )}

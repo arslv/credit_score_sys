@@ -351,8 +351,8 @@ export const EMPLOYEE_ROLES = ["admin", "operator", "viewer"] as const;
 const ROLE_LABELS: Record<string, string> = {
   operator: "Оператор",
   // T23: ролей три; старые коды — на случай записей аудита до миграции 0019.
-  risk_manager: "Риск-менеджер (до T23)",
-  compliance: "Комплаенс (до T23)",
+  risk_manager: "Риск-менеджер (прежняя роль)",
+  compliance: "Комплаенс (прежняя роль)",
   admin: "Администратор",
   viewer: "Наблюдатель",
 };
