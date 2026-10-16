@@ -40,12 +40,18 @@ export function EmployeesPage() {
 
   const query = useQuery({
     queryKey: ["employees"],
+    // T23: поиск и фильтр — на клиенте, поэтому грузим ВСЕ страницы: при
+    // одной странице (максимум 100) сотрудник за сотым по алфавиту не находился.
     queryFn: async () => {
-      const { data, error } = await api.GET("/api/employees", {
-        params: { query: { page: 1, page_size: 100 } },
-      });
-      if (error) throw error;
-      return data;
+      const items = [];
+      for (let page = 1; ; page += 1) {
+        const { data, error } = await api.GET("/api/employees", {
+          params: { query: { page, page_size: 100 } },
+        });
+        if (error) throw error;
+        items.push(...data.items);
+        if (data.items.length === 0 || items.length >= data.total) return { items };
+      }
     },
   });
 

@@ -168,14 +168,14 @@ export function FsspPanel({
         </p>
       )}
       {latestCheck && latestCheck.status === "hit" && !classification && (
-        <p className="muted">Найдено — суммы и детали доступны риск-менеджеру.</p>
+        <p className="muted">Найдено, но сумм в ответе ФССП нет.</p>
       )}
       {latestCheck && latestCheck.status === "ok" && <p className="muted">Ничего не найдено.</p>}
       {latestCheck && latestCheck.status === "source_unavailable" && (
         <p className="muted">Сайт ФССП был недоступен во время последней попытки.</p>
       )}
 
-      {!canOperate && !latestCheck && <p className="muted">Проверку запускает оператор или риск-менеджер.</p>}
+      {!canOperate && !latestCheck && <p className="muted">Проверку запускает оператор или администратор.</p>}
 
       {canOperate && !open && (
         <button className="btn btn-small" disabled={startMutation.isPending} onClick={() => startMutation.mutate()}>

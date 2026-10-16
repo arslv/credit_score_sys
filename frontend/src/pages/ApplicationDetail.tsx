@@ -100,7 +100,7 @@ export function ApplicationDetailPage() {
     if (latestDecision.reason_code === "FSSP_NOT_CHECKED") {
       actionItems.push({ key: "fssp", text: "Проверить ФССП — без этого одобрение недоступно", href: "#fssp", button: "К проверке ФССП" });
     } else {
-      actionItems.push({ key: "gray", text: "решение риск-менеджера или оператора" });
+      actionItems.push({ key: "gray", text: "решение оператора в системе заказчика" });
     }
   }
   if (latestDecision?.freeze) {
