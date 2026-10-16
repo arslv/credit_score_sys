@@ -24,7 +24,7 @@ from app.config import get_settings
 from app.db import new_sessionmaker
 from app.engine.versions import get_active_ruleset_version
 from app.engine.stage_b_pipeline import STAGE_B_FEATURE_SET_VERSION
-from app.models import Application, Client, Decision, Employee, FeatureSnapshot, ManualOverride
+from app.models import Application, Check, Client, Decision, Employee, FeatureSnapshot, ManualOverride
 from app.security.passwords import hash_password
 
 # T22: global-setup сеет ДВЕ базы (dev и отдельную dialog_e2e) одним и тем же
@@ -139,6 +139,18 @@ async def _seed_frozen_sanctions_match(session) -> dict:
     session.add(application)
     await session.flush()
 
+    # T23: заморозка без самой проверки Росфинмониторинга — «Пометить ложным»
+    # отвечал 409 «не найдена запись перечня». Как у конвейера: hit с ключом записи.
+    session.add(Check(
+        application_id=application.id, subject_type="applicant", source="rosfinmon", status="hit",
+        request={"full_name": f"{last_name} Опасен Опасенович"},
+        response_raw={"e2e": True},
+        parsed={
+            "sanctions_entry_key": f"e2e:{RUN}", "list_type": "te",
+            "full_name": f"{last_name} Опасен Опасенович", "similarity": 1.0, "birth_date_matched": True,
+        },
+        started_at=now, finished_at=now, duration_ms=1,
+    ))
     decision = Decision(
         application_id=application.id, stage="A", outcome="reject", reason_code="SANCTIONS_HIT",
         freeze=True, triggered_rules=[], ruleset_version_id=ruleset_row.id, feature_snapshot_id=None,

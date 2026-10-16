@@ -17,7 +17,12 @@ test("проверка по перечням: снятие заморозки т
   const card = page.locator("article", { hasText: seed.frozen_match.external_id });
   await expect(card).toBeVisible();
 
-  await card.getByRole("button", { name: "Снять заморозку" }).click();
+  // T23: «Не он» сохраняет разбор и сразу открывает поле причины снятия
+  // (раньше сервер отвечал 409, а экран молчал — «кнопки не работают»).
+  await card.getByRole("button", { name: "Не он — пометить ложным" }).click();
+  await expect(card.getByText("разбор: ложное совпадение")).toBeVisible();
+  await expect(card.getByRole("button", { name: "Не он — пометить ложным" })).toHaveAttribute("aria-pressed", "true");
+  await expect(card.getByRole("alert")).toHaveCount(0);
   const confirmButton = card.getByRole("button", { name: "Подтвердить снятие" });
   await expect(confirmButton).toBeDisabled(); // пустая причина — кнопка недоступна
 

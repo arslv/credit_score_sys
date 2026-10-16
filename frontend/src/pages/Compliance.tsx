@@ -44,16 +44,32 @@ export function CompliancePage() {
     onError: (error: Error) => setReasonError(error.message),
   });
 
+  // T23: раньше ошибка сервера (например, 409 «не найдена запись перечня»)
+  // тихо проглатывалась — казалось, что кнопки не работают. Теперь итог и
+  // ошибка видны в строке совпадения; «Не он» сразу открывает причину снятия.
+  const [reviewError, setReviewError] = useState<{ decisionId: string; message: string } | null>(null);
   const reviewMutation = useMutation({
-    mutationFn: async (input: { decisionId: string; verdict: "false_positive" | "confirmed" }) => {
+    mutationFn: async (input: { decisionId: string; verdict: "false_positive" | "confirmed"; openLift: boolean }) => {
       const { error } = await api.POST("/api/compliance/decisions/{decision_id}/mark-false-positive", {
         params: { path: { decision_id: input.decisionId } },
         body: { verdict: input.verdict },
       });
-      if (error) throw error;
+      if (error) {
+        throw new Error(typeof error.detail === "string" ? error.detail : "не удалось сохранить разбор");
+      }
     },
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["compliance-matches"] }),
+    onMutate: () => setReviewError(null),
+    onSuccess: (_, input) => {
+      if (input.openLift) {
+        setReason("");
+        setReasonError(null);
+        setOpenReasonFor(input.decisionId);
+      }
+      void queryClient.invalidateQueries({ queryKey: ["compliance-matches"] });
+    },
+    onError: (error: Error, input) => setReviewError({ decisionId: input.decisionId, message: error.message }),
   });
+  const pendingFor = reviewMutation.isPending ? reviewMutation.variables?.decisionId : null;
 
   function submitLiftFreeze(clientId: string, decisionId: string) {
     setReasonError(null);
@@ -83,12 +99,12 @@ export function CompliancePage() {
             ищется по ФИО, поэтому часто это просто однофамилец.
           </li>
           <li>
-            <b>Не он</b> — нажмите «Пометить ложным», затем «Снять заморозку» и напишите, почему (например, «другая
-            дата рождения»). Клиент снова может получить рассрочку.
+            <b>Не он</b> — нажмите «Не он — пометить ложным». Откроется поле: напишите, почему (например, «другая
+            дата рождения»), и нажмите «Подтвердить снятие». Клиент снова может получить рассрочку.
           </li>
           <li>
-            <b>Он</b> — нажмите «Подтвердить совпадение». Заморозка остаётся, рассрочку не выдаём. Клиенту причину
-            не сообщаем.
+            <b>Он</b> — нажмите «Он — подтвердить совпадение». Заморозка остаётся, рассрочку не выдаём. Клиенту
+            причину не сообщаем.
           </li>
         </ol>
       </div>
@@ -130,18 +146,32 @@ export function CompliancePage() {
               </div>
               <div className="match__actions">
                 <button
-                  className="btn btn-small"
+                  className={
+                    m.latest_review_verdict === "false_positive" ? "btn btn-small btn--chosen" : "btn btn-small"
+                  }
+                  aria-pressed={m.latest_review_verdict === "false_positive"}
                   disabled={reviewMutation.isPending}
-                  onClick={() => reviewMutation.mutate({ decisionId: m.decision_id, verdict: "false_positive" })}
+                  onClick={() =>
+                    reviewMutation.mutate({
+                      decisionId: m.decision_id, verdict: "false_positive", openLift: m.freeze_active,
+                    })
+                  }
                 >
-                  Пометить ложным
+                  {pendingFor === m.decision_id && reviewMutation.variables?.verdict === "false_positive"
+                    ? "Сохраняю…"
+                    : "Не он — пометить ложным"}
                 </button>
                 <button
-                  className="btn btn-small"
+                  className={m.latest_review_verdict === "confirmed" ? "btn btn-small btn--chosen" : "btn btn-small"}
+                  aria-pressed={m.latest_review_verdict === "confirmed"}
                   disabled={reviewMutation.isPending}
-                  onClick={() => reviewMutation.mutate({ decisionId: m.decision_id, verdict: "confirmed" })}
+                  onClick={() =>
+                    reviewMutation.mutate({ decisionId: m.decision_id, verdict: "confirmed", openLift: false })
+                  }
                 >
-                  Подтвердить совпадение
+                  {pendingFor === m.decision_id && reviewMutation.variables?.verdict === "confirmed"
+                    ? "Сохраняю…"
+                    : "Он — подтвердить совпадение"}
                 </button>
                 {m.freeze_active && m.client_id && (
                   <button className="btn btn-small btn-primary" onClick={() => setOpenReasonFor(m.decision_id)}>
@@ -166,6 +196,11 @@ export function CompliancePage() {
                   <button className="btn" onClick={() => setOpenReasonFor(null)}>
                     Отмена
                   </button>
+                </div>
+              )}
+              {reviewError?.decisionId === m.decision_id && (
+                <div className="match__lift" role="alert">
+                  <ErrorState message={`Не сохранилось: ${reviewError.message}.`} />
                 </div>
               )}
               {openReasonFor === m.decision_id && reasonError && (

@@ -39,6 +39,21 @@ function decisionVerdictClass(outcome: string | undefined): string {
   return "verdict--pending";
 }
 
+// T23: «К проверке ФССП» — плавно прокручиваем к разделу и на пару секунд
+// подсвечиваем его, чтобы глаз сразу нашёл, куда перешли. Класс снимается
+// по окончании анимации, повторный клик подсвечивает заново.
+function jumpAndFlash(event: React.MouseEvent, targetId: string) {
+  const target = document.getElementById(targetId)?.closest("section");
+  if (!target) return;
+  event.preventDefault();
+  history.replaceState(null, "", `#${targetId}`);
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  target.classList.remove("section--flash");
+  void target.offsetWidth; // перезапуск анимации при повторном клике
+  target.classList.add("section--flash");
+  target.addEventListener("animationend", () => target.classList.remove("section--flash"), { once: true });
+}
+
 export function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { employee } = useAuth();
@@ -281,7 +296,11 @@ export function ApplicationDetailPage() {
           <span className="next-step-label">Нужно сделать:</span>
           <span>{item.text}</span>
           {item.href && (
-            <a className="btn btn-primary btn-small" href={item.href}>
+            <a
+              className="btn btn-primary btn-small"
+              href={item.href}
+              onClick={item.href.startsWith("#") ? (e) => jumpAndFlash(e, item.href!.slice(1)) : undefined}
+            >
               {item.button ?? "Открыть"}
             </a>
           )}

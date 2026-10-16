@@ -3331,3 +3331,46 @@ mark {
     row-gap: var(--space-3);
   }
 }
+
+/* T23: переход к разделу карточки («К проверке ФССП») — мягкая зелёная
+   подсветка на ~2 с. Тень того же цвета расширяет фон за края раздела
+   (без сдвига вёрстки), тонкое кольцо по контуру гаснет вместе с ним. */
+.section {
+  scroll-margin-top: var(--space-6, 24px);
+}
+
+.section--flash {
+  border-radius: var(--radius-lg);
+  animation: section-flash 2.2s ease-out;
+}
+
+@keyframes section-flash {
+  0%,
+  35% {
+    /* Непрозрачная смесь с фоном: полупрозрачная заливка пропускала бы
+       под собой кольцо, и контур выглядел бы толстой полосой. */
+    background: color-mix(in srgb, var(--status-ok) 9%, var(--color-bg));
+    box-shadow:
+      0 0 0 14px color-mix(in srgb, var(--status-ok) 9%, var(--color-bg)),
+      0 0 0 15px color-mix(in srgb, var(--status-ok) 40%, var(--color-bg));
+  }
+  100% {
+    background: var(--color-bg);
+    box-shadow:
+      0 0 0 14px var(--color-bg),
+      0 0 0 15px var(--color-bg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section--flash {
+    animation-duration: 0.01s;
+  }
+}
+
+/* Выбранный вердикт разбора совпадения («Не он» / «Он»). */
+.btn--chosen {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}

@@ -181,3 +181,16 @@ test("карточка без дохода: «ПДН: не вычислимо»,
   // Платежа в снимке нет — строки «Платёж в месяц» нет (не «0 ₽»).
   await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toHaveCount(0);
 });
+
+// T23: «К проверке ФССП» прокручивает к разделу и на ~2 с подсвечивает его.
+test("«К проверке ФССП» прокручивает к разделу и подсвечивает его", async ({ page }) => {
+  const seed = loadSeed();
+  await login(page, seed.admin.email, seed.admin.password);
+  await page.goto(`/applications/${seed.gray_fssp.id}`);
+  await page.getByRole("link", { name: "К проверке ФССП" }).click();
+  const fsspSection = page.locator("#fssp").locator("xpath=ancestor::section[1]");
+  await expect(fsspSection).toHaveClass(/section--flash/);
+  await expect(fsspSection).toBeInViewport();
+  await expect(fsspSection).not.toHaveClass(/section--flash/, { timeout: 5_000 });
+  await expect(page).toHaveURL(/#fssp$/);
+});
