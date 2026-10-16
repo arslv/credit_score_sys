@@ -1105,7 +1105,7 @@ async def test_dev_ruleset_stage_b_rule_field_paths_all_resolve(
 async def _card_decision(admin_client, session_factory, application_id, email: str) -> dict:
     from tests._admin_helpers import create_employee, login
 
-    await create_employee(session_factory, email=email, role="risk_manager")
+    await create_employee(session_factory, email=email, role="admin")
     await login(admin_client, email)
     response = await admin_client.get(f"/api/applications/{application_id}")
     assert response.status_code == 200, response.text

@@ -4,7 +4,7 @@ import { login } from "./login";
 
 test("вход и выход", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
 
   await page.getByRole("button", { name: "Выйти" }).click();
   await expect(page).toHaveURL(/\/login/);

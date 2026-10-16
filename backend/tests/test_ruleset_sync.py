@@ -182,7 +182,7 @@ async def test_sync_conflict_does_not_touch_human_authored_active_version(sessio
             full_name="Тестовый Риск-менеджер",
             email=f"test-{uuid.uuid4().hex[:8]}@example.com",
             password_hash="x",
-            role="risk_manager",
+            role="admin",
         )
         session.add(employee)
         await session.flush()

@@ -18,7 +18,7 @@ from app.security.pagination import Page, PageParams
 
 router = APIRouter(prefix="/api/contracts", tags=["contracts"])
 
-_VIEW_ROLES = ("risk_manager", "admin", "viewer", "compliance")
+_VIEW_ROLES = ("admin", "operator", "viewer")  # T23: operator — бывшие права compliance
 
 
 class ContractListItem(BaseModel):

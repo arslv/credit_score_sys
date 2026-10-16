@@ -1,13 +1,13 @@
 // T17, часть 5: у каждого графика — заголовок-вывод (не нейтральное название),
 // шаги воронки — человеческие подписи без сырых кодов, доступ только
-// risk_manager/viewer (как и раньше у дашборда).
+// admin/viewer (T23: ролей три, оператору аналитика не нужна).
 import { test, expect } from "@playwright/test";
 import { loadSeed } from "./fixtures";
 import { login } from "./login";
 
 test("аналитика: воронка с выводом в заголовке, подписи шагов по-русски", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/dashboard");
 
   await expect(page.getByRole("heading", { name: "Аналитика" })).toBeVisible();
@@ -22,7 +22,7 @@ test("аналитика: воронка с выводом в заголовке
 
 test("бары графиков видимо заполнены, не пустой трек (баг заливки)", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/dashboard");
 
   const fill = page.locator(".bar-fill").first();
@@ -34,7 +34,7 @@ test("бары графиков видимо заполнены, не пусто
 
 test("даты и месяцы — по-русски, не ISO; переопределения объясняют разницу двух цифр", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/dashboard");
 
   // Неделя "с ДД.ММ.ГГГГ", не голый ISO "YYYY-MM-DD".
@@ -61,9 +61,9 @@ test("даты и месяцы — по-русски, не ISO; переопре
   await expect(page.getByText(/Источники работают стабильно|Чаще всего недоступен источник/)).toBeVisible();
 });
 
-test("аналитика недоступна комплаенсу и администратору", async ({ page }) => {
+test("аналитика недоступна оператору", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.compliance.email, seed.compliance.password);
+  await login(page, seed.operator.email, seed.operator.password);
   await expect(page.getByRole("link", { name: "Аналитика" })).toHaveCount(0);
   await page.goto("/dashboard");
   await expect(page.getByText("Не удалось загрузить аналитику.")).toBeVisible();

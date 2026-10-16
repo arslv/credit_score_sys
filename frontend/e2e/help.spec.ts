@@ -11,7 +11,7 @@ const GLOSSARY_TERMS = [
 
 test("справка: путь заявки, три рычага, роли и все термины на месте", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
   await page.getByRole("link", { name: "Справка" }).click();
   await expect(page).toHaveURL(/\/help/);
 
@@ -19,7 +19,11 @@ test("справка: путь заявки, три рычага, роли и в
   await expect(page.getByRole("heading", { name: "Путь заявки" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Три рычага, которые влияют на решение" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Роли" })).toBeVisible();
-  await expect(page.getByText("Риск-менеджер (вы)")).toBeVisible();
+  await expect(page.getByText("Администратор (вы)")).toBeVisible();
+  // T23: ролей три, «комплаенс» и «риск-менеджер» в справке не упоминаются.
+  const roles = page.locator(".help-roles tbody tr");
+  await expect(roles).toHaveCount(3);
+  await expect(page.getByText(/Риск-менеджер|Комплаенс/)).toHaveCount(0);
 
   for (const term of GLOSSARY_TERMS) {
     await expect(page.getByText(term, { exact: true })).toBeVisible();

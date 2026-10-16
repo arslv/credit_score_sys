@@ -4,7 +4,7 @@ from tests._admin_helpers import create_employee, login
 
 
 async def test_applications_list_is_paginated_with_default_page_size(admin_client, session_factory):
-    await create_employee(session_factory, email="rm@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm@example.com", role="admin")
     await login(admin_client, "rm@example.com")
 
     response = await admin_client.get("/api/applications")
@@ -16,7 +16,7 @@ async def test_applications_list_is_paginated_with_default_page_size(admin_clien
 
 
 async def test_page_size_is_capped(admin_client, session_factory):
-    await create_employee(session_factory, email="rm2@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm2@example.com", role="admin")
     await login(admin_client, "rm2@example.com")
 
     response = await admin_client.get("/api/applications", params={"page_size": 1000})

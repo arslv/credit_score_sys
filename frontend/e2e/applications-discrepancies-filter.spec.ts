@@ -4,7 +4,7 @@ import { login } from "./login";
 
 test("список заявок — фильтр «расхождения с оператором»", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/applications");
 
   // T17, часть 4: у риск-менеджера по умолчанию открыта его очередь «Требуют

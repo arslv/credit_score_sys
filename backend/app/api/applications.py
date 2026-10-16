@@ -1,8 +1,7 @@
 """T12: заявки — список и карточка, только просмотр (решения принимаются в
-системе заказчика, ТЗ «Карточка заявки»). Персданные — только risk_manager и
-compliance; admin и viewer получают обезличенный вид (ваше уточнение: admin
-для своей работы — сотрудники/справочники/аудит/состояние системы — паспорта
-заявителей ему не нужны)."""
+системе заказчика, ТЗ «Карточка заявки»). T23 (решение владельца): роли
+admin/operator/viewer, персданные видят все три; каждый просмотр с ПД —
+в audit_log."""
 
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -13,6 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import and_, case, exists, func, or_, select
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -57,10 +57,12 @@ _MASKED_NAME = "Клиент скрыт"
 _LIST_PII_ROLES = (*ROLES_WITH_FULL_PII, "operator")
 # Часовой пояс сервиса — для «Сегодня» (заявки за текущие сутки по Москве).
 _SERVICE_TZ = ZoneInfo("Europe/Moscow")
-_VIEW_ROLES = ("risk_manager", "admin", "viewer", "compliance", "operator")
-_PHOTO_ROLES = ("risk_manager", "compliance")
-_CREDIT_REPORT_ROLES = ("risk_manager", "compliance")
-_RETRY_ROLES = ("risk_manager",)
+_VIEW_ROLES = ("admin", "viewer", "operator")
+# T23: фото и кредитный отчёт — admin и operator (к operator перешёл разбор
+# совпадений с перечнем, для него нужно сверить человека).
+_PHOTO_ROLES = ("admin", "operator", "viewer")  # T23: без скрытия персданных
+_CREDIT_REPORT_ROLES = ("admin", "operator", "viewer")
+_RETRY_ROLES = ("admin",)
 # T16 (ваша правка): ПД в КАРТОЧКЕ заявки (не в списке, не у клиентов, не в
 # симуляции правил — там has_full_pii/ROLES_WITH_FULL_PII не меняем) —
 # operator нужно видеть ФИО/дату рождения/адрес регистрации заявителя и
@@ -140,37 +142,45 @@ def _fssp_unchecked_gray_clause():
 def _latest_override_mismatch_clause():
     """Последний итог оператора не совпадает с последним решением нашего
     сервиса — «оператор изменил статус» (то же, что в _to_item: override_matches)."""
-    latest_outcome = (
-        select(Decision.outcome)
-        .where(Decision.application_id == Application.id)
-        .order_by(Decision.created_at.desc())
-        .limit(1)
-        .scalar_subquery()
-    )
+    # T23: подзапросы вложены на два уровня (внутри exists) — без явного
+    # correlate(Application) каждый брал свой FROM applications и не был
+    # привязан к строке заявки: одно расхождение где угодно ставило в очередь
+    # admin ВСЕ заявки. Вложенная выборка override — через псевдоним, иначе
+    # она коррелирует с manual_overrides внешнего exists.
+    latest_outcome = _latest_outcome_subquery()
+    newer = aliased(ManualOverride)
     latest_override = (
-        select(ManualOverride.id)
-        .where(ManualOverride.application_id == Application.id)
-        .order_by(ManualOverride.created_at.desc())
+        select(newer.id)
+        .where(newer.application_id == Application.id)
+        .order_by(newer.created_at.desc())
         .limit(1)
+        .correlate(Application)
         .scalar_subquery()
     )
     return exists(
         select(ManualOverride.id).where(
+            ManualOverride.application_id == Application.id,
             ManualOverride.id == latest_override,
             ManualOverride.to_outcome != latest_outcome,
         )
     )
 
 
-def _latest_override_at_expr():
-    """Момент последнего итога оператора, если он расходится с решением."""
-    latest_outcome = (
+def _latest_outcome_subquery():
+    """Исход последнего решения нашего сервиса по заявке внешнего запроса."""
+    return (
         select(Decision.outcome)
         .where(Decision.application_id == Application.id)
         .order_by(Decision.created_at.desc())
         .limit(1)
+        .correlate(Application)
         .scalar_subquery()
     )
+
+
+def _latest_override_at_expr():
+    """Момент последнего итога оператора, если он расходится с решением."""
+    latest_outcome = _latest_outcome_subquery()
     return (
         select(ManualOverride.created_at)
         .where(ManualOverride.application_id == Application.id, ManualOverride.to_outcome != latest_outcome)
@@ -182,20 +192,21 @@ def _latest_override_at_expr():
 
 # T17, часть 4 (ваше указание): у каждой роли своя очередь «Требуют действия».
 # Заявка, которую роль ничего сделать не может, в её очередь не попадает.
-_QUEUE_ROLES = ("operator", "compliance", "risk_manager")
+_QUEUE_ROLES = ("operator", "admin")
 
 
 def _queue_clause(role: str):
     """SQL-условие очереди роли (зеркало _queue_entry — держать в синхроне)."""
+    # T23: роли compliance/risk_manager слиты — заморозки по перечню ждут и
+    # оператора, и админа; серая зона и расхождения — админа.
     if role == "operator":
         return or_(
             Application.status.in_(("to_operator", "ocr_failed")),
             and_(Application.status == "gray_zone", _fssp_unchecked_gray_clause()),
+            _freeze_pending_clause(),
         )
-    if role == "compliance":
-        return _freeze_pending_clause()
-    if role == "risk_manager":
-        return or_(Application.status == "gray_zone", _latest_override_mismatch_clause())
+    if role == "admin":
+        return or_(Application.status == "gray_zone", _latest_override_mismatch_clause(), _freeze_pending_clause())
     return None
 
 
@@ -216,25 +227,26 @@ def _queue_waiting_expr(role: str):
         .scalar_subquery()
     )
     fallback = Application.submitted_at
+    freeze_since = (
+        select(func.max(Decision.created_at))
+        .where(
+            Decision.application_id == Application.id,
+            Decision.freeze.is_(True),
+            ~exists(select(FreezeLift.id).where(FreezeLift.decision_id == Decision.id)),
+        )
+        .scalar_subquery()
+    )
+    # T23: заморозка по перечню — в очередях обеих ролей (бывшая очередь compliance).
     if role == "operator":
         expr = case(
             (Application.status.in_(("to_operator", "ocr_failed")), status_since),
-            else_=_latest_decision_at_expr("B"),
+            (Application.status == "gray_zone", _latest_decision_at_expr("B")),
+            else_=freeze_since,
         )
-    elif role == "compliance":
-        expr = (
-            select(func.max(Decision.created_at))
-            .where(
-                Decision.application_id == Application.id,
-                Decision.freeze.is_(True),
-                ~exists(select(FreezeLift.id).where(FreezeLift.decision_id == Decision.id)),
-            )
-            .scalar_subquery()
-        )
-    elif role == "risk_manager":
+    elif role == "admin":
         expr = case(
             (Application.status == "gray_zone", _latest_decision_at_expr("B")),
-            else_=_latest_override_at_expr(),
+            else_=func.coalesce(_latest_override_at_expr(), freeze_since),
         )
     else:
         return fallback
@@ -257,14 +269,16 @@ def _queue_entry(
             return ("call", "Позвонить", status_since)
         if status == "gray_zone" and latest_b is not None and latest_b.reason_code == "FSSP_NOT_CHECKED":
             return ("fssp", "Проверить ФССП", latest_b.created_at)
+        if freeze_at is not None:
+            return ("compliance", "Проверить совпадение с перечнем", freeze_at)
         return None
-    if role == "compliance":
-        return ("compliance", "Ждёт комплаенс", freeze_at) if freeze_at is not None else None
-    if role == "risk_manager":
+    if role == "admin":
         if status == "gray_zone":
             return ("gray", "Решение по серой зоне", latest_b.created_at if latest_b else status_since)
         if mismatch_override is not None:
             return ("override", "Проверить изменение", mismatch_override.created_at)
+        if freeze_at is not None:
+            return ("compliance", "Проверить совпадение с перечнем", freeze_at)
         return None
     return None
 
@@ -533,7 +547,7 @@ class CheckOut(BaseModel):
     finished_at: datetime | None
     duration_ms: int | None
     error_text: str | None
-    # Сырой ответ и разбор — только risk_manager/compliance (как фото и
+    # Сырой ответ и разбор — только ролям с полным доступом (T23: admin; как фото и
     # кредитный отчёт): могут содержать ПД (паспортные поля МВД, ФИО из
     # перечня и т.п.), admin/viewer получают null (см. has_full_pii ниже).
     parsed: dict[str, Any] | None
@@ -638,7 +652,7 @@ class ApplicationDetail(BaseModel):
     # бы на hard_stop — список субъектов (applicant/guarantor), по которым это
     # случилось, для заметного предупреждения в карточке (fssp_post_decision_alerts).
     fssp_post_decision_alert_subjects: list[str]
-    # Анкета/распознавание/снимки — ПД, только risk_manager/compliance (как выше).
+    # Анкета/распознавание/снимки — ПД, только ролям с полным доступом (T23: admin) и operator.
     # profile — неизменяемый снимок на момент подачи (см. Application.profile).
     # external_snapshots — ВСЕ снимки анкеты по стадиям (T04/T10:
     # app/integrations/adapter.py пишет новую строку в external_snapshots при
@@ -1047,7 +1061,7 @@ async def retry_check(
     session: AsyncSession = Depends(get_session),
 ) -> RetryCheckResult:
     """Повтор проверки для недоступного источника (ТЗ, «Состояния карточки»:
-    «Источник недоступен — плашка с кнопкой повтора»). Только risk_manager;
+    «Источник недоступен — плашка с кнопкой повтора»). Только admin (T23, раньше risk_manager);
     только ФНС/Федресурс (_RETRYABLE_SOURCES) и только пока последний результат
     по этому источнику — source_unavailable (иначе незачем повторно дёргать
     рабочий источник или платный БКИ)."""

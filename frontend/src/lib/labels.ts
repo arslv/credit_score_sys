@@ -345,12 +345,13 @@ export function reasonCodeKindLabel(value: string): string {
 
 // T23: роли сотрудников (app/models/employee.py EMPLOYEE_ROLES) — на экране
 // «Сотрудники» и в подвале меню вместо кода роли.
-export const EMPLOYEE_ROLES = ["operator", "risk_manager", "compliance", "admin", "viewer"] as const;
+export const EMPLOYEE_ROLES = ["admin", "operator", "viewer"] as const;
 
 const ROLE_LABELS: Record<string, string> = {
   operator: "Оператор",
-  risk_manager: "Риск-менеджер",
-  compliance: "Комплаенс",
+  // T23: ролей три; старые коды — на случай записей аудита до миграции 0019.
+  risk_manager: "Риск-менеджер (до T23)",
+  compliance: "Комплаенс (до T23)",
   admin: "Администратор",
   viewer: "Наблюдатель",
 };

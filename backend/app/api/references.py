@@ -1,5 +1,5 @@
 """T12: справочники — категории товаров, причины, чёрный список (ТЗ,
-«Справочники»: меняют risk_manager и admin)."""
+«Справочники»: меняют risk_manager и admin). T23: только admin."""
 
 from datetime import date
 from decimal import Decimal
@@ -18,7 +18,7 @@ from app.security.pagination import Page, PageParams
 
 router = APIRouter(prefix="/api/references", tags=["references"])
 
-_VIEW_ROLES = ("risk_manager", "admin")
+_VIEW_ROLES = ("admin",)
 
 
 # --- категории товаров -----------------------------------------------------------

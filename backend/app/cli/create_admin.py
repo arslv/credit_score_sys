@@ -5,7 +5,7 @@ getpass — не эхается на экран и не попадает в ис
 
 Запуск: docker compose exec api python -m app.cli.create_admin
 T20: любой другой роли — тем же способом, --role (по умолчанию admin):
-    docker compose exec api python -m app.cli.create_admin --role risk_manager
+    docker compose exec api python -m app.cli.create_admin --role operator
 """
 
 import argparse

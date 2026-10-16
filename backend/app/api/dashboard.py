@@ -10,7 +10,7 @@
 день/неделю/месяц. Поэтому фильтр периода и группировка по неделям/месяцам
 считаются от `payload AT TIME ZONE 'Europe/Moscow'`, а не от сырого UTC-поля.
 
-Роли: risk_manager и viewer — только агрегаты, без персданных (ваше
+Роли (T23): admin и viewer (раньше risk_manager и viewer) — только агрегаты, без персданных (ваше
 уточнение); дашборд физически не возвращает ни одного поля с ФИО/паспортом/
 телефоном, поэтому viewer здесь ничем не отличается от risk_manager."""
 
@@ -32,7 +32,7 @@ from app.security.deps import require_roles
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
-_VIEW_ROLES = ("risk_manager", "viewer")
+_VIEW_ROLES = ("admin", "viewer")
 _MSK_TZ = "Europe/Moscow"
 
 

@@ -236,14 +236,14 @@ async def test_review_webhook_keeps_contacts_and_employer(partner_webhook_client
     assert stage_b["employment"]["employer"] == "Школа № 12"
 
 
-async def test_card_shows_rating_with_values_only_for_pii_roles(admin_client, session_factory):
+async def test_card_shows_rating_with_values_to_every_role(admin_client, session_factory):
     from tests._admin_helpers import create_employee, login
 
     await _active_ruleset(session_factory)
     stage_b = _stage_b(relations=("parent", "sibling"), employer="Школа", position="учитель")
     application_id = await _application(session_factory, external_id="RATING-2", stage_b=stage_b)
 
-    await create_employee(session_factory, email="rating-risk@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rating-risk@example.com", role="admin")
     await login(admin_client, "rating-risk@example.com")
     response = await admin_client.get(f"/api/applications/{application_id}")
     assert response.status_code == 200, response.text
@@ -256,6 +256,7 @@ async def test_card_shows_rating_with_values_only_for_pii_roles(admin_client, se
     await login(admin_client, "rating-viewer@example.com")
     response = await admin_client.get(f"/api/applications/{application_id}")
     assert response.status_code == 200, response.text
-    masked = response.json()["client_rating"]
-    assert masked["total"] == 600
-    assert all(i["value"] is None for i in masked["items"])  # баллы видны, ПД — нет
+    rating = response.json()["client_rating"]
+    assert rating["total"] == 600
+    # T23: персданные не скрываются ни у одной роли — значения видны и наблюдателю.
+    assert {i["criterion"]: i["value"] for i in rating["items"]}["registration"] == "Махачкала"

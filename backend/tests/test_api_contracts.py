@@ -10,7 +10,7 @@ from tests._admin_helpers import create_employee, login
 
 
 async def test_contract_detail_shows_payment_kind_and_delinquency(admin_client, session_factory):
-    await create_employee(session_factory, email="rm-contract@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-contract@example.com", role="admin")
     await login(admin_client, "rm-contract@example.com")
 
     async with session_factory() as session:

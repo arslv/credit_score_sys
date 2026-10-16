@@ -213,7 +213,7 @@ async def test_full_seed_through_real_pipeline(session_factory, tmp_path, partne
             session_factory=session_factory, settings=settings, now=now, log=lambda _: None,
         )
         assert report.mismatches == []
-        assert [role for role, _ in report.logins] == ["admin", "risk_manager", "compliance", "operator", "viewer"]
+        assert [role for role, _ in report.logins] == ["admin", "operator", "viewer"]
 
         async with session_factory() as session:
             first, last, days = (await session.execute(

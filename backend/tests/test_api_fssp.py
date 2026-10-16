@@ -33,12 +33,13 @@ def _patched_source(fake: FakeFsspCaptchaSource):
     return patch("app.api.fssp.build_fssp_captcha_source", return_value=fake)
 
 
-async def test_fssp_search_forbidden_for_admin_and_viewer(
+async def test_fssp_search_forbidden_for_viewer(
     admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
 ):
     application_id = await _rejected_applicant(partner_admin, partner_client, storage, session_factory, active_ruleset)
 
-    for role in ("admin", "viewer", "compliance"):
+    # T23: admin теперь может (ему перешли обязанности risk_manager).
+    for role in ("viewer",):
         await create_employee(session_factory, email=f"{role}-fssp@example.com", role=role)
         await login(admin_client, f"{role}-fssp@example.com")
         response = await admin_client.post(

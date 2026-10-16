@@ -18,7 +18,7 @@ from app.models import Application, Decision, ExternalSnapshot, StatusHistory
 from tests._admin_helpers import create_employee, login
 from tests.test_engine_pipeline import active_ruleset  # noqa: F401
 
-_NON_ADMIN_ROLES = ("risk_manager", "viewer", "compliance", "operator")
+_NON_ADMIN_ROLES = ("viewer", "operator")
 
 
 @pytest.mark.parametrize("role", _NON_ADMIN_ROLES)

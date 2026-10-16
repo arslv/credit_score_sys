@@ -1,5 +1,5 @@
 """T15: импорт договоров/платежей/исторических заявок (ТЗ «Договоры и платежи»).
-Роли — admin и risk_manager (ваше явное указание). Каждая загрузка и каждое
+Роли — admin (T23; раньше admin и risk_manager). Каждая загрузка и каждое
 подтверждение привязки — в audit_log (ваше явное указание)."""
 
 from dataclasses import asdict
@@ -27,7 +27,7 @@ from app.storage.base import Storage
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 
-_ROLES = ("admin", "risk_manager")
+_ROLES = ("admin",)
 
 
 def get_storage(request: Request) -> Storage:

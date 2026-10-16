@@ -20,16 +20,16 @@ const outDir = path.resolve(repoRoot, "docs/design/after", process.argv[2] ?? "t
 // ONLY=admin,operator — снять не все роли (для быстрой проверки).
 const only = process.env.ONLY ? new Set(process.env.ONLY.split(",")) : null;
 
+// T23: ролей три — admin, operator, viewer.
 const ROLES = {
-  operator: ["/applications", "/help"],
-  risk_manager: ["/applications", "/rulesets", "/dashboard", "/contracts", "/clients", "/imports", "/references", "/help"],
-  compliance: ["/applications", "/contracts", "/clients", "/compliance", "/help"],
+  operator: ["/applications", "/compliance", "/contracts", "/clients", "/help"],
   viewer: ["/applications", "/dashboard", "/contracts", "/clients", "/help"],
   admin: [
-    "/applications", "/contracts", "/clients", "/imports", "/employees", "/references", "/audit", "/system", "/help",
+    "/applications", "/compliance", "/rulesets", "/dashboard", "/contracts", "/clients", "/imports", "/employees",
+    "/references", "/audit", "/system", "/help",
   ],
 };
-const EMAIL = (role) => `demo.${role === "risk_manager" ? "risk" : role}@example.com`;
+const EMAIL = (role) => `demo.${role}@example.com`;
 const CARDS = ["approved", "gray_zone", "rejected_a", "rejected_b", "to_operator"];
 
 async function firstId(request, url) {

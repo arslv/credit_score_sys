@@ -180,7 +180,7 @@ async def test_sanctions_hit_persists_freeze_logs_error_and_notes_operator(
         assert decision.freeze is True
 
     decision_sent = await _last_decision(partner_admin, external_id)
-    assert "комплаенс" in decision_sent["reason"].lower()
+    assert "перечн" in decision_sent["reason"].lower()
 
 
 async def test_repeat_application_of_frozen_passport_is_rejected_without_any_checks(
@@ -251,7 +251,7 @@ async def test_repeat_application_of_frozen_passport_is_rejected_without_any_che
 
     decision_sent_2 = await _last_decision(partner_admin, external_id_2)
     assert decision_sent_2["status"] == "rejected"
-    assert "комплаенс" in decision_sent_2["reason"].lower()
+    assert "перечн" in decision_sent_2["reason"].lower()
 
 
 # --- проверка путей полей в dev.yaml против реального снапшота -----------------

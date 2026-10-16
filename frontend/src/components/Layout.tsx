@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { BarChart3, Briefcase, ClipboardList, HelpCircle, Settings, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { BarChart3, Briefcase, ClipboardList, HelpCircle, Settings, ShieldAlert, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import { roleLabel } from "../lib/labels";
 import { Logo } from "./Logo";
@@ -11,7 +11,10 @@ import { Logo } from "./Logo";
 // маршруты, что и раньше, просто сгруппированы по смыслу, а не по тому, в
 // каком порядке появлялись в задачах.
 // T23: у Настроек вместо вкладок — подменю слева (Сотрудники, Справочники,
-// Импорт, Комплаенс, Аудит, Состояние системы — что доступно роли).
+// Импорт, Аудит, Состояние системы — что доступно роли).
+// T23 (решение владельца): ролей три — admin, operator, viewer. «Проверка по
+// перечням» (бывший «Комплаенс») — отдельный раздел меню: это очередь работы,
+// а не настройка.
 interface NavItem {
   to: string;
   label: string;
@@ -31,28 +34,34 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Заявки",
     icon: ClipboardList,
     items: [
-      { to: "/applications", label: "Заявки", roles: ["risk_manager", "admin", "viewer", "compliance", "operator"] },
+      { to: "/applications", label: "Заявки", roles: ["admin", "operator", "viewer"] },
     ],
+  },
+  {
+    key: "watchlist",
+    label: "Проверка по перечням",
+    icon: ShieldAlert,
+    items: [{ to: "/compliance", label: "Проверка по перечням", roles: ["admin", "operator"] }],
   },
   {
     key: "scoring",
     label: "Скоринг",
     icon: SlidersHorizontal,
-    items: [{ to: "/rulesets", label: "Скоринг", roles: ["risk_manager"] }],
+    items: [{ to: "/rulesets", label: "Скоринг", roles: ["admin"] }],
   },
   {
     key: "analytics",
     label: "Аналитика",
     icon: BarChart3,
-    items: [{ to: "/dashboard", label: "Аналитика", roles: ["risk_manager", "viewer"] }],
+    items: [{ to: "/dashboard", label: "Аналитика", roles: ["admin", "viewer"] }],
   },
   {
     key: "portfolio",
     label: "Портфель",
     icon: Briefcase,
     items: [
-      { to: "/contracts", label: "Договоры", roles: ["risk_manager", "admin", "viewer", "compliance"] },
-      { to: "/clients", label: "Клиенты", roles: ["risk_manager", "admin", "viewer", "compliance"] },
+      { to: "/contracts", label: "Договоры", roles: ["admin", "operator", "viewer"] },
+      { to: "/clients", label: "Клиенты", roles: ["admin", "operator", "viewer"] },
     ],
   },
   {
@@ -62,7 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         to: "/help", label: "Справка",
-        roles: ["risk_manager", "admin", "viewer", "compliance", "operator"],
+        roles: ["admin", "operator", "viewer"],
       },
     ],
   },
@@ -72,10 +81,9 @@ const NAV_GROUPS: NavGroup[] = [
     icon: Settings,
     items: [
       { to: "/employees", label: "Сотрудники", roles: ["admin"] },
-      { to: "/references", label: "Справочники", roles: ["risk_manager", "admin"] },
+      { to: "/references", label: "Справочники", roles: ["admin"] },
       // T23: «Импорт» — в Настройках (было — вкладкой Портфеля).
-      { to: "/imports", label: "Импорт", roles: ["admin", "risk_manager"] },
-      { to: "/compliance", label: "Комплаенс", roles: ["compliance"] },
+      { to: "/imports", label: "Импорт", roles: ["admin"] },
       { to: "/audit", label: "Аудит", roles: ["admin"] },
       { to: "/system", label: "Состояние системы", roles: ["admin"] },
     ],

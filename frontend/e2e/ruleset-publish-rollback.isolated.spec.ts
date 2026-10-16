@@ -8,7 +8,7 @@ import { login } from "./login";
 
 test("правила и пороги: изменил порог → симуляция → сохранил → откатил с причиной", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
 
   await page.goto("/rulesets");
   await expect(page.getByText(/Активная версия: \d+/)).toBeVisible();

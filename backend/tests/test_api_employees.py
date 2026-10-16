@@ -25,7 +25,7 @@ async def test_admin_can_create_employee(admin_client, session_factory):
 
 
 async def test_non_admin_cannot_create_employee(admin_client, session_factory):
-    await create_employee(session_factory, email="rm@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm@example.com", role="operator")
     await login(admin_client, "rm@example.com")
     response = await admin_client.post(
         "/api/employees",
@@ -108,7 +108,7 @@ async def test_changing_role_revokes_all_sessions(admin_client, session_factory)
         await login(target_client, "target2@example.com")
 
         await _admin_client(admin_client, session_factory, email="root3@example.com")
-        response = await admin_client.patch(f"/api/employees/{target_id}", json={"role": "risk_manager"})
+        response = await admin_client.patch(f"/api/employees/{target_id}", json={"role": "operator"})
         assert response.status_code == 200
 
         assert (await target_client.get("/api/auth/me")).status_code == 401

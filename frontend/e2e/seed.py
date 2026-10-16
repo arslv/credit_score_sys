@@ -108,7 +108,7 @@ async def _seed_discrepancy_application(session) -> dict:
 
 async def _seed_frozen_sanctions_match(session) -> dict:
     """Заявка с санкционным хитом и активной заморозкой — для Playwright-теста
-    на снятие заморозки комплаенсом (обязательная причина)."""
+    на снятие заморозки при проверке по перечням (обязательная причина)."""
     ruleset_row = await get_active_ruleset_version(session)
     if ruleset_row is None:
         raise RuntimeError("нет активной версии конфига правил — синхронизация ruleset ещё не прошла")
@@ -197,9 +197,8 @@ async def main() -> None:
     engine, session_factory = new_sessionmaker()
     try:
         async with session_factory() as session:
-            risk_manager = await _seed_employee(session, role="risk_manager")
+            # T23: ролей три — admin, operator, viewer.
             viewer = await _seed_employee(session, role="viewer")
-            compliance = await _seed_employee(session, role="compliance")
             admin = await _seed_employee(session, role="admin")
             operator = await _seed_employee(session, role="operator")
             application = await _seed_discrepancy_application(session)
@@ -219,7 +218,7 @@ async def main() -> None:
             # Доход нулевой: declared_pti и pti — None, КИ получена.
             no_income = await _seed_stage_b_decision(
                 # Балл между порогами — серая зона без ФССП-причины: «Нужно
-                # сделать: решение риск-менеджера или оператора» (T22).
+                # сделать: решение человека» (T22).
                 session, suffix="NOINCOME", outcome="manual_review", reason_code="SCORE_GRAY_ZONE",
                 features={"score": 600, "declared_pti": None, "features": {"pti": None, "bki_active_contracts_count": 0}},
             )
@@ -228,7 +227,7 @@ async def main() -> None:
         await engine.dispose()
 
     print(json.dumps({
-        "risk_manager": risk_manager, "viewer": viewer, "compliance": compliance, "admin": admin,
+        "viewer": viewer, "admin": admin,
         "application": application, "frozen_match": frozen_match, "operator": operator,
         "gray_fssp": gray_fssp, "no_income": no_income,
     }))

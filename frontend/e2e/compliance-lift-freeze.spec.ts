@@ -2,11 +2,15 @@ import { test, expect } from "@playwright/test";
 import { loadSeed } from "./fixtures";
 import { login } from "./login";
 
-test("комплаенс: снятие заморозки требует причину", async ({ page }) => {
+// T23: бывший «Комплаенс» — раздел меню «Проверка по перечням», доступен
+// администратору и оператору.
+test("проверка по перечням: снятие заморозки требует причину", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.compliance.email, seed.compliance.password);
+  await login(page, seed.operator.email, seed.operator.password);
 
-  await page.goto("/compliance");
+  await page.getByRole("link", { name: "Проверка по перечням" }).click();
+  await expect(page.getByRole("heading", { name: "Проверка по перечням" })).toBeVisible();
+  await expect(page.getByText("Как разобрать совпадение")).toBeVisible();
   // Дев-БД накапливает совпадения от прошлых прогонов (список — по всей
   // системе, без фильтра по прогону) — работаем строго с карточкой ИМЕННО
   // этого сида, а не первой попавшейся кнопкой на странице.
@@ -25,8 +29,14 @@ test("комплаенс: снятие заморозки требует при�
   await expect(card.getByText("снято")).toBeVisible();
 });
 
-test("risk_manager не видит раздел «Комплаенс»", async ({ page }) => {
+test("администратор видит «Проверку по перечням», наблюдатель — нет", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
-  await expect(page.getByRole("link", { name: "Комплаенс" })).toHaveCount(0);
+  await login(page, seed.admin.email, seed.admin.password);
+  await expect(page.getByRole("link", { name: "Проверка по перечням" })).toBeVisible();
+  await expect(page.getByText("Комплаенс")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Выйти" }).click();
+  await login(page, seed.viewer.email, seed.viewer.password);
+  await expect(page.getByRole("link", { name: "Заявки" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Проверка по перечням" })).toHaveCount(0);
 });

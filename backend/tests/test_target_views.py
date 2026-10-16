@@ -59,7 +59,7 @@ async def _bad_and_mature(session, contract_id, view: str) -> tuple[int | None, 
 
 
 async def test_target_views_three_known_cases_and_stale_data(session_factory):
-    employee_id = await create_employee(session_factory, email="rm-target@example.com", role="risk_manager")
+    employee_id = await create_employee(session_factory, email="rm-target@example.com", role="admin")
 
     async with session_factory() as session:
         # A: окно (6 мес.) полностью покрыто данными, вовремя погашено -> bad=0, зрелый.

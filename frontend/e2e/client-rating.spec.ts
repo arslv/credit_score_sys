@@ -6,7 +6,7 @@ import { login } from "./login";
 
 test("карточка: блок «Рейтинг клиента» с суммой и критериями", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.application.id}`);
 
   const rating = page.getByTestId("client-rating");

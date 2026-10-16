@@ -6,6 +6,8 @@ import { EmptyState, ErrorState, LoadingState, PageHeader, SearchInput, Segmente
 import { formatDateTime } from "../lib/format";
 import { complianceVerdictLabel, reasonCodeLabel } from "../lib/labels";
 
+// T23 (решение владельца): бывший «Комплаенс» — «Проверка по перечням».
+// Слово «комплаенс» людям непонятно; разбирают совпадения admin и operator.
 export function CompliancePage() {
   const queryClient = useQueryClient();
   const [openReasonFor, setOpenReasonFor] = useState<string | null>(null);
@@ -70,9 +72,26 @@ export function CompliancePage() {
   return (
     <section>
       <PageHeader
-        title="Комплаенс"
-        description="Совпадения заявителей с перечнем Росфинмониторинга. Совпадение замораживает клиента: разберите его и, если это не он, снимите заморозку с указанием причины."
+        title="Проверка по перечням"
+        description="Заявители, чьё ФИО совпало с перечнем Росфинмониторинга (террористы и экстремисты, 115-ФЗ). Такому клиенту рассрочку выдавать нельзя, поэтому система его замораживает и ждёт, пока человек разберётся."
       />
+      <div className="watchlist-explain">
+        <div className="watchlist-explain__title">Как разобрать совпадение</div>
+        <ol>
+          <li>
+            Откройте заявку и сравните данные клиента с записью в перечне: дату и место рождения, паспорт. Совпадение
+            ищется по ФИО, поэтому часто это просто однофамилец.
+          </li>
+          <li>
+            <b>Не он</b> — нажмите «Пометить ложным», затем «Снять заморозку» и напишите, почему (например, «другая
+            дата рождения»). Клиент снова может получить рассрочку.
+          </li>
+          <li>
+            <b>Он</b> — нажмите «Подтвердить совпадение». Заморозка остаётся, рассрочку не выдаём. Клиенту причину
+            не сообщаем.
+          </li>
+        </ol>
+      </div>
       <Toolbar>
         <SearchInput value={search} onChange={setSearch} placeholder="Номер заявки или ФИО" />
         <Segmented

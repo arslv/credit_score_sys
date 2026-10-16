@@ -1,6 +1,10 @@
 """T12: критерий приёмки — "тест на каждую роль: разрешённое работает,
-запрещённое -> 403", плюс viewer/admin без ПД, фото и кредитный отчёт только
-risk_manager/compliance, просмотр фото и карточки с ПД — в audit_log."""
+запрещённое -> 403". T23: ролей три — admin (бывшие risk_manager и
+compliance: персданные, фото, кредитный отчёт, правила, совпадения с
+перечнем), operator (ПД в списке/карточке, фото, кредитный отчёт,
+совпадения с перечнем) и viewer (только просмотр). Решение владельца:
+персданные не скрываются ни у одной роли. Просмотр фото и карточки с ПД —
+в audit_log."""
 
 import uuid
 from datetime import date, datetime, timezone
@@ -20,7 +24,7 @@ from app.models import (
 )
 from tests._admin_helpers import create_employee, login
 
-ALL_ROLES = ("risk_manager", "admin", "viewer", "compliance")
+ALL_ROLES = ("admin", "operator", "viewer")
 
 
 async def _seed_ruleset(session_factory) -> uuid.UUID:
@@ -104,7 +108,7 @@ async def _client_for_role(admin_client, session_factory, role: str, email: str 
     return admin_client
 
 
-# --- список/карточка заявок: доступно всем ролям, ПД — только risk_manager/compliance ---
+# --- список/карточка заявок: доступно всем ролям, ПД — тоже всем (T23) ----------
 
 
 @pytest.mark.parametrize("role", ALL_ROLES)
@@ -114,22 +118,8 @@ async def test_every_role_can_list_applications(admin_client, session_factory, r
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize("role", ("viewer", "admin"))
-async def test_viewer_and_admin_do_not_see_client_name(admin_client, session_factory, role):
-    application_id, _client_id, _doc_id = await _seed_application_with_pii(session_factory)
-    await _client_for_role(admin_client, session_factory, role)
-
-    list_response = await admin_client.get("/api/applications")
-    item = next(i for i in list_response.json()["items"] if i["id"] == str(application_id))
-    assert item["client_name"] != "Иванов Иван Иванович"
-    assert "Иванов" not in (item["client_name"] or "")
-
-    detail_response = await admin_client.get(f"/api/applications/{application_id}")
-    assert "Иванов" not in (detail_response.json()["client_name"] or "")
-
-
-@pytest.mark.parametrize("role", ("risk_manager", "compliance"))
-async def test_risk_manager_and_compliance_see_full_client_name(admin_client, session_factory, role):
+@pytest.mark.parametrize("role", ALL_ROLES)
+async def test_every_role_sees_full_client_name(admin_client, session_factory, role):
     application_id, _client_id, _doc_id = await _seed_application_with_pii(session_factory)
     await _client_for_role(admin_client, session_factory, role)
 
@@ -137,7 +127,7 @@ async def test_risk_manager_and_compliance_see_full_client_name(admin_client, se
     assert detail_response.json()["client_name"] == "Иванов Иван Иванович"
 
 
-@pytest.mark.parametrize("role", ("risk_manager", "compliance"))
+@pytest.mark.parametrize("role", ALL_ROLES)
 async def test_viewing_application_with_pii_writes_audit_log(admin_client, session_factory, role):
     application_id, _client_id, _doc_id = await _seed_application_with_pii(session_factory)
     await _client_for_role(admin_client, session_factory, role)
@@ -151,10 +141,10 @@ async def test_viewing_application_with_pii_writes_audit_log(admin_client, sessi
     assert any(r.object_id == application_id for r in rows)
 
 
-# --- фото: только risk_manager/compliance, с записью в аудит --------------------
+# --- фото и кредитный отчёт: всем ролям, с записью в аудит ---------------------
 
 
-@pytest.mark.parametrize("role", ("risk_manager", "compliance"))
+@pytest.mark.parametrize("role", ALL_ROLES)
 async def test_photo_accessible_and_audited_for_allowed_roles(admin_client, session_factory, role):
     application_id, _client_id, document_id = await _seed_application_with_pii(session_factory)
     await _client_for_role(admin_client, session_factory, role)
@@ -171,19 +161,7 @@ async def test_photo_accessible_and_audited_for_allowed_roles(admin_client, sess
     assert any(r.object_id == document_id for r in rows)
 
 
-@pytest.mark.parametrize("role", ("admin", "viewer"))
-async def test_photo_forbidden_for_disallowed_roles(admin_client, session_factory, role):
-    application_id, _client_id, document_id = await _seed_application_with_pii(session_factory)
-    await _client_for_role(admin_client, session_factory, role)
-
-    response = await admin_client.get(f"/api/applications/{application_id}/documents/{document_id}")
-    assert response.status_code == 403
-
-
-# --- кредитный отчёт: только risk_manager/compliance ----------------------------
-
-
-@pytest.mark.parametrize("role", ("risk_manager", "compliance"))
+@pytest.mark.parametrize("role", ALL_ROLES)
 async def test_credit_report_accessible_for_allowed_roles(admin_client, session_factory, role):
     application_id, _client_id, _doc_id = await _seed_application_with_pii(session_factory)
     await _client_for_role(admin_client, session_factory, role)
@@ -199,22 +177,17 @@ async def test_credit_report_accessible_for_allowed_roles(admin_client, session_
     assert any(r.object_id == application_id for r in rows)
 
 
-@pytest.mark.parametrize("role", ("admin", "viewer"))
-async def test_credit_report_forbidden_for_disallowed_roles(admin_client, session_factory, role):
-    application_id, _client_id, _doc_id = await _seed_application_with_pii(session_factory)
+# --- только admin: сотрудники, правила, справочники, импорт -----------------------
+
+
+@pytest.mark.parametrize("role", ("operator", "viewer"))
+@pytest.mark.parametrize(
+    "path",
+    ("/api/employees", "/api/rulesets/active", "/api/references/goods-categories", "/api/imports/contract-candidates"),
+)
+async def test_non_admin_roles_forbidden_from_admin_endpoints(admin_client, session_factory, role, path):
     await _client_for_role(admin_client, session_factory, role)
-
-    response = await admin_client.get(f"/api/applications/{application_id}/credit-report")
-    assert response.status_code == 403
-
-
-# --- эндпоинты только для admin: сотрудники, аудит, состояние системы -----------
-
-
-@pytest.mark.parametrize("role", ("risk_manager", "viewer", "compliance"))
-async def test_non_admin_roles_forbidden_from_employees_endpoint(admin_client, session_factory, role):
-    await _client_for_role(admin_client, session_factory, role)
-    response = await admin_client.get("/api/employees")
+    response = await admin_client.get(path)
     assert response.status_code == 403
 
 
@@ -224,14 +197,27 @@ async def test_admin_can_access_employees_endpoint(admin_client, session_factory
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize("role", ("risk_manager", "admin", "viewer"))
-async def test_non_compliance_roles_forbidden_from_compliance_endpoints(admin_client, session_factory, role):
-    await _client_for_role(admin_client, session_factory, role)
+# --- проверка по перечням (бывший комплаенс): admin и operator --------------------
+
+
+async def test_viewer_forbidden_from_compliance_endpoints(admin_client, session_factory):
+    await _client_for_role(admin_client, session_factory, "viewer")
     response = await admin_client.get("/api/compliance/matches")
     assert response.status_code == 403
 
 
-async def test_compliance_can_access_compliance_endpoint(admin_client, session_factory):
-    await _client_for_role(admin_client, session_factory, "compliance")
+@pytest.mark.parametrize("role", ("admin", "operator"))
+async def test_admin_and_operator_access_compliance_endpoint(admin_client, session_factory, role):
+    await _client_for_role(admin_client, session_factory, role)
     response = await admin_client.get("/api/compliance/matches")
     assert response.status_code == 200
+
+
+# --- аналитика: admin и viewer, оператору не нужна -------------------------------
+
+
+@pytest.mark.parametrize(("role", "code"), (("admin", 200), ("viewer", 200), ("operator", 403)))
+async def test_dashboard_access(admin_client, session_factory, role, code):
+    await _client_for_role(admin_client, session_factory, role)
+    response = await admin_client.get("/api/dashboard/summary")
+    assert response.status_code == code

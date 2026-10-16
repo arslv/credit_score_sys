@@ -23,7 +23,7 @@ async def _seed_deps(db_session) -> tuple:
         passport_series=f"{uuid.uuid4().int % 10000:04d}", passport_number=f"{uuid.uuid4().int % 1000000:06d}",
         phone="+70000000000",
     )
-    employee = Employee(full_name="Т", email=f"{uuid.uuid4().hex}@example.com", role="compliance", password_hash=hash_password("x"))
+    employee = Employee(full_name="Т", email=f"{uuid.uuid4().hex}@example.com", role="admin", password_hash=hash_password("x"))
     db_session.add_all([client, employee])
     await db_session.flush()
     return client.id, employee.id

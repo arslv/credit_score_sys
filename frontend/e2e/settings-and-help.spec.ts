@@ -12,14 +12,13 @@ test("подменю Настроек показывает только разд
   for (const item of ["Сотрудники", "Справочники", "Импорт", "Аудит", "Состояние системы"]) {
     await expect(nav.getByRole("link", { name: item })).toBeVisible();
   }
-  await expect(nav.getByRole("link", { name: "Комплаенс" })).toHaveCount(0);
+  // T23: «Проверка по перечням» — отдельный раздел меню, не настройка.
+  await expect(nav.getByRole("link", { name: "Проверка по перечням" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Выйти" }).click();
-  await login(page, seed.compliance.email, seed.compliance.password);
-  await page.goto("/compliance");
-  const complianceNav = page.getByRole("navigation", { name: "Настройки" });
-  await expect(complianceNav.getByRole("link")).toHaveCount(1);
-  await expect(complianceNav.getByRole("link", { name: "Комплаенс" })).toBeVisible();
+  await login(page, seed.operator.email, seed.operator.password);
+  await expect(page.getByRole("link", { name: "Проверка по перечням" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Настройки" })).toHaveCount(0);
 });
 
 test("новый сотрудник создаётся в модальном окне и находится поиском", async ({ page }) => {

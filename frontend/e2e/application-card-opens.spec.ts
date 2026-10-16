@@ -4,7 +4,7 @@ import { login } from "./login";
 
 test("открытие карточки заявки", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
 
   await page.goto(`/applications/${seed.application.id}`);
   // T17, шаг 3: вместо заголовка «Решения» — вердикт крупно, номер заявки в шапке вердикта.

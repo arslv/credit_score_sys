@@ -8,11 +8,10 @@ from app.db import get_session
 from app.models import Employee
 from app.security.sessions import COOKIE_NAME, get_valid_session
 
-# risk_manager/admin/viewer/compliance — только risk_manager и compliance
-# видят персданные заявителей в заявках/клиентах (ваше уточнение: admin —
-# как viewer для этих разделов, ему для работы нужны сотрудники/справочники/
-# аудит/состояние системы, не паспорта клиентов).
-ROLES_WITH_FULL_PII = ("risk_manager", "compliance")
+# T23 (решение владельца): роли admin / operator / viewer, персданные
+# заявителей видят ВСЕ три — маскировки («Клиент скрыт», null вместо фото,
+# анкеты, кредитного отчёта) больше нет ни у кого.
+ROLES_WITH_FULL_PII = ("admin", "operator", "viewer")
 
 
 async def get_current_employee(request: Request, session: AsyncSession = Depends(get_session)) -> Employee:
@@ -39,4 +38,4 @@ def has_full_pii(employee: Employee) -> bool:
 
 
 def require_any_authenticated():
-    return require_roles("risk_manager", "admin", "viewer", "compliance")
+    return require_roles("admin", "operator", "viewer")

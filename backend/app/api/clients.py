@@ -1,5 +1,6 @@
 """T12: клиенты — история обращений (ТЗ, «Клиенты»). ПД — только
-risk_manager/compliance; admin и viewer — обезличенный вид (ваше уточнение)."""
+risk_manager/compliance; admin и viewer — обезличенный вид (ваше уточнение).
+T23: ролей три — персданные видит admin, viewer — обезличенно."""
 
 from datetime import date, datetime
 from uuid import UUID
@@ -16,7 +17,7 @@ from app.security.pagination import Page, PageParams
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
 
-_VIEW_ROLES = ("risk_manager", "admin", "viewer", "compliance")
+_VIEW_ROLES = ("admin", "operator", "viewer")  # T23: operator — бывшие права compliance
 _MASKED_NAME = "Клиент скрыт"
 
 

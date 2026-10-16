@@ -66,7 +66,7 @@ async def _counts(session_factory) -> tuple[int, int]:
 async def test_simulate_does_not_write_decisions_or_feature_snapshots(
     admin_client, session_factory, active_ruleset
 ):
-    await create_employee(session_factory, email="rm1@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm1@example.com", role="admin")
     await login(admin_client, "rm1@example.com")
 
     async with session_factory() as session:
@@ -84,7 +84,7 @@ async def test_simulate_does_not_write_decisions_or_feature_snapshots(
 
 
 async def test_not_computable_reports_missing_feature_separately(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="rm2@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm2@example.com", role="admin")
     await login(admin_client, "rm2@example.com")
 
     async with session_factory() as session:
@@ -117,7 +117,7 @@ async def test_not_computable_reports_missing_feature_separately(admin_client, s
 async def test_unknown_after_stage_a_pass_bucket(admin_client, session_factory, active_ruleset):
     """Уточнение 2 (ваше явное указание): отклонена на А активной версией, по
     кандидату прошла бы — снимка стадии Б нет — отдельная категория, не «swap»."""
-    await create_employee(session_factory, email="rm3@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm3@example.com", role="admin")
     await login(admin_client, "rm3@example.com")
 
     async with session_factory() as session:
@@ -147,9 +147,9 @@ async def test_defaultness_by_known_outcome_uses_mature_contracts(admin_client, 
     (target_bad_60_6), не заглушка."""
     from app.models import Contract, ImportBatch, Payment, PaymentSchedule
 
-    await create_employee(session_factory, email="rm-def@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-def@example.com", role="admin")
     await login(admin_client, "rm-def@example.com")
-    employee_id = await create_employee(session_factory, email="rm-def2@example.com", role="risk_manager")
+    employee_id = await create_employee(session_factory, email="rm-def2@example.com", role="admin")
 
     async with session_factory() as session:
         app1 = await _application(session, external_id=f"SIM-DEF-{uuid.uuid4().hex[:6]}")
@@ -200,7 +200,7 @@ async def _simulate(client, config) -> dict:
 
 
 async def test_save_without_matching_simulation_rejected(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="rm4@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm4@example.com", role="admin")
     await login(admin_client, "rm4@example.com")
     config = load_config(active_ruleset)
 
@@ -211,7 +211,7 @@ async def test_save_without_matching_simulation_rejected(admin_client, session_f
 
 
 async def test_save_with_changed_yaml_after_simulation_rejected(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="rm5@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm5@example.com", role="admin")
     await login(admin_client, "rm5@example.com")
     config = load_config(active_ruleset)
 
@@ -236,7 +236,7 @@ async def test_save_hash_ignores_comment_and_effective_from(admin_client, sessio
     effective_from после симуляции и всё равно сохранить ТЕМ ЖЕ simulation_id
     должно быть можно — иначе любая правка даты вступления или текста
     комментария вынуждала бы пересимулировать то, что не влияет на решения."""
-    await create_employee(session_factory, email="rm5b@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm5b@example.com", role="admin")
     await login(admin_client, "rm5b@example.com")
     config = load_config(active_ruleset)
 
@@ -256,7 +256,7 @@ async def test_save_hash_ignores_comment_and_effective_from(admin_client, sessio
 async def test_save_with_stale_active_version_rejected(admin_client, session_factory, active_ruleset):
     """Уточнение 3 (ваше явное указание): активная версия поменялась между
     симуляцией и сохранением (кто-то другой сохранил) — 409, не тихая запись."""
-    await create_employee(session_factory, email="rm6@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm6@example.com", role="admin")
     await login(admin_client, "rm6@example.com")
     config = load_config(active_ruleset)
 
@@ -278,7 +278,7 @@ async def test_save_with_stale_active_version_rejected(admin_client, session_fac
 
 
 async def test_save_with_expired_simulation_rejected(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="rm7@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm7@example.com", role="admin")
     await login(admin_client, "rm7@example.com")
     config = load_config(active_ruleset)
 
@@ -297,7 +297,7 @@ async def test_save_with_expired_simulation_rejected(admin_client, session_facto
 
 
 async def test_save_creates_new_active_version_and_writes_audit(admin_client, session_factory, active_ruleset):
-    employee_id = await create_employee(session_factory, email="rm8@example.com", role="risk_manager")
+    employee_id = await create_employee(session_factory, email="rm8@example.com", role="admin")
     await login(admin_client, "rm8@example.com")
     config = load_config(active_ruleset)
 
@@ -333,7 +333,7 @@ async def test_save_creates_new_active_version_and_writes_audit(admin_client, se
 
 
 async def test_rollback_requires_nonempty_reason(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="rm9@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm9@example.com", role="admin")
     await login(admin_client, "rm9@example.com")
 
     response = await admin_client.post(
@@ -369,7 +369,7 @@ async def _save_version_with_different_rules(session_factory, active_ruleset) ->
 async def test_rollback_creates_copy_and_causes_file_conflict_on_next_sync(
     admin_client, session_factory, active_ruleset
 ):
-    employee_id = await create_employee(session_factory, email="rm10@example.com", role="risk_manager")
+    employee_id = await create_employee(session_factory, email="rm10@example.com", role="admin")
     await login(admin_client, "rm10@example.com")
     target_version = await _save_version_with_different_rules(session_factory, active_ruleset)
 
@@ -415,7 +415,7 @@ async def test_rollback_creates_copy_and_causes_file_conflict_on_next_sync(
 
 
 async def test_versions_endpoint_shows_file_conflict_after_rollback(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="rm11@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm11@example.com", role="admin")
     await login(admin_client, "rm11@example.com")
     target_version = await _save_version_with_different_rules(session_factory, active_ruleset)
 
@@ -434,7 +434,7 @@ async def test_versions_endpoint_shows_no_conflict_when_active_matches_file(
 ):
     """T14, ваше замечание п.1/3: если активная версия совпадает с файлом по
     правилам — конфликта нет вовсе (плашки быть не должно)."""
-    await create_employee(session_factory, email="rm11b@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm11b@example.com", role="admin")
     await login(admin_client, "rm11b@example.com")
 
     response = await admin_client.get("/api/rulesets/versions")
@@ -452,7 +452,7 @@ async def test_accept_file_sets_author_none_and_is_idempotent(admin_client, sess
     версий -> повторное нажатие кнопки не создаёт версию."""
     from app.models import AuditLog
 
-    await create_employee(session_factory, email="rm12@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm12@example.com", role="admin")
     await login(admin_client, "rm12@example.com")
 
     # Активная версия сейчас отличается от файла правилами — есть что принимать.
@@ -524,18 +524,18 @@ def test_row_to_dict_redacts_client_name_without_full_pii():
     assert _row_to_dict(row, full_pii=True)["client_name"] == "Тестова Клиентова"
 
 
-async def test_admin_forbidden_from_viewing_rulesets(admin_client, session_factory, active_ruleset):
-    """T14, ваше замечание п.2: «Правила и пороги» — только risk_manager
-    (ТЗ, карта экранов), admin допускался сюда по ошибке — исправлено."""
-    await create_employee(session_factory, email="admin14@example.com", role="admin")
+async def test_operator_forbidden_from_viewing_rulesets(admin_client, session_factory, active_ruleset):
+    """T14: «Правила и пороги» — одна роль. T23: роль risk_manager слита с
+    admin — правила теперь меняет admin, operator сюда не допускается."""
+    await create_employee(session_factory, email="admin14@example.com", role="operator")
     await login(admin_client, "admin14@example.com")
 
     assert (await admin_client.get("/api/rulesets/active")).status_code == 403
     assert (await admin_client.get("/api/rulesets/versions")).status_code == 403
 
 
-async def test_admin_forbidden_from_simulating(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="admin15@example.com", role="admin")
+async def test_operator_forbidden_from_simulating(admin_client, session_factory, active_ruleset):
+    await create_employee(session_factory, email="admin15@example.com", role="operator")
     await login(admin_client, "admin15@example.com")
     config = load_config(active_ruleset)
 
@@ -543,8 +543,8 @@ async def test_admin_forbidden_from_simulating(admin_client, session_factory, ac
     assert response.status_code == 403
 
 
-async def test_admin_forbidden_from_saving(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="admin16@example.com", role="admin")
+async def test_operator_forbidden_from_saving(admin_client, session_factory, active_ruleset):
+    await create_employee(session_factory, email="admin16@example.com", role="operator")
     await login(admin_client, "admin16@example.com")
     config = load_config(active_ruleset)
 
@@ -554,8 +554,8 @@ async def test_admin_forbidden_from_saving(admin_client, session_factory, active
     assert response.status_code == 403
 
 
-async def test_admin_forbidden_from_rollback(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="admin17@example.com", role="admin")
+async def test_operator_forbidden_from_rollback(admin_client, session_factory, active_ruleset):
+    await create_employee(session_factory, email="admin17@example.com", role="operator")
     await login(admin_client, "admin17@example.com")
 
     response = await admin_client.post(
@@ -564,8 +564,8 @@ async def test_admin_forbidden_from_rollback(admin_client, session_factory, acti
     assert response.status_code == 403
 
 
-async def test_admin_forbidden_from_accepting_file(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="admin18@example.com", role="admin")
+async def test_operator_forbidden_from_accepting_file(admin_client, session_factory, active_ruleset):
+    await create_employee(session_factory, email="admin18@example.com", role="operator")
     await login(admin_client, "admin18@example.com")
 
     response = await admin_client.post("/api/rulesets/accept-file")
@@ -573,7 +573,7 @@ async def test_admin_forbidden_from_accepting_file(admin_client, session_factory
 
 
 async def test_save_requires_nonblank_comment(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="rm9@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm9@example.com", role="admin")
     await login(admin_client, "rm9@example.com")
     config = load_config(active_ruleset)
     yaml_text = _dump_yaml(config)
@@ -591,7 +591,7 @@ async def test_save_requires_nonblank_comment(admin_client, session_factory, act
 
 
 async def test_save_stores_publish_comment_as_version_comment(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="rm10@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm10@example.com", role="admin")
     await login(admin_client, "rm10@example.com")
     config = load_config(active_ruleset)
     raw = config.model_dump(mode="json")
@@ -611,7 +611,7 @@ async def test_save_stores_publish_comment_as_version_comment(admin_client, sess
 
 
 async def test_versions_list_describes_typed_changes_between_versions(admin_client, session_factory, active_ruleset):
-    await create_employee(session_factory, email="rm11@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm11@example.com", role="admin")
     await login(admin_client, "rm11@example.com")
     base = load_config(active_ruleset).model_dump(mode="json")
     base["effective_from"] = date.today().isoformat()
@@ -647,7 +647,7 @@ async def test_simulation_applies_installment_pti_to_pre_t21_snapshots(admin_cli
     from app.engine.versions import save_ruleset_version
     from app.models import ExternalSnapshot
 
-    await create_employee(session_factory, email="rm_t21@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm_t21@example.com", role="admin")
     await login(admin_client, "rm_t21@example.com")
 
     candidate = load_config(active_ruleset)

@@ -63,7 +63,7 @@ async def _target(session_factory, *, external_number: str, view: str) -> tuple[
 
 
 async def test_demo_import_fixtures_match_expected_md(admin_client, session_factory):
-    await create_employee(session_factory, email="rm-demo@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-demo@example.com", role="admin")
     await login(admin_client, "rm-demo@example.com")
 
     contracts_result = await _upload(

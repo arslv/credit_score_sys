@@ -1,6 +1,6 @@
 """T14: редактор правил и симуляция (ТЗ, «Конфиг» -> «Версионирование»,
 «Обязательная симуляция»; «Админка» -> «Правила и пороги»). Роль экрана —
-ТОЛЬКО risk_manager (ТЗ, карта экранов: «Правила и пороги | риск-менеджер») —
+ТОЛЬКО admin (T23; по ТЗ — риск-менеджер, роль слита с admin) —
 раньше сюда по ошибке допускался и admin, исправлено по вашему замечанию."""
 
 from datetime import datetime, timedelta, timezone
@@ -24,7 +24,7 @@ from app.security.deps import has_full_pii, require_roles
 
 router = APIRouter(prefix="/api/rulesets", tags=["rulesets"])
 
-_ROLES = ("risk_manager",)
+_ROLES = ("admin",)
 
 
 def _parse_yaml_or_400(text: str):

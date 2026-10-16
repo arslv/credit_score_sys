@@ -8,7 +8,7 @@ import { login } from "./login";
 
 test("отказ по перечню объясняется текстом причины, а не «стоп-факторов нет»", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
 
   await page.goto(`/applications/${seed.frozen_match.application_id}`);
   await expect(page.getByText("Совпадение по перечню Росфинмониторинга").first()).toBeVisible();
@@ -18,7 +18,7 @@ test("отказ по перечню объясняется текстом пр�
 
 test("в основном виде карточки нет сырых снимков; «Подробности» свёрнуты", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
 
   await page.goto(`/applications/${seed.frozen_match.application_id}`);
   const details = page.locator("details", { hasText: "Подробности" });

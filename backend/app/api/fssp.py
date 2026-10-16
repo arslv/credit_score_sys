@@ -13,7 +13,8 @@
    hard_stop fssp_credit_debt, — fssp_post_decision_alerts (T16, п.3 ваших
    правок; статус заявки не меняем, правило 12 CLAUDE.md).
 
-Роли: только operator и risk_manager (ваше явное указание, п.1 — admin по
+Роли (T23): operator и admin — admin получил обязанности risk_manager и
+полный доступ к персданным. Исторически (T16): только operator и risk_manager (п.1 — admin по
 нашей модели ролей персданные заявителей не видит)."""
 
 import base64
@@ -50,7 +51,7 @@ from app.sources.fssp import FsspSearchError, FsspValidationError
 
 router = APIRouter(prefix="/api", tags=["fssp"])
 
-_FSSP_ROLES = ("operator", "risk_manager")
+_FSSP_ROLES = ("operator", "admin")
 _SUBJECT_TYPES = ("applicant", "guarantor")
 
 

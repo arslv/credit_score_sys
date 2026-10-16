@@ -77,8 +77,9 @@ export function ApplicationDetailPage() {
   }
 
   const app = query.data;
-  const canRetry = employee?.role === "risk_manager";
-  const canOperateFssp = employee?.role === "operator" || employee?.role === "risk_manager";
+  // T23: ролей три — повтор проверки у admin, ФССП у admin и operator.
+  const canRetry = employee?.role === "admin";
+  const canOperateFssp = employee?.role === "operator" || employee?.role === "admin";
 
   const findLatestFsspCheck = (subjectType: "applicant" | "guarantor", subjectId: string | null) => {
     const matches = app.checks.filter(
@@ -105,9 +106,9 @@ export function ApplicationDetailPage() {
   if (latestDecision?.freeze) {
     actionItems.push({
       key: "freeze",
-      text: "Совпадение по перечню ждёт решения комплаенса",
+      text: "Похож на человека из перечня Росфинмониторинга — проверьте, он ли это",
       href: "/compliance",
-      button: "Открыть комплаенс",
+      button: "К проверке по перечням",
     });
   }
   for (const subject of app.fssp_post_decision_alert_subjects) {

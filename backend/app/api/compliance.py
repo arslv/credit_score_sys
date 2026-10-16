@@ -18,7 +18,8 @@ from app.security.pagination import Page, PageParams
 
 router = APIRouter(prefix="/api/compliance", tags=["compliance"])
 
-_COMPLIANCE_ONLY = ("compliance",)
+# T23: разбор совпадений с перечнем — admin и operator (роли compliance больше нет).
+_COMPLIANCE_ONLY = ("admin", "operator")
 
 
 class MatchItem(BaseModel):

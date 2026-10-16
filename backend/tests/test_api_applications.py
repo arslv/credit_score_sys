@@ -64,7 +64,7 @@ async def test_risk_manager_sees_human_readable_rules_and_raw_checks(
     ocr_provider = FakeOcrProvider(build_ocr_result(overrides=_age_overrides(19)))  # AGE_BELOW_MIN — hard_stop
     await run_stage_a(session_factory, application_id, ocr_provider=ocr_provider, partner_client=partner_client, storage=storage)
 
-    await create_employee(session_factory, email="rm@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm@example.com", role="admin")
     await login(admin_client, "rm@example.com")
 
     response = await admin_client.get(f"/api/applications/{application_id}")
@@ -114,7 +114,7 @@ async def test_stage_b_snapshot_history_exposed_for_full_pii_roles(
         )
         await session.commit()
 
-    await create_employee(session_factory, email="rm5@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm5@example.com", role="admin")
     await login(admin_client, "rm5@example.com")
 
     response = await admin_client.get(f"/api/applications/{application_id}")
@@ -128,7 +128,7 @@ async def test_stage_b_snapshot_history_exposed_for_full_pii_roles(
     assert stage_b_snapshots[0]["received_at"] < stage_b_snapshots[1]["received_at"]
 
 
-async def test_admin_and_viewer_get_masked_application_detail(
+async def test_every_role_sees_application_pii(  # T23: персданные не скрываются ни у одной роли
     admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
     external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
@@ -143,14 +143,10 @@ async def test_admin_and_viewer_get_masked_application_detail(
         assert response.status_code == 200
         body = response.json()
 
-        assert body["client_name"] == "Клиент скрыт", role
-        assert body["profile"] is None, role
-        assert body["ocr_result"] is None, role
-        assert body["external_snapshots"] == [], role
-        assert body["guarantor_profile"] is None, role
-        for check in body["checks"]:
-            assert check["parsed"] is None, role
-            assert check["response_raw"] is None, role
+        assert body["client_name"] != "Клиент скрыт", role
+        assert body["profile"] is not None, role
+        assert body["ocr_result"] is not None, role
+        assert body["external_snapshots"], role
 
 
 async def test_operator_sees_application_pii_in_card_but_stays_out_of_rest(
@@ -197,7 +193,7 @@ async def test_retry_check_succeeds_for_risk_manager_and_writes_audit(
     assert fns_check is not None
     assert fns_check.status == "source_unavailable"
 
-    employee_id = await create_employee(session_factory, email="rm2@example.com", role="risk_manager")
+    employee_id = await create_employee(session_factory, email="rm2@example.com", role="admin")
     await login(admin_client, "rm2@example.com")
 
     # Найденный баг (живой прогон, T16): OcrResult.fields — обёртка
@@ -250,7 +246,7 @@ async def test_retry_check_rejected_for_wrong_role_wrong_source_and_wrong_status
     response = await admin_client.post(f"/api/applications/{application_id}/checks/{fns_check.id}/retry")
     assert response.status_code == 403
 
-    await create_employee(session_factory, email="rm3@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm3@example.com", role="admin")
     await login(admin_client, "rm3@example.com")
 
     # mvd — локальный источник, не в списке допустимых для ручного повтора.
@@ -307,7 +303,7 @@ async def test_discrepancies_only_filter_shows_only_mismatched_overrides(
         )
         await session.commit()
 
-    await create_employee(session_factory, email="rm4@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm4@example.com", role="admin")
     await login(admin_client, "rm4@example.com")
 
     response = await admin_client.get("/api/applications", params={"discrepancies_only": True})
@@ -315,6 +311,15 @@ async def test_discrepancies_only_filter_shows_only_mismatched_overrides(
     ids = {item["id"] for item in response.json()["items"]}
     assert str(mismatch_id) in ids
     assert str(match_id) not in ids
+
+    # T23: очередь admin — только заявка с расхождением. Раньше подзапросы
+    # не были привязаны к строке, и одно расхождение ставило в очередь все.
+    response = await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})
+    assert response.status_code == 200
+    queue = {item["id"]: item for item in response.json()["items"]}
+    assert str(mismatch_id) in queue
+    assert str(match_id) not in queue
+    assert queue[str(mismatch_id)]["waiting_since"] is not None
 
 
 async def test_decision_thresholds_come_from_own_ruleset_version_not_current(
@@ -341,7 +346,7 @@ async def test_decision_thresholds_come_from_own_ruleset_version_not_current(
         await save_ruleset_version(session, new_config)
         await session.commit()
 
-    await create_employee(session_factory, email="rm6@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm6@example.com", role="admin")
     await login(admin_client, "rm6@example.com")
 
     response = await admin_client.get(f"/api/applications/{application_id}")
@@ -386,7 +391,7 @@ async def test_card_explains_reject_without_triggered_rules_and_exposes_stage_b_
         )
         await session.commit()
 
-    await create_employee(session_factory, email="rm_pti@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm_pti@example.com", role="admin")
     await login(admin_client, "rm_pti@example.com")
 
     response = await admin_client.get(f"/api/applications/{application_id}")
@@ -432,7 +437,7 @@ async def test_card_exposes_decision_stage_for_overrides_and_goods_category_name
         await session.commit()
         category_name = category.name
 
-    await create_employee(session_factory, email="rm_stage@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm_stage@example.com", role="admin")
     await login(admin_client, "rm_stage@example.com")
 
     response = await admin_client.get(f"/api/applications/{application_id}")
@@ -472,8 +477,7 @@ async def test_list_queues_are_per_role_and_sorted_by_waiting_time(
 
     for email, role in (
         ("op_queue@example.com", "operator"),
-        ("cmp_queue@example.com", "compliance"),
-        ("rm_queue@example.com", "risk_manager"),
+        ("adm_queue@example.com", "admin"),
         ("viewer_queue@example.com", "viewer"),
     ):
         await create_employee(session_factory, email=email, role=role)
@@ -484,7 +488,11 @@ async def test_list_queues_are_per_role_and_sorted_by_waiting_time(
     await login(admin_client, "op_queue@example.com")
     operator = (await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})).json()
     assert str(waiting_id) in ids(operator)
-    assert str(frozen_id) not in ids(operator)  # комплаенс, не оператор
+    # T23: разбор совпадений с перечнем (бывший комплаенс) — и в очереди оператора.
+    assert str(frozen_id) in ids(operator)
+    assert next(i for i in operator["items"] if i["id"] == str(frozen_id))["action_text"] == (
+        "Проверить совпадение с перечнем"
+    )
     waiting_item = next(item for item in operator["items"] if item["id"] == str(waiting_id))
     assert waiting_item["action_kind"] == "call"
     assert waiting_item["action_text"] == "Позвонить"
@@ -493,24 +501,21 @@ async def test_list_queues_are_per_role_and_sorted_by_waiting_time(
     counts = (await admin_client.get("/api/applications/quick-counts")).json()
     assert counts["action"] == operator["total"]
 
-    await login(admin_client, "cmp_queue@example.com")
-    compliance = (await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})).json()
-    assert str(frozen_id) in ids(compliance)
-    assert str(waiting_id) not in ids(compliance)
-    frozen_item = next(item for item in compliance["items"] if item["id"] == str(frozen_id))
-    assert frozen_item["action_text"] == "Ждёт комплаенс"
-
-    await login(admin_client, "rm_queue@example.com")
-    risk = (await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})).json()
-    assert str(waiting_id) not in ids(risk)  # стадия А «передано оператору» — не серая зона
-    assert str(frozen_id) not in ids(risk)
+    # T23: admin — бывшие risk_manager и compliance: серая зона, расхождения
+    # и совпадения с перечнем; «передано оператору» на стадии А — не его.
+    await login(admin_client, "adm_queue@example.com")
+    admin_queue = (await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})).json()
+    assert str(waiting_id) not in ids(admin_queue)
+    assert str(frozen_id) in ids(admin_queue)
+    frozen_item = next(item for item in admin_queue["items"] if item["id"] == str(frozen_id))
+    assert frozen_item["action_text"] == "Проверить совпадение с перечнем"
 
     await login(admin_client, "viewer_queue@example.com")
     viewer = (await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})).json()
     assert viewer["total"] == 0
     assert (await admin_client.get("/api/applications/quick-counts")).json()["action"] is None
 
-    await login(admin_client, "rm_queue@example.com")
+    await login(admin_client, "adm_queue@example.com")
     gray = (await admin_client.get("/api/applications", params={"view": "gray", "page_size": 50})).json()
     assert str(waiting_id) not in ids(gray)
     today = (await admin_client.get("/api/applications", params={"view": "today", "page_size": 50})).json()

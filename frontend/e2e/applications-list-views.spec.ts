@@ -8,7 +8,7 @@ import { login } from "./login";
 
 test("быстрые фильтры списка: очередь роли, серая зона, счётчики видны", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/applications");
 
   const queue = page.getByRole("button", { name: /Требуют действия · \d+/ });

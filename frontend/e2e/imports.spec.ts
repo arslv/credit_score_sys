@@ -4,7 +4,7 @@ import { login } from "./login";
 
 test("импорт договоров через форму — загрузка CSV и отчёт о результате", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
 
   await page.goto("/imports");
   await expect(page.getByRole("heading", { name: "Импорт данных" })).toBeVisible();

@@ -139,7 +139,7 @@ test("ПДН: нет дохода — «не вычислимо», а не 0%; 0
 
 test("карточка серой зоны: «В норме» отдельно, одна «?» с объяснением этого решения", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.gray_fssp.id}`);
 
   await expect(page.getByRole("heading", { level: 1, name: /Серая зона/ })).toBeVisible();
@@ -171,7 +171,7 @@ test("карточка серой зоны: «В норме» отдельно, 
 
 test("карточка без дохода: «ПДН: не вычислимо», нигде нет «ПДН 0%»", async ({ page }) => {
   const seed = loadSeed();
-  await login(page, seed.risk_manager.email, seed.risk_manager.password);
+  await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.no_income.id}`);
 
   await expect(page.getByTestId("decision-unknown")).toHaveText("ПДН: не вычислимо (нет данных о доходе)");

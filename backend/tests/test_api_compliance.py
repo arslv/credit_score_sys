@@ -59,7 +59,7 @@ async def _admin_client(admin_client, session_factory, email="root@example.com")
 
 
 async def _compliance_client(admin_client, session_factory, email="compliance@example.com"):
-    await create_employee(session_factory, email=email, role="compliance")
+    await create_employee(session_factory, email=email, role="admin")
     await login(admin_client, email)
     return admin_client
 

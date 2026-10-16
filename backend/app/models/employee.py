@@ -14,7 +14,9 @@ from app.models.base import Base
 # (капча); правила/сотрудники/аудит недоступны — не риск-менеджер и не админ,
 # у admin тоже нет доступа к /fssp/* (та же модель ролей — персданные
 # заявителей не для админской роли, см. app/api/fssp.py).
-EMPLOYEE_ROLES = ("risk_manager", "admin", "viewer", "compliance", "operator")
+# T23 (решение владельца): три роли — обязанности risk_manager и compliance
+# перешли к admin (разбор совпадений с перечнем — ещё и к operator), миграция 0019.
+EMPLOYEE_ROLES = ("admin", "operator", "viewer")
 DOCUMENT_KINDS = ("selfie_passport", "passport_main", "passport_reg")
 AUDIT_LOG_ACTIONS = (
     "view_application", "view_document", "view_credit_report", "change_ruleset", "export",

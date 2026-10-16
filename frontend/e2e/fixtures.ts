@@ -5,9 +5,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface Seed {
-  risk_manager: { email: string; password: string };
   viewer: { email: string; password: string };
-  compliance: { email: string; password: string };
   admin: { email: string; password: string };
   operator: { email: string; password: string };
   application: { id: string; external_id: string; number: number; last_name: string };

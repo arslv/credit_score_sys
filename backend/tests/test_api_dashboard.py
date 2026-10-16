@@ -155,7 +155,7 @@ async def test_dashboard_summary_matches_exact_seeded_numbers(
 
         await session.commit()
 
-    await create_employee(session_factory, email="dash-rm@example.com", role="risk_manager")
+    await create_employee(session_factory, email="dash-rm@example.com", role="admin")
     await login(admin_client, "dash-rm@example.com")
 
     response = await admin_client.get(
@@ -201,15 +201,16 @@ async def test_dashboard_summary_matches_exact_seeded_numbers(
     assert body["source_unavailable_warn_threshold"] == 0.05  # config/rulesets/dev.yaml
 
 
-async def test_dashboard_forbidden_for_admin_and_compliance(admin_client, session_factory):
-    await create_employee(session_factory, email="dash-admin@example.com", role="admin")
+async def test_dashboard_forbidden_for_operator(admin_client, session_factory):
+    # T23: аналитика — admin и viewer; оператору не нужна.
+    await create_employee(session_factory, email="dash-admin@example.com", role="operator")
     await login(admin_client, "dash-admin@example.com")
     response = await admin_client.get("/api/dashboard/summary")
     assert response.status_code == 403
 
 
 async def test_dashboard_empty_period_returns_empty_blocks(admin_client, session_factory):
-    await create_employee(session_factory, email="dash-rm2@example.com", role="risk_manager")
+    await create_employee(session_factory, email="dash-rm2@example.com", role="admin")
     await login(admin_client, "dash-rm2@example.com")
 
     response = await admin_client.get(
@@ -234,7 +235,7 @@ async def test_dashboard_vintage_and_delinquency_exact_numbers(admin_client, ses
     from app.engine.delinquency_recompute import recompute_all_contracts
     from app.models import Contract, ImportBatch, Payment, PaymentSchedule
 
-    employee_id = await create_employee(session_factory, email="dash-rm3@example.com", role="risk_manager")
+    employee_id = await create_employee(session_factory, email="dash-rm3@example.com", role="admin")
     await login(admin_client, "dash-rm3@example.com")
 
     async with session_factory() as session:

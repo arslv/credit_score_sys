@@ -52,8 +52,6 @@ from app.storage.local import LocalDirectoryStorage
 
 DEMO_EMPLOYEES = (
     ("admin", "demo.admin@example.com", "Администратор (демо)"),
-    ("risk_manager", "demo.risk@example.com", "Риск-менеджер (демо)"),
-    ("compliance", "demo.compliance@example.com", "Комплаенс-офицер (демо)"),
     ("operator", "demo.operator@example.com", "Оператор (демо)"),
     ("viewer", "demo.viewer@example.com", "Наблюдатель (демо)"),
 )
@@ -289,7 +287,7 @@ class DemoSeeder:
         config["effective_from"] = datetime.now(timezone.utc).date().isoformat()
         yaml_text = yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
 
-        risk = await self._as("risk_manager")
+        risk = await self._as("admin")  # T23: правила меняет admin
         simulation = _check(await risk.post("/api/rulesets/simulate", json={"yaml": yaml_text}), "симуляция")
         saved = _check(await risk.post("/api/rulesets/save", json={
             "yaml": yaml_text, "simulation_id": simulation["simulation_id"], "comment": step.comment,
@@ -418,7 +416,7 @@ class DemoSeeder:
             if app.compliance_verdict == "false_positive"
             else "Совпадение подтверждено: ФИО и дата рождения совпадают с перечнем"
         )
-        compliance = await self._as("compliance")
+        compliance = await self._as("operator")  # T23: разбор совпадений — operator/admin
         _check(await compliance.post(f"/api/compliance/decisions/{decision_id}/mark-false-positive", json={
             "verdict": app.compliance_verdict, "comment": comment,
         }), "комплаенс")

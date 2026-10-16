@@ -50,7 +50,7 @@ async def _seed_application(session_factory, *, external_id: str) -> uuid.UUID:
 
 
 async def test_contract_import_matches_by_exact_external_id(admin_client, session_factory):
-    await create_employee(session_factory, email="rm1@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm1@example.com", role="admin")
     await login(admin_client, "rm1@example.com")
 
     external_id = f"APP-{uuid.uuid4().hex[:8]}"
@@ -92,7 +92,7 @@ async def test_contract_import_unmatched_creates_candidate_not_auto_linked(admin
     """Ваше явное указание: автоматически — только по однозначному
     идентификатору. Телефон/ФИО — только кандидат, контракт остаётся
     непривязанным."""
-    await create_employee(session_factory, email="rm2@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm2@example.com", role="admin")
     await login(admin_client, "rm2@example.com")
 
     from app.engine.clients import find_or_create_client
@@ -144,7 +144,7 @@ async def test_contract_import_unmatched_creates_candidate_not_auto_linked(admin
 
 
 async def test_confirm_contract_candidate_links_and_audits(admin_client, session_factory):
-    await create_employee(session_factory, email="rm3@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm3@example.com", role="admin")
     await login(admin_client, "rm3@example.com")
 
     application_id = await _seed_application(session_factory, external_id=f"APP-{uuid.uuid4().hex[:8]}")
@@ -183,7 +183,7 @@ async def test_confirm_contract_candidate_links_and_audits(admin_client, session
 
 
 async def test_reimporting_same_contracts_file_does_not_duplicate(admin_client, session_factory):
-    await create_employee(session_factory, email="rm4@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm4@example.com", role="admin")
     await login(admin_client, "rm4@example.com")
 
     number = f"K-{uuid.uuid4().hex[:8]}"
@@ -212,7 +212,7 @@ async def test_reimporting_same_contracts_file_does_not_duplicate(admin_client, 
 
 
 async def test_payments_import_separates_penalty_and_applies_reversal(admin_client, session_factory):
-    await create_employee(session_factory, email="rm5@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm5@example.com", role="admin")
     await login(admin_client, "rm5@example.com")
 
     number = f"K-{uuid.uuid4().hex[:8]}"
@@ -254,7 +254,7 @@ async def test_payments_import_separates_penalty_and_applies_reversal(admin_clie
 
 
 async def test_historical_application_import_has_no_feature_snapshots(admin_client, session_factory):
-    await create_employee(session_factory, email="rm6@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm6@example.com", role="admin")
     await login(admin_client, "rm6@example.com")
 
     header = [
@@ -319,7 +319,7 @@ async def test_contract_import_classifies_closure_outcome_from_config(admin_clie
     config/import_mappings/contracts.yaml::closure_outcome_map, тест на все
     три ветки: известный хороший исход, известный плохой исход, нераспознанная
     причина -> unknown (а не 0/1)."""
-    await create_employee(session_factory, email="rm-closure@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-closure@example.com", role="admin")
     await login(admin_client, "rm-closure@example.com")
 
     header = _CONTRACTS_HEADER + ["Дата закрытия", "Причина закрытия"]
@@ -356,7 +356,7 @@ async def test_payments_import_warns_when_contract_missing_from_contracts_export
     наличии строк в файле ПЛАТЕЖЕЙ (просрочник, который не платит, там
     закономерно отсутствует). Сверяем с выгрузкой ДОГОВОРОВ на ту же дату:
     если действующий договор выпал из неё — это и есть признак неполноты."""
-    await create_employee(session_factory, email="rm-missing@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-missing@example.com", role="admin")
     await login(admin_client, "rm-missing@example.com")
 
     stays = f"K-{uuid.uuid4().hex[:8]}"
@@ -396,7 +396,7 @@ async def test_payments_import_warns_when_contract_missing_from_contracts_export
 async def test_payments_import_no_warning_when_contracts_export_same_date_has_contract(
     admin_client, session_factory,
 ):
-    await create_employee(session_factory, email="rm-complete@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-complete@example.com", role="admin")
     await login(admin_client, "rm-complete@example.com")
 
     number = f"K-{uuid.uuid4().hex[:8]}"
@@ -425,7 +425,7 @@ async def test_payments_import_no_warning_for_nonpaying_contract_present_in_cont
     """Ваш явный тест: договор без единого платежа в файле платежей, но
     присутствующий в файле договоров (на ту же дату), предупреждения не
     вызывает — это настоящий просрочник, не дыра в выгрузке."""
-    await create_employee(session_factory, email="rm-nonpayer@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-nonpayer@example.com", role="admin")
     await login(admin_client, "rm-nonpayer@example.com")
 
     payer = f"K-{uuid.uuid4().hex[:8]}"
@@ -457,7 +457,7 @@ async def test_payments_import_no_check_when_no_contracts_export_for_same_date(a
     """Нет выгрузки договоров с такой же датой (например, договоры загружены
     один раз без даты) — сверить не с чем, предупреждение не выдаётся вовсе
     (не угадывается по файлу платежей, docs/payments_import.md)."""
-    await create_employee(session_factory, email="rm-nodate@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-nodate@example.com", role="admin")
     await login(admin_client, "rm-nodate@example.com")
 
     number = f"K-{uuid.uuid4().hex[:8]}"
@@ -482,7 +482,7 @@ async def test_reimporting_contracts_with_known_external_number_updates_in_place
     повторная загрузка с уже известным external_number обновляет
     существующий договор (например, стал закрыт), а не создаёт дубликат и не
     падает на уникальности external_number."""
-    await create_employee(session_factory, email="rm-reimport@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-reimport@example.com", role="admin")
     await login(admin_client, "rm-reimport@example.com")
 
     number = f"K-{uuid.uuid4().hex[:8]}"
@@ -525,7 +525,7 @@ async def test_payment_schedule_import_replaces_generated_schedule(admin_client,
     """Ваше замечание: график — отдельным импортом, со своим маппингом;
     генерация равными платежами — только запасной вариант. Если график
     пришёл, он заменяет сгенерированный и ставит schedule_source=imported."""
-    await create_employee(session_factory, email="rm-schedule@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-schedule@example.com", role="admin")
     await login(admin_client, "rm-schedule@example.com")
 
     number = f"K-{uuid.uuid4().hex[:8]}"
@@ -585,7 +585,7 @@ async def test_imported_schedule_produces_different_delinquency_than_generated(a
     from app.engine.delinquency_recompute import load_grace_days, recompute_contract
     from app.models import DelinquencyDaily
 
-    await create_employee(session_factory, email="rm-dpd@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-dpd@example.com", role="admin")
     await login(admin_client, "rm-dpd@example.com")
 
     number = f"K-{uuid.uuid4().hex[:8]}"
@@ -647,7 +647,7 @@ async def test_imported_schedule_produces_different_delinquency_than_generated(a
 
 
 async def test_payment_schedule_import_unknown_contract_reports_error(admin_client, session_factory):
-    await create_employee(session_factory, email="rm-schedule-err@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-schedule-err@example.com", role="admin")
     await login(admin_client, "rm-schedule-err@example.com")
 
     schedule_body = _csv_bytes(_SCHEDULE_HEADER, [["K-NOPE", "1", "01.02.2026", "1000"]])
@@ -661,7 +661,7 @@ async def test_payment_schedule_import_unknown_contract_reports_error(admin_clie
 
 
 async def test_reimporting_same_payment_schedule_file_is_idempotent(admin_client, session_factory):
-    await create_employee(session_factory, email="rm-schedule-idem@example.com", role="risk_manager")
+    await create_employee(session_factory, email="rm-schedule-idem@example.com", role="admin")
     await login(admin_client, "rm-schedule-idem@example.com")
 
     number = f"K-{uuid.uuid4().hex[:8]}"

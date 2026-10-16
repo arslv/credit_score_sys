@@ -28,9 +28,9 @@ async def test_login_without_csrf_header_is_rejected(admin_client, session_facto
 
 
 async def test_successful_login_sets_httponly_cookie_and_returns_profile(admin_client, session_factory):
-    await create_employee(session_factory, email="a@example.com", role="risk_manager")
+    await create_employee(session_factory, email="a@example.com", role="admin")
     body = await login(admin_client, "a@example.com")
-    assert body["role"] == "risk_manager"
+    assert body["role"] == "admin"
     assert COOKIE_NAME in admin_client.cookies
 
 
