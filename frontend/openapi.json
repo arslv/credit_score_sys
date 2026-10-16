@@ -484,7 +484,7 @@
           "applications"
         ],
         "summary": "Retry Check",
-        "description": "Повтор проверки для недоступного источника (ТЗ, «Состояния карточки»:\n«Источник недоступен — плашка с кнопкой повтора»). Только risk_manager;\nтолько ФНС/Федресурс (_RETRYABLE_SOURCES) и только пока последний результат\nпо этому источнику — source_unavailable (иначе незачем повторно дёргать\nрабочий источник или платный БКИ).",
+        "description": "Повтор проверки для недоступного источника (ТЗ, «Состояния карточки»:\n«Источник недоступен — плашка с кнопкой повтора»). Только admin (T23, раньше risk_manager);\nтолько ФНС/Федресурс (_RETRYABLE_SOURCES) и только пока последний результат\nпо этому источнику — source_unavailable (иначе незачем повторно дёргать\nрабочий источник или платный БКИ).",
         "operationId": "retry_check_api_applications__application_id__checks__check_id__retry_post",
         "parameters": [
           {
@@ -2213,6 +2213,59 @@
         }
       }
     },
+    "/api/applications/{application_id}/fedresurs/manual": {
+      "post": {
+        "tags": [
+          "fedresurs"
+        ],
+        "summary": "Record Fedresurs Manual Check",
+        "operationId": "record_fedresurs_manual_check_api_applications__application_id__fedresurs_manual_post",
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FedresursManualCheckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FedresursManualCheckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/partner/applications": {
       "post": {
         "tags": [
@@ -2501,6 +2554,14 @@
                 "type": "null"
               }
             ]
+          },
+          "passport_checks": {
+            "items": {
+              "$ref": "#/components/schemas/PassportCheckOut"
+            },
+            "type": "array",
+            "title": "Passport Checks",
+            "default": []
           }
         },
         "type": "object",
@@ -4274,6 +4335,75 @@
         ],
         "title": "ExternalSnapshotOut"
       },
+      "FedresursManualCheckRequest": {
+        "properties": {
+          "subject_type": {
+            "type": "string",
+            "enum": [
+              "applicant",
+              "guarantor"
+            ],
+            "title": "Subject Type",
+            "default": "applicant"
+          },
+          "subject_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Id"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "not_found",
+              "found"
+            ],
+            "title": "Result"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "title": "FedresursManualCheckRequest"
+      },
+      "FedresursManualCheckResponse": {
+        "properties": {
+          "check_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Check Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "check_id",
+          "status"
+        ],
+        "title": "FedresursManualCheckResponse"
+      },
       "FsspRegionOut": {
         "properties": {
           "code": {
@@ -5287,6 +5417,25 @@
           "page_size"
         ],
         "title": "Page[ReasonCodeOut]"
+      },
+      "PassportCheckOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "status"
+        ],
+        "title": "PassportCheckOut",
+        "description": "T23: одна проверка паспорта стадии А — видна и когда всё в порядке\n(раньше паспорт появлялся в карточке только при отказе). status: ok —\nв порядке; fail — нарушение, на которое есть стоп-фактор в версии правил\nрешения; warn — нарушение без стоп-фактора (только флаг); unknown — не\nудалось проверить (поле не распознано, код не найден в справочнике)."
       },
       "PaymentOut": {
         "properties": {

@@ -163,7 +163,7 @@ export interface paths {
         /**
          * Retry Check
          * @description Повтор проверки для недоступного источника (ТЗ, «Состояния карточки»:
-         *     «Источник недоступен — плашка с кнопкой повтора»). Только risk_manager;
+         *     «Источник недоступен — плашка с кнопкой повтора»). Только admin (T23, раньше risk_manager);
          *     только ФНС/Федресурс (_RETRYABLE_SOURCES) и только пока последний результат
          *     по этому источнику — source_unavailable (иначе незачем повторно дёргать
          *     рабочий источник или платный БКИ).
@@ -733,6 +733,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/fedresurs/manual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Fedresurs Manual Check */
+        post: operations["record_fedresurs_manual_check_api_applications__application_id__fedresurs_manual_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/partner/applications": {
         parameters: {
             query?: never;
@@ -859,6 +876,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             client_rating?: components["schemas"]["ClientRatingOut"] | null;
+            /**
+             * Passport Checks
+             * @default []
+             */
+            passport_checks: components["schemas"]["PassportCheckOut"][];
         };
         /** ApplicationListItem */
         ApplicationListItem: {
@@ -1422,6 +1444,34 @@ export interface components {
              */
             received_at: string;
         };
+        /** FedresursManualCheckRequest */
+        FedresursManualCheckRequest: {
+            /**
+             * Subject Type
+             * @default applicant
+             * @enum {string}
+             */
+            subject_type: "applicant" | "guarantor";
+            /** Subject Id */
+            subject_id?: string | null;
+            /**
+             * Result
+             * @enum {string}
+             */
+            result: "not_found" | "found";
+            /** Comment */
+            comment?: string | null;
+        };
+        /** FedresursManualCheckResponse */
+        FedresursManualCheckResponse: {
+            /**
+             * Check Id
+             * Format: uuid
+             */
+            check_id: string;
+            /** Status */
+            status: string;
+        };
         /** FsspRegionOut */
         FsspRegionOut: {
             /** Code */
@@ -1775,6 +1825,20 @@ export interface components {
             page: number;
             /** Page Size */
             page_size: number;
+        };
+        /**
+         * PassportCheckOut
+         * @description T23: одна проверка паспорта стадии А — видна и когда всё в порядке
+         *     (раньше паспорт появлялся в карточке только при отказе). status: ok —
+         *     в порядке; fail — нарушение, на которое есть стоп-фактор в версии правил
+         *     решения; warn — нарушение без стоп-фактора (только флаг); unknown — не
+         *     удалось проверить (поле не распознано, код не найден в справочнике).
+         */
+        PassportCheckOut: {
+            /** Key */
+            key: string;
+            /** Status */
+            status: string;
         };
         /** PaymentOut */
         PaymentOut: {
@@ -3398,6 +3462,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FsspSubmitCodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_fedresurs_manual_check_api_applications__application_id__fedresurs_manual_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FedresursManualCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FedresursManualCheckResponse"];
                 };
             };
             /** @description Validation Error */

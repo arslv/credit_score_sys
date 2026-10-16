@@ -3374,3 +3374,112 @@ mark {
   background: var(--color-accent-soft);
   color: var(--color-accent);
 }
+
+/* T23: строка «Паспорт» в карточке стадии А — итог и раскрывающийся список. */
+.passport-row__toggle {
+  font-size: var(--font-xs);
+}
+
+.passport-row__items {
+  grid-column: 2 / -1;
+  margin: var(--space-1) 0 var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  list-style: none;
+  border-left: 2px solid var(--color-border);
+}
+
+.passport-row__items .checklist__item {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+}
+
+.btn-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  cursor: pointer;
+  font: inherit;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+/* T23: ручная проверка (Федресурс) — заметная карточка: янтарная, пока не
+   проверено; зелёная — банкротства нет; красная — найдено. */
+.manual-check {
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: var(--line);
+  border-left: 4px solid var(--status-gray);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--status-gray) 6%, var(--color-bg));
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.manual-check--ok {
+  border-left-color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 5%, var(--color-bg));
+}
+
+.manual-check--hit {
+  border-left-color: var(--status-bad);
+  background: color-mix(in srgb, var(--status-bad) 6%, var(--color-bg));
+}
+
+.manual-check__note {
+  margin: 0;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.manual-check__steps {
+  margin: 0;
+  padding-left: 1.25em;
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--font-sm);
+}
+
+.manual-check__steps li > span:first-child {
+  display: inline-block;
+  min-width: 230px;
+  margin-right: var(--space-2);
+}
+
+.manual-check__steps .btn {
+  margin-right: var(--space-2);
+}
+
+.manual-check__query {
+  margin-right: var(--space-2);
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  background: var(--color-subtle);
+  font-size: var(--font-xs);
+}
+
+.manual-check__found {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 640px;
+}
+
+.manual-check__found .field {
+  flex: 1;
+}
+
+.manual-check__error {
+  margin: 0;
+  color: var(--status-bad);
+  font-size: var(--font-sm);
+}
+
+.btn-danger-outline {
+  border-color: color-mix(in srgb, var(--status-bad) 50%, var(--color-bg));
+  color: var(--status-bad);
+}

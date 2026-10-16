@@ -537,6 +537,62 @@ class DecisionOut(BaseModel):
     installment_payment_source: Literal["partner", "tariff"] | None
 
 
+class PassportCheckOut(BaseModel):
+    """T23: одна проверка паспорта стадии А — видна и когда всё в порядке
+    (раньше паспорт появлялся в карточке только при отказе). status: ok —
+    в порядке; fail — нарушение, на которое есть стоп-фактор в версии правил
+    решения; warn — нарушение без стоп-фактора (только флаг); unknown — не
+    удалось проверить (поле не распознано, код не найден в справочнике)."""
+
+    key: str
+    status: str
+
+
+# Признаки стадии А (app.engine.features) → пункт проверки паспорта. Для
+# каждого — признаки, которые означают НАРУШЕНИЕ (True = плохо).
+_PASSPORT_CHECK_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("format", ("passport_format_invalid",)),
+    ("expiry", ("passport_expired",)),
+    ("issue_date", ("passport_issue_date_invalid",)),
+    ("blank_year", ("passport_blank_year_future", "passport_blank_year_mismatch")),
+    ("department_code", ("passport_department_code_flag",)),
+    ("reuse", ("passport_reused",)),
+)
+
+
+def _passport_checks(features: dict[str, Any], hard_stop_fields: set[str]) -> list[PassportCheckOut]:
+    """Проверки паспорта из снимка признаков стадии А. Пункта нет, если
+    признак не считался вовсе (проверка выключена в конфиге — код
+    подразделения; старые снимки без признака)."""
+    values = dict(features)
+    if "passport_format_valid" in values:
+        # В снимке хранится «формат верен»; нарушение — обратное.
+        values["passport_format_invalid"] = not values["passport_format_valid"]
+    # Правило формата в конфиге ссылается на passport_format_valid.
+    stop_fields = set(hard_stop_fields)
+    if "passport_format_valid" in stop_fields:
+        stop_fields.add("passport_format_invalid")
+
+    items: list[PassportCheckOut] = []
+    for key, fields in _PASSPORT_CHECK_FIELDS:
+        present = [f for f in fields if f in values]
+        if key == "department_code" and values.get("passport_department_code_not_found"):
+            items.append(PassportCheckOut(key=key, status="unknown"))
+            continue
+        if not present:
+            if key in ("expiry", "issue_date", "blank_year") and "passport_format_valid" in values:
+                # Признак считается, но поле не распознано (дата/серия) — честно «не проверено».
+                items.append(PassportCheckOut(key=key, status="unknown"))
+            continue
+        broken = [f for f in present if values[f] is True]
+        if not broken:
+            status_value = "ok" if all(values[f] is False for f in present) else "unknown"
+        else:
+            status_value = "fail" if any(f in stop_fields for f in broken) else "warn"
+        items.append(PassportCheckOut(key=key, status=status_value))
+    return items
+
+
 class CheckOut(BaseModel):
     id: UUID
     subject_type: str
@@ -670,6 +726,9 @@ class ApplicationDetail(BaseModel):
     guarantor_profile: dict[str, Any] | None
     # T23: None — в действующей версии правил нет раздела client_rating.
     client_rating: ClientRatingOut | None = None
+    # T23: проверки паспорта последнего решения стадии А; пусто — стадии А
+    # ещё не было или снимок признаков старый.
+    passport_checks: list[PassportCheckOut] = []
 
 
 async def _client_rating(session: AsyncSession, application: Application, *, full_pii: bool) -> ClientRatingOut | None:
@@ -859,6 +918,8 @@ async def get_application(
     # другим. Кэш на запрос — несколько решений часто ссылаются на одну и ту
     # же версию (та же стадия, без правки правил между попытками).
     thresholds_cache: dict[UUID, tuple[float | None, float | None, float | None]] = {}
+    hard_stop_fields_cache: dict[UUID, set[str]] = {}
+    passport_checks: list[PassportCheckOut] = []
     decisions_out: list[DecisionOut] = []
     for d in decisions:
         thresholds = thresholds_cache.get(d.ruleset_version_id)
@@ -873,6 +934,7 @@ async def get_application(
                     # только отображение порогов, решение от него не зависит.
                     decision_config = None
                 if decision_config is not None:
+                    hard_stop_fields_cache[d.ruleset_version_id] = {r.field for r in decision_config.hard_stops}
                     resolved, _missing = resolve_matrix_overrides(
                         decision_config, {"amount": float(application.requested_amount)}
                     )
@@ -891,6 +953,11 @@ async def get_application(
             snapshot_row = await session.get(FeatureSnapshot, d.feature_snapshot_id)
             if snapshot_row is not None:
                 snapshot_features = snapshot_row.features or {}
+                if d.stage == "A":
+                    # Решения идут по времени — остаётся последнее решение стадии А.
+                    passport_checks = _passport_checks(
+                        snapshot_features, hard_stop_fields_cache.get(d.ruleset_version_id, set()),
+                    )
                 bki_features = snapshot_features.get("features") or {}
                 pti = bki_features.get("pti")
                 active_contracts = bki_features.get("bki_active_contracts_count")
@@ -974,6 +1041,7 @@ async def get_application(
         ocr_result=ocr_result,
         external_snapshots=external_snapshots,
         client_rating=await _client_rating(session, application, full_pii=full_pii),
+        passport_checks=passport_checks,
     )
 
 

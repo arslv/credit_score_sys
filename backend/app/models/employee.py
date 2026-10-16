@@ -26,6 +26,8 @@ AUDIT_LOG_ACTIONS = (
     # T16: только факт попытки/кто/когда/результат — НИКОГДА картинка капчи
     # или введённый код (ваше явное указание), см. app/api/fssp.py.
     "fssp_search_started", "fssp_code_submitted",
+    # T23: ручная отметка проверки банкротства на Федресурсе, app/api/fedresurs.py.
+    "fedresurs_manual_check",
 )
 STATUS_HISTORY_ACTOR_TYPES = ("system", "employee", "client")
 

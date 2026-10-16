@@ -7,12 +7,13 @@ import type { components } from "../api/schema";
 import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
 import { ClientRatingPanel } from "../components/ClientRating";
+import { FedresursPanel } from "../components/FedresursPanel";
 import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
 import { VerdictTitle } from "../components/VerdictTitle";
 import { ErrorState, LoadingState } from "../components/ui";
-import { clientRows, dealRows, latestStageBPayload } from "../lib/card";
+import { clientRows, dealRows, latestStageBPayload, ocrValue } from "../lib/card";
 import { explainDecision } from "../lib/explain";
 import { formatAmount, formatDate, formatDateTime } from "../lib/format";
 import {
@@ -22,6 +23,8 @@ import {
   decisionOutcomeLabel,
   documentKindLabel,
   humanizeFieldPath,
+  passportCheckLabel,
+  passportCheckStatusLabel,
   reasonCodeLabel,
   stageLabel,
   subjectTypeLabel,
@@ -96,9 +99,11 @@ export function ApplicationDetailPage() {
   const canRetry = employee?.role === "admin";
   const canOperateFssp = employee?.role === "operator" || employee?.role === "admin";
 
-  const findLatestFsspCheck = (subjectType: "applicant" | "guarantor", subjectId: string | null) => {
+  const findLatestCheck = (
+    source: "fssp" | "fedresurs", subjectType: "applicant" | "guarantor", subjectId: string | null,
+  ) => {
     const matches = app.checks.filter(
-      (c) => c.source === "fssp" && c.subject_type === subjectType && (c.subject_id ?? null) === subjectId,
+      (c) => c.source === source && c.subject_type === subjectType && (c.subject_id ?? null) === subjectId,
     );
     if (matches.length === 0) return null;
     return matches.reduce((latest, c) => (c.started_at > latest.started_at ? c : latest));
@@ -124,6 +129,21 @@ export function ApplicationDetailPage() {
       text: "Похож на человека из перечня Росфинмониторинга — проверьте, он ли это",
       href: "/compliance",
       button: "К проверке по перечням",
+    });
+  }
+  // T23: банкротство проверяется вручную — напоминаем, пока по заявителю нет
+  // отметки и заявка ещё в работе (после отказа или истечения — незачем).
+  const applicantFedresurs = findLatestCheck("fedresurs", "applicant", null);
+  if (
+    !applicantFedresurs &&
+    app.decisions.length > 0 &&
+    !["rejected_a", "rejected_b", "expired"].includes(app.status)
+  ) {
+    actionItems.push({
+      key: "fedresurs",
+      text: "Проверить банкротство на Федресурсе — вручную, это минута",
+      href: "#fedresurs",
+      button: "К проверке банкротства",
     });
   }
   for (const subject of app.fssp_post_decision_alert_subjects) {
@@ -176,8 +196,19 @@ export function ApplicationDetailPage() {
   const callDone = Boolean(latestB) || reviewedAt != null;
 
   const visibleChecks = app.checks.filter((c) => c.source !== "mvd");
-  const checksA = visibleChecks.filter((c) => c.subject_type !== "guarantor" && c.source !== "fssp");
-  const checksB = visibleChecks.filter((c) => c.subject_type === "guarantor" || c.source === "fssp");
+  // Ручные проверки (ФССП, Федресурс) — после звонка, в карточке стадии Б.
+  const isManual = (c: CheckRow) => c.source === "fssp" || c.source === "fedresurs";
+  const checksA = visibleChecks.filter((c) => c.subject_type !== "guarantor" && !isManual(c));
+  const checksB = visibleChecks.filter((c) => c.subject_type === "guarantor" || isManual(c));
+
+  // Строка для поиска на Федресурсе: ФИО и дата рождения.
+  const searchTextFor = (name: string | null | undefined, birth: string | null | undefined) =>
+    name ? [name, birth ? formatDate(birth) : null].filter(Boolean).join(" ") : null;
+  const guarantorName = app.guarantor_profile
+    ? [app.guarantor_profile.last_name, app.guarantor_profile.first_name, app.guarantor_profile.middle_name]
+        .filter((part) => typeof part === "string" && part)
+        .join(" ")
+    : null;
 
   const steps: { label: string; date: string | null; state: StepState }[] = [
     { label: "Подача", date: app.submitted_at, state: "done" },
@@ -200,7 +231,7 @@ export function ApplicationDetailPage() {
     },
   ];
 
-  const applicantFssp = findLatestFsspCheck("applicant", null);
+  const applicantFssp = findLatestCheck("fssp", "applicant", null);
   const guarantorNeeded = (app.client_rating?.guarantor_reasons.length ?? 0) > 0;
   const facts: { label: string; value: string; hint?: string; tone?: Tone }[] = [
     {
@@ -352,7 +383,13 @@ export function ApplicationDetailPage() {
             ) : (
               latestA?.reason_text && <p className="stage__reason">{latestA.reason_text}</p>
             )}
-            <CheckList checks={checksA} canRetry={canRetry} retry={(checkId) => retryMutation.mutate(checkId)} busy={retryMutation.isPending} />
+            <CheckList
+              checks={checksA}
+              canRetry={canRetry}
+              retry={(checkId) => retryMutation.mutate(checkId)}
+              busy={retryMutation.isPending}
+              leading={app.passport_checks.length > 0 ? <PassportRow items={app.passport_checks} /> : null}
+            />
           </article>
 
           <article className={`stage stage--${latestB ? stageTone(latestB) : rejectedAtA ? "skipped" : "pending"}`}>
@@ -469,23 +506,41 @@ export function ApplicationDetailPage() {
             subjectType="guarantor"
             subjectLabel="поручитель"
             subjectId={app.guarantor_id}
-            latestCheck={findLatestFsspCheck("guarantor", app.guarantor_id)}
+            latestCheck={findLatestCheck("fssp", "guarantor", app.guarantor_id)}
             canOperate={canOperateFssp}
             hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("guarantor")}
           />
         )}
       </section>
 
+      {/* T23: банкротство — сразу под ФССП, тоже ручная проверка. */}
+      <section className="section">
+        <h2 id="fedresurs">Банкротство (Федресурс)</h2>
+        <FedresursPanel
+          applicationId={app.id}
+          subjectType="applicant"
+          subjectLabel="заявитель"
+          subjectId={null}
+          searchText={searchTextFor(app.client_name, ocrValue(app.ocr_result?.fields ?? null, "birth_date"))}
+          latestCheck={applicantFedresurs}
+          canOperate={canOperateFssp}
+        />
+        {app.has_guarantor && app.guarantor_id && (
+          <FedresursPanel
+            applicationId={app.id}
+            subjectType="guarantor"
+            subjectLabel="поручитель"
+            subjectId={app.guarantor_id}
+            searchText={searchTextFor(guarantorName, app.guarantor_profile?.birth_date as string | undefined)}
+            latestCheck={findLatestCheck("fedresurs", "guarantor", app.guarantor_id)}
+            canOperate={canOperateFssp}
+          />
+        )}
+      </section>
+
       <section className="section">
         <h2>Что проверили</h2>
-        <p className="muted">
-          По стадиям — выше, в карточках стадий. Федресурс (банкротство) в автоматический конвейер не входит —
-          проверьте вручную на{" "}
-          <a href="https://fedresurs.ru" target="_blank" rel="noreferrer">
-            fedresurs.ru
-          </a>
-          .
-        </p>
+        <p className="muted">По стадиям — выше, в карточках стадий.</p>
         <details className="fold">
           <summary>Все проверки одной таблицей ({visibleChecks.length})</summary>
           <table className="table">
@@ -690,20 +745,80 @@ function checkTone(status: string): "ok" | "bad" | "warn" {
   return "ok";
 }
 
+type PassportCheck = components["schemas"]["PassportCheckOut"];
+
+const PASSPORT_TONE: Record<string, "ok" | "bad" | "warn"> = { ok: "ok", fail: "bad", warn: "warn", unknown: "warn" };
+const TONE_ICON = { ok: "✓", bad: "✕", warn: "!" } as const;
+
+// T23: паспорт виден в карточке всегда, а не только при отказе. Одна строка
+// с итогом; по кнопке — что именно проверено и результат каждого пункта.
+function PassportRow({ items }: { items: PassportCheck[] }) {
+  const [open, setOpen] = useState(false);
+  const tone = items.some((i) => i.status === "fail")
+    ? "bad"
+    : items.some((i) => i.status !== "ok")
+      ? "warn"
+      : "ok";
+  const problems = items.filter((i) => i.status !== "ok").length;
+  const summary =
+    tone === "ok"
+      ? `в порядке · ${items.length} из ${items.length}`
+      : tone === "bad"
+        ? "нарушение"
+        : `замечаний: ${problems}`;
+  return (
+    <li className={`checklist__item checklist__item--${tone} passport-row`}>
+      <span className="checklist__icon" aria-hidden="true">
+        {TONE_ICON[tone]}
+      </span>
+      <span className="checklist__source">Паспорт</span>
+      <span className="checklist__result">{summary}</span>
+      <button
+        type="button"
+        className="btn-link passport-row__toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? "скрыть" : "что проверили"}
+      </button>
+      {open && (
+        <ul className="passport-row__items">
+          {items.map((item) => {
+            const itemTone = PASSPORT_TONE[item.status] ?? "warn";
+            return (
+              <li key={item.key} className={`checklist__item checklist__item--${itemTone}`}>
+                <span className="checklist__icon" aria-hidden="true">
+                  {TONE_ICON[itemTone]}
+                </span>
+                <span>{passportCheckLabel(item.key)}</span>
+                <span className="checklist__result">{passportCheckStatusLabel(item.status)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 function CheckList({
   checks,
   canRetry,
   retry,
   busy,
+  leading = null,
 }: {
   checks: CheckRow[];
   canRetry: boolean;
   retry: (checkId: string) => void;
   busy: boolean;
+  /** Строка перед проверками источников (T23: паспорт стадии А). */
+  leading?: React.ReactNode;
 }) {
-  if (checks.length === 0) return <p className="stage__reason muted">Проверок пока нет.</p>;
+  if (checks.length === 0 && !leading) return <p className="stage__reason muted">Проверок пока нет.</p>;
   return (
     <ul className="checklist">
+      {leading}
       {checks.map((c) => (
         <li key={c.id} className={`checklist__item checklist__item--${checkTone(c.status)}`}>
           <span className="checklist__icon" aria-hidden="true">

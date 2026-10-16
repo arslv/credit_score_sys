@@ -94,7 +94,8 @@ const SOURCE_META: Record<string, SourceMeta> = {
   fns_inn: { label: "ФНС — ИНН" },
   fns_npd: { label: "ФНС — самозанятость" },
   fns_egrip: { label: "ФНС — ИП (ЕГРИП)" },
-  fedresurs: { label: "Федресурс (историческая проверка)" },
+  // T23: снова в работе — ручная отметка сотрудника (сайт закрыт от ботов).
+  fedresurs: { label: "Федресурс — банкротство" },
   fssp: { label: "ФССП" },
   bki: { label: "БКИ" },
 };
@@ -376,6 +377,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   change_ruleset: "Изменение правил",
   fssp_search_started: "ФССП: запрос капчи",
   fssp_code_submitted: "ФССП: ввод кода",
+  fedresurs_manual_check: "Федресурс: отметка проверки",
   import_data: "Импорт файла",
   link_contract: "Привязка договора к заявке",
 };
@@ -409,4 +411,30 @@ const COMPLIANCE_VERDICT_LABELS: Record<string, string> = {
 
 export function complianceVerdictLabel(verdict: string | null | undefined): string {
   return (verdict && COMPLIANCE_VERDICT_LABELS[verdict]) || "не разобрано";
+}
+
+// T23: проверки паспорта стадии А (passport_checks в карточке заявки) — что
+// именно проверено и итог каждой, в том числе когда всё в порядке.
+const PASSPORT_CHECK_LABELS: Record<string, string> = {
+  format: "Серия и номер — правильный формат",
+  expiry: "Срок действия — паспорт заменён в 20 и 45 лет",
+  issue_date: "Дата выдачи правдоподобна (после 14 лет, не в будущем)",
+  blank_year: "Год бланка совпадает с датой выдачи",
+  department_code: "Код подразделения соответствует серии",
+  reuse: "Паспорт не встречался с другими ФИО",
+};
+
+export function passportCheckLabel(key: string): string {
+  return PASSPORT_CHECK_LABELS[key] ?? key;
+}
+
+const PASSPORT_CHECK_STATUS_LABELS: Record<string, string> = {
+  ok: "в порядке",
+  fail: "нарушение — стоп-фактор",
+  warn: "есть замечание",
+  unknown: "не удалось проверить",
+};
+
+export function passportCheckStatusLabel(status: string): string {
+  return PASSPORT_CHECK_STATUS_LABELS[status] ?? status;
 }

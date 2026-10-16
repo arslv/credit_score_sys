@@ -157,8 +157,10 @@ test("карточка серой зоны: «В норме» отдельно, 
   );
 
   // «Нужно сделать» — одна строка с кнопкой сразу под вердиктом.
-  await expect(page.locator(".next-step")).toHaveCount(1);
-  await expect(page.locator(".next-step").getByRole("link", { name: "К проверке ФССП" })).toBeVisible();
+  // T23: рядом может быть напоминание о Федресурсе — проверяем только пункт ФССП.
+  const fsspStep = page.locator(".next-step", { hasText: "ФССП" });
+  await expect(fsspStep).toHaveCount(1);
+  await expect(fsspStep.getByRole("link", { name: "К проверке ФССП" })).toBeVisible();
 
   // Подсказка «?» ровно одна, по клику — объяснение этого решения.
   const toggles = page.locator(".help-toggle");
@@ -177,7 +179,9 @@ test("карточка без дохода: «ПДН: не вычислимо»,
   await expect(page.getByTestId("decision-unknown")).toHaveText("ПДН: не вычислимо (нет данных о доходе)");
   await expect(page.getByText("ПДН 0%")).toHaveCount(0);
   // T22: без «Нужно решение…» после «Нужно сделать:».
-  await expect(page.locator(".next-step")).toHaveText("Нужно сделать:решение оператора в системе заказчика");
+  await expect(page.locator(".next-step", { hasText: "решение оператора" })).toHaveText(
+    "Нужно сделать:решение оператора в системе заказчика",
+  );
   // Платежа в снимке нет — строки «Платёж в месяц» нет (не «0 ₽»).
   await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toHaveCount(0);
 });

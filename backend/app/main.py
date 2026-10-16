@@ -12,6 +12,7 @@ from app.api.compliance import router as compliance_router
 from app.api.contracts import router as contracts_router
 from app.api.dashboard import router as dashboard_router
 from app.api.employees import router as employees_router
+from app.api.fedresurs import router as fedresurs_router
 from app.api.fssp import router as fssp_router
 from app.api.imports import router as imports_router
 from app.api.partner_webhooks import router as partner_webhooks_router
@@ -78,6 +79,7 @@ app.include_router(dashboard_router)
 app.include_router(rulesets_router)
 app.include_router(imports_router)
 app.include_router(fssp_router)
+app.include_router(fedresurs_router)
 app.include_router(partner_webhooks_router)
 
 
