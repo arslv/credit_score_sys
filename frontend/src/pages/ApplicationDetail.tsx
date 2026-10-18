@@ -7,6 +7,7 @@ import type { components } from "../api/schema";
 import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
 import { ClientRatingPanel } from "../components/ClientRating";
+import { AiAnalysisPanel } from "../components/AiAnalysisPanel";
 import { FedresursPanel } from "../components/FedresursPanel";
 import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
@@ -447,6 +448,13 @@ export function ApplicationDetailPage() {
             </article>
           </div>
           {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
+        </section>
+
+        <section className="section">
+          <h2 className="section-title-with-tag">
+            Анализ ИИ <span className="soon-tag">в разработке</span>
+          </h2>
+          <AiAnalysisPanel />
         </section>
 
         {app.manual_overrides.length > 0 && (
