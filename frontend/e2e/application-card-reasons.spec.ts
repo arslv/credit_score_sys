@@ -156,11 +156,9 @@ test("карточка серой зоны: «В норме» отдельно, 
     `${formatAmount("4500")} ₽ (рассчитан по тарифу, не из CRM)`,
   );
 
-  // «Нужно сделать» — одна строка с кнопкой сразу под вердиктом.
-  // T23: рядом может быть напоминание о Федресурсе — проверяем только пункт ФССП.
-  const fsspStep = page.locator(".next-step", { hasText: "ФССП" });
-  await expect(fsspStep).toHaveCount(1);
-  await expect(fsspStep.getByRole("link", { name: "К проверке ФССП" })).toBeVisible();
+  // T23: отдельного списка дел нет — раздел ФССП сам помечен «требуется действие».
+  const fsspSection = page.locator("#fssp").locator("xpath=ancestor::section[1]");
+  await expect(fsspSection.getByText("требуется действие", { exact: true })).toBeVisible();
 
   // Подсказка «?» ровно одна, по клику — объяснение этого решения.
   const toggles = page.locator(".help-toggle");
@@ -178,23 +176,22 @@ test("карточка без дохода: «ПДН: не вычислимо»,
 
   await expect(page.getByTestId("decision-unknown")).toHaveText("ПДН: не вычислимо (нет данных о доходе)");
   await expect(page.getByText("ПДН 0%")).toHaveCount(0);
-  // T22: без «Нужно решение…» после «Нужно сделать:».
-  await expect(page.locator(".next-step", { hasText: "Серая зона" })).toHaveText(
-    "Серая зона — решение принимает оператор в CRM",
-  );
+  // Серая зона не из-за ФССП — решение в CRM: строкой в вердикте, у ФССП пометки нет.
+  await expect(page.locator(".verdict-action")).toHaveText("Решение принимает оператор в CRM.");
+  const fsspSection = page.locator("#fssp").locator("xpath=ancestor::section[1]");
+  await expect(fsspSection.getByText("требуется действие", { exact: true })).toHaveCount(0);
   // Платежа в снимке нет — строки «Платёж в месяц» нет (не «0 ₽»).
   await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toHaveCount(0);
 });
 
-// T23: «К проверке ФССП» прокручивает к разделу и на ~2 с подсвечивает его.
-test("«К проверке ФССП» прокручивает к разделу и подсвечивает его", async ({ page }) => {
+// T23: подробности стадий — в «Пути заявки» справа: итог и проверки под шагом.
+test("путь заявки: под стадиями А и Б — итог и проверки", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.gray_fssp.id}`);
-  await page.getByRole("link", { name: "К проверке ФССП" }).click();
-  const fsspSection = page.locator("#fssp").locator("xpath=ancestor::section[1]");
-  await expect(fsspSection).toHaveClass(/section--flash/);
-  await expect(fsspSection).toBeInViewport();
-  await expect(fsspSection).not.toHaveClass(/section--flash/, { timeout: 5_000 });
-  await expect(page).toHaveURL(/#fssp$/);
+  const path = page.getByRole("heading", { name: "Путь заявки" }).locator("xpath=ancestor::section[1]");
+  const stageB = path.locator(".timeline__step", { hasText: "Стадия Б" });
+  await expect(stageB.locator(".stage__outcome")).toHaveText("Серая зона");
+  await expect(stageB.getByTestId("decision-passed")).toContainText("Балл БКИ 760");
+  await expect(page.getByRole("heading", { name: "Нужно сделать" })).toHaveCount(0);
 });

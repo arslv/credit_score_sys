@@ -70,21 +70,6 @@ function OperatorOverride({ override: o }: { override: ManualOverride }) {
   );
 }
 
-// T23: «К проверке ФССП» — плавно прокручиваем к разделу и на пару секунд
-// подсвечиваем его, чтобы глаз сразу нашёл, куда перешли. Класс снимается
-// по окончании анимации, повторный клик подсвечивает заново.
-function jumpAndFlash(event: React.MouseEvent, targetId: string) {
-  const target = document.getElementById(targetId)?.closest("section");
-  if (!target) return;
-  event.preventDefault();
-  history.replaceState(null, "", `#${targetId}`);
-  target.scrollIntoView({ behavior: "smooth", block: "start" });
-  target.classList.remove("section--flash");
-  void target.offsetWidth; // перезапуск анимации при повторном клике
-  target.classList.add("section--flash");
-  target.addEventListener("animationend", () => target.classList.remove("section--flash"), { once: true });
-}
-
 export function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { employee } = useAuth();
@@ -140,48 +125,22 @@ export function ApplicationDetailPage() {
   const latestDecision = app.decisions.length > 0 ? app.decisions[app.decisions.length - 1] : null;
   const stageB = latestStageBPayload(app.external_snapshots);
 
-  // «Нужно сделать» — только если что-то реально требуется. Стадия А «передано
-  // оператору» — не действие для нас: ждём звонка и стадии Б. T20: одна строка
-  // с кнопкой сразу под вердиктом, без отдельной рамки.
-  const actionItems: { key: string; text: string; href?: string; button?: string }[] = [];
-  if (latestDecision?.outcome === "manual_review" && latestDecision.stage === "B") {
-    if (latestDecision.reason_code === "FSSP_NOT_CHECKED") {
-      actionItems.push({ key: "fssp", text: "Проверить ФССП — без этого одобрение недоступно", href: "#fssp", button: "К проверке ФССП" });
-    } else {
-      actionItems.push({ key: "gray", text: "Серая зона — решение принимает оператор в CRM" });
-    }
-  }
-  if (latestDecision?.freeze) {
-    actionItems.push({
-      key: "freeze",
-      text: "Похож на человека из перечня Росфинмониторинга — проверьте, он ли это",
-      href: "/compliance",
-      button: "К проверке по перечням",
-    });
-  }
-  // T23: банкротство проверяется вручную — напоминаем, пока по заявителю нет
-  // отметки и заявка ещё в работе (после отказа или истечения — незачем).
+  // T23 (по отзыву): отдельного блока «Нужно сделать» нет — чтобы не
+  // дублировать. Раздел, где нужно действие, помечен «требуется действие»;
+  // то, что делается не в карточке (серая зона в CRM, проверка по перечням),
+  // — строкой в вердикте.
   const applicantFedresurs = findLatestCheck("fedresurs", "applicant", null);
-  if (
+  const grayStageB = latestDecision?.outcome === "manual_review" && latestDecision.stage === "B";
+  const fsspNeedsAction =
+    (grayStageB && latestDecision?.reason_code === "FSSP_NOT_CHECKED") ||
+    app.fssp_post_decision_alert_subjects.length > 0;
+  const grayInCrm = grayStageB && latestDecision?.reason_code !== "FSSP_NOT_CHECKED";
+  // Банкротство проверяется вручную — пока по заявителю нет отметки и заявка
+  // ещё в работе (после отказа или истечения — незачем).
+  const fedresursNeedsAction =
     !applicantFedresurs &&
     app.decisions.length > 0 &&
-    !["rejected_a", "rejected_b", "expired"].includes(app.status)
-  ) {
-    actionItems.push({
-      key: "fedresurs",
-      text: "Проверить банкротство на Федресурсе",
-      href: "#fedresurs",
-      button: "К проверке банкротства",
-    });
-  }
-  for (const subject of app.fssp_post_decision_alert_subjects) {
-    actionItems.push({
-      key: `fssp-late-${subject}`,
-      text: `ФССП (${subjectTypeLabel(subject)}) найдено после решения — пересмотрите вручную`,
-      href: "#fssp",
-      button: "К проверке ФССП",
-    });
-  }
+    !["rejected_a", "rejected_b", "expired"].includes(app.status);
 
   // T20: причина — один раз, в вердикте; «Почему» — только детали: что ещё
   // привело к решению («Причина») и что пройдено («В норме»). Пройденные
@@ -242,12 +201,36 @@ export function ApplicationDetailPage() {
         .join(" ")
     : null;
 
-  const steps: { label: string; date: string | null; state: StepState }[] = [
+  const retry = (checkId: string) => retryMutation.mutate(checkId);
+  const steps: {
+    label: string;
+    date: string | null;
+    state: StepState;
+    outcome?: React.ReactNode;
+    detail?: React.ReactNode;
+  }[] = [
     { label: "Подача", date: app.submitted_at, state: "done" },
     {
       label: "Стадия А",
       date: latestA?.created_at ?? null,
       state: latestA ? (latestA.outcome === "reject" ? "bad" : "done") : "current",
+      outcome: <OutcomePill decision={latestA} pending="в обработке" />,
+      detail: (
+        <>
+          {latestDecision?.stage === "A" && explanation ? (
+            <DecisionReasons explanation={explanation} />
+          ) : (
+            latestA?.reason_text && <p className="stage__reason">{latestA.reason_text}</p>
+          )}
+          <CheckList
+            checks={checksA}
+            canRetry={canRetry}
+            retry={retry}
+            busy={retryMutation.isPending}
+            leading={app.passport_checks.length > 0 ? <PassportRow items={app.passport_checks} /> : null}
+          />
+        </>
+      ),
     },
     {
       label: "Звонок оператора",
@@ -260,6 +243,31 @@ export function ApplicationDetailPage() {
       state: latestB
         ? latestB.outcome === "approve" ? "done" : latestB.outcome === "reject" ? "bad" : "gray"
         : app.status === "stage_b" ? "current" : rejectedAtA ? "skipped" : "pending",
+      outcome: rejectedAtA ? undefined : <OutcomePill decision={latestB} pending={app.status === "stage_b" ? "идёт" : "ждёт звонка"} />,
+      detail: rejectedAtA ? undefined : (
+        <>
+          {latestDecision?.stage === "B" && explanation && <DecisionReasons explanation={explanation} />}
+          {decisionsB.length > 1 && (
+            <p className="stage__note">
+              Ранее:{" "}
+              {decisionsB
+                .slice(0, -1)
+                .map((d) => `${decisionOutcomeLabel(d.stage, d.outcome)} (${formatDateTime(d.created_at)})`)
+                .join(", ")}
+              .
+            </p>
+          )}
+          {checksB.length > 0 ? (
+            <CheckList checks={checksB} canRetry={canRetry} retry={retry} busy={retryMutation.isPending} />
+          ) : (
+            !latestB && (
+              <p className="stage__reason muted">
+                Начнётся, когда оператор позвонит клиенту и нажмёт «Рассмотреть» в CRM.
+              </p>
+            )
+          )}
+        </>
+      ),
     },
   ];
 
@@ -272,16 +280,6 @@ export function ApplicationDetailPage() {
       hint: latestB?.pti != null && latestB.pti_max != null ? `порог отказа ${Math.round(latestB.pti_max * 100)}%` : "после стадии Б",
       tone: latestB?.pti != null && latestB.pti_max != null ? (latestB.pti > latestB.pti_max ? "bad" : "ok") : undefined,
     },
-    applicantFssp
-      ? {
-          label: "ФССП",
-          value: checkResultLabel("fssp", applicantFssp.status),
-          hint: formatDateTime(applicantFssp.started_at),
-          tone: applicantFssp.status === "hit" ? "bad" : "ok",
-        }
-      : rejectedAtA
-        ? { label: "ФССП", value: "не нужна", hint: "отказ на стадии А" }
-        : { label: "ФССП", value: "не проверено", hint: "без проверки одобрение недоступно", tone: "gray" },
     {
       label: "Поручитель",
       value: app.has_guarantor ? "есть" : guarantorNeeded ? "нужен, нет" : "не нужен",
@@ -295,16 +293,12 @@ export function ApplicationDetailPage() {
     },
   ];
 
-  const verdictTone = decisionVerdictClass(latestDecision?.outcome);
-  const retry = (checkId: string) => retryMutation.mutate(checkId);
-
-  // T23 (передизайн по отзыву): две колонки. Слева — то, с чем работают:
-  // решение, что нужно сделать, стадии с проверками, ручные проверки, анкета.
-  // Справа — справочная колонка: путь заявки, главное, рейтинг клиента,
-  // анализ ИИ. Все блоки — одинаковые панели; цвет только у статусов.
-  // Разделы — section: переход «К проверке …» подсвечивает ближайший section.
+  // T23 (передизайн по отзыву): две колонки. Слева — с чем работают: решение,
+  // ручные проверки (с пометкой «требуется действие», отдельного списка дел
+  // нет — чтобы не дублировать), решение оператора, анкета. Справа — путь
+  // заявки с подробностями стадий А и Б, главное, анализ ИИ, рейтинг клиента.
   return (
-    <div className="ac">
+    <div className={latestDecision?.outcome === "manual_review" ? "ac ac--gray" : "ac"}>
       <header className="ac-header">
         <Link className="ac-header__back" to="/applications">
           ← Заявки
@@ -328,7 +322,7 @@ export function ApplicationDetailPage() {
 
       <div className="ac-layout">
         <div className="ac-main">
-          <div className={`verdict ${verdictTone}`}>
+          <div className={`verdict ${decisionVerdictClass(latestDecision?.outcome)}`}>
             <div className="verdict-main">
               <div className="verdict-kicker">
                 {latestDecision ? `Решение системы · стадия ${stageLabel(latestDecision.stage)}` : "Заявка в обработке"}
@@ -338,6 +332,16 @@ export function ApplicationDetailPage() {
                 help={explanation?.help ?? null}
               />
               {explanation?.reason && <p className="verdict-reason">{explanation.reason}</p>}
+              {/* Что делается не в этой карточке — строкой прямо в вердикте. */}
+              {grayInCrm && <p className="verdict-action">Решение принимает оператор в CRM.</p>}
+              {latestDecision?.freeze && (
+                <p className="verdict-action">
+                  Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.
+                  <Link className="btn btn-primary btn-small" to="/compliance">
+                    К проверке по перечням
+                  </Link>
+                </p>
+              )}
             </div>
             {latestDecision?.score != null && (
               <div className="verdict-score">
@@ -375,90 +379,13 @@ export function ApplicationDetailPage() {
             )}
           </div>
 
-          {/* «Нужно сделать» — только когда есть дела: каждое с переходом к месту, где оно делается. */}
-          {actionItems.length > 0 && (
-            <div className="ac-panel ac-todo">
-              <div className="ac-panel__head">
-                <h2 className="ac-panel__title">Нужно сделать</h2>
-                <span className="ac-count">{actionItems.length}</span>
-              </div>
-              <ul className="ac-todo__list">
-                {actionItems.map((item) => (
-                  <li className="next-step" key={item.key}>
-                    <span className="next-step__text">{item.text}</span>
-                    {item.href && (
-                      <a
-                        className="btn btn-primary btn-small"
-                        href={item.href}
-                        onClick={item.href.startsWith("#") ? (e) => jumpAndFlash(e, item.href!.slice(1)) : undefined}
-                      >
-                        {item.button ?? "Открыть"}
-                      </a>
-                    )}
-                  </li>
-                ))}
-              </ul>
+          <section className={fsspNeedsAction ? "ac-panel ac-panel--action" : "ac-panel"}>
+            <div className="ac-panel__head">
+              <h2 id="fssp" className="ac-panel__title">
+                ФССП
+              </h2>
+              {fsspNeedsAction && <span className="action-tag">требуется действие</span>}
             </div>
-          )}
-
-          <div className="stages">
-            <article className={`stage stage--${stageTone(latestA)}`}>
-              <header className="stage__head">
-                <h2 className="stage__name">Стадия А</h2>
-                <StageOutcome decision={latestA} pending="в обработке" />
-              </header>
-              {latestDecision?.stage === "A" && explanation ? (
-                <DecisionReasons explanation={explanation} />
-              ) : (
-                latestA?.reason_text && <p className="stage__reason">{latestA.reason_text}</p>
-              )}
-              <CheckList
-                checks={checksA}
-                canRetry={canRetry}
-                retry={retry}
-                busy={retryMutation.isPending}
-                leading={app.passport_checks.length > 0 ? <PassportRow items={app.passport_checks} /> : null}
-              />
-            </article>
-
-            <article className={`stage stage--${latestB ? stageTone(latestB) : rejectedAtA ? "skipped" : "pending"}`}>
-              <header className="stage__head">
-                <h2 className="stage__name">Стадия Б</h2>
-                <StageOutcome
-                  decision={latestB}
-                  pending={rejectedAtA ? "не проводилась" : app.status === "stage_b" ? "идёт" : "ждёт звонка оператора"}
-                />
-              </header>
-              {latestDecision?.stage === "B" && explanation && <DecisionReasons explanation={explanation} />}
-              {decisionsB.length > 1 && (
-                <p className="stage__note">
-                  Ранее:{" "}
-                  {decisionsB
-                    .slice(0, -1)
-                    .map((d) => `${decisionOutcomeLabel(d.stage, d.outcome)} (${formatDateTime(d.created_at)})`)
-                    .join(", ")}
-                  .
-                </p>
-              )}
-              {checksB.length > 0 ? (
-                <CheckList checks={checksB} canRetry={canRetry} retry={retry} busy={retryMutation.isPending} />
-              ) : (
-                !latestB && (
-                  <p className="stage__reason muted">
-                    {rejectedAtA
-                      ? "Заявка отклонена на стадии А."
-                      : "Начнётся, когда оператор позвонит клиенту и нажмёт «Рассмотреть» в CRM."}
-                  </p>
-                )
-              )}
-            </article>
-          </div>
-          {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
-
-          <section className="ac-panel section">
-            <h2 id="fssp" className="ac-panel__title">
-              ФССП
-            </h2>
             <FsspPanel
               applicationId={app.id}
               subjectType="applicant"
@@ -481,10 +408,13 @@ export function ApplicationDetailPage() {
             )}
           </section>
 
-          <section className="ac-panel section">
-            <h2 id="fedresurs" className="ac-panel__title">
-              Банкротство (Федресурс)
-            </h2>
+          <section className={fedresursNeedsAction ? "ac-panel ac-panel--action" : "ac-panel"}>
+            <div className="ac-panel__head">
+              <h2 id="fedresurs" className="ac-panel__title">
+                Банкротство (Федресурс)
+              </h2>
+              {fedresursNeedsAction && <span className="action-tag">требуется действие</span>}
+            </div>
             <FedresursPanel
               applicationId={app.id}
               subjectType="applicant"
@@ -512,7 +442,7 @@ export function ApplicationDetailPage() {
           </section>
 
           {app.manual_overrides.length > 0 && (
-            <section className="ac-panel section">
+            <section className="ac-panel">
               <h2 className="ac-panel__title">Решение оператора в CRM</h2>
               {app.manual_overrides.map((o) => (
                 <OperatorOverride key={o.id} override={o} />
@@ -695,6 +625,8 @@ export function ApplicationDetailPage() {
         </div>
 
         <aside className="ac-aside">
+          {/* Путь заявки: шаги сверху вниз; у стадий А и Б под шагом — итог,
+              причины и проверки этой стадии. */}
           <section className="ac-panel">
             <h2 className="ac-panel__title">Путь заявки</h2>
             <ol className="timeline">
@@ -703,11 +635,16 @@ export function ApplicationDetailPage() {
                   <span className="timeline__dot" aria-hidden="true">
                     {s.state === "done" ? "✓" : s.state === "bad" ? "✕" : s.state === "gray" ? "!" : i + 1}
                   </span>
-                  <span className="timeline__label">{s.label}</span>
+                  <div className="timeline__head">
+                    <span className="timeline__label">{s.label}</span>
+                    {s.outcome}
+                  </div>
                   <span className="timeline__date">{s.date ? formatDateTime(s.date) : STEP_STATE_TEXT[s.state]}</span>
+                  {s.detail && <div className="timeline__detail">{s.detail}</div>}
                 </li>
               ))}
             </ol>
+            {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
           </section>
 
           <section className="ac-panel">
@@ -725,8 +662,6 @@ export function ApplicationDetailPage() {
             </dl>
           </section>
 
-          {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
-
           <section className="ac-panel">
             <div className="ac-panel__head">
               <h2 className="ac-panel__title">Анализ ИИ</h2>
@@ -734,6 +669,8 @@ export function ApplicationDetailPage() {
             </div>
             <AiAnalysisPanel />
           </section>
+
+          {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
         </aside>
       </div>
     </div>
@@ -761,20 +698,11 @@ function stageTone(decision: Decision | null): string {
   return decision.stage === "B" ? "gray" : "neutral";
 }
 
-function StageOutcome({ decision, pending }: { decision: Decision | null; pending: string }) {
-  if (!decision) {
-    return (
-      <span className="stage__outcome-wrap">
-        <span className="stage__outcome stage__outcome--pending">{pending}</span>
-      </span>
-    );
-  }
+function OutcomePill({ decision, pending }: { decision: Decision | null; pending: string }) {
+  if (!decision) return <span className="stage__outcome stage__outcome--pending">{pending}</span>;
   return (
-    <span className="stage__outcome-wrap">
-      <span className={`stage__outcome stage__outcome--${stageTone(decision)}`}>
-        {decisionOutcomeLabel(decision.stage, decision.outcome)}
-      </span>
-      <span className="stage__outcome-date">{formatDateTime(decision.created_at)}</span>
+    <span className={`stage__outcome stage__outcome--${stageTone(decision)}`}>
+      {decisionOutcomeLabel(decision.stage, decision.outcome)}
     </span>
   );
 }
