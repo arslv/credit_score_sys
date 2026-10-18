@@ -148,11 +148,16 @@ export function FsspPanel({
   } | null | undefined;
 
   return (
-    <div className="subsection">
-      <p>
-        <strong>{subjectLabel[0]!.toUpperCase() + subjectLabel.slice(1)}:</strong>{" "}
-        {latestCheck ? checkResultLabel("fssp", latestCheck.status) : <span className="muted">не проверено</span>}
-      </p>
+    // T23: та же строка-карточка, что у Федресурса: статус точкой цвета исхода.
+    <div
+      className={`manual-check manual-check--${
+        !latestCheck ? "pending" : latestCheck.status === "hit" ? "hit" : latestCheck.status === "ok" ? "ok" : "pending"
+      }`}
+    >
+      <div className="manual-check__status">
+        <b>{subjectLabel[0]!.toUpperCase() + subjectLabel.slice(1)}:</b>{" "}
+        {latestCheck ? checkResultLabel("fssp", latestCheck.status) : <span>не проверено</span>}
+      </div>
 
       {hasPostDecisionAlert && (
         <p className="alert" role="alert">
@@ -170,7 +175,6 @@ export function FsspPanel({
       {latestCheck && latestCheck.status === "hit" && !classification && (
         <p className="muted">Найдено, но сумм в ответе ФССП нет.</p>
       )}
-      {latestCheck && latestCheck.status === "ok" && <p className="muted">Ничего не найдено.</p>}
       {latestCheck && latestCheck.status === "source_unavailable" && (
         <p className="muted">Сайт ФССП был недоступен во время последней попытки.</p>
       )}

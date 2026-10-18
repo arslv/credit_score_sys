@@ -9,9 +9,9 @@ test("в карточке заявки есть блок «Анализ ИИ» �
   await login(page, seed.viewer.email, seed.viewer.password);
   await page.goto(`/applications/${seed.gray_fssp.id}`);
 
-  const heading = page.getByRole("heading", { name: /Анализ ИИ/ });
+  const heading = page.getByRole("heading", { name: "Анализ ИИ" });
   await expect(heading).toBeVisible();
-  await expect(heading.getByText("в разработке")).toBeVisible();
   const section = heading.locator("xpath=ancestor::section[1]");
+  await expect(section.getByText("в разработке", { exact: true })).toBeVisible();
   await expect(section.getByText(/Анализ пока не проводится и на решение не влияет/)).toBeVisible();
 });

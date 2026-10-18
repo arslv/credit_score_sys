@@ -10,8 +10,8 @@ const PLANNED = [
 
 export function AiAnalysisPanel() {
   return (
-    <div className="ai-panel" aria-describedby="ai-panel-note">
-      <p id="ai-panel-note" className="ai-panel__note">
+    <div className="ai-panel">
+      <p className="ai-panel__note">
         Анализ пока не проводится и на решение не влияет. Модель обучим на истории заявок и платежей после
         завершения первого этапа.
       </p>
@@ -19,8 +19,8 @@ export function AiAnalysisPanel() {
         {PLANNED.map((item) => (
           <li key={item.label} className="ai-panel__item">
             <span className="ai-panel__label">{item.label}</span>
-            <span className="ai-panel__placeholder" aria-hidden="true" />
             <span className="ai-panel__hint">{item.hint}</span>
+            <span className="ai-panel__placeholder" aria-hidden="true" />
           </li>
         ))}
       </ul>
