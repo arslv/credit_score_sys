@@ -184,19 +184,18 @@ test("карточка без дохода: «ПДН: не вычислимо»,
   await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toHaveCount(0);
 });
 
-// T23: подробности стадий — в «Пути заявки» справа: итог и проверки под шагом.
-test("путь заявки: под стадиями А и Б — итог и проверки", async ({ page }) => {
+// T23 (вариант «Профиль и лента»): ход заявки — лента событий от новых к
+// старым; у решения стадии — его детали и проверки.
+test("ход заявки: событие стадии Б с деталями, без блока «Нужно сделать»", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.gray_fssp.id}`);
-  const path = page.getByRole("heading", { name: "Путь заявки" }).locator("xpath=ancestor::section[1]");
-  const stageB = path.locator(".timeline__step", { hasText: "Стадия Б" });
-  await expect(stageB.locator(".stage__outcome")).toHaveText("Серая зона");
+  const feed = page.getByRole("heading", { name: "Ход заявки" }).locator("xpath=ancestor::section[1]");
+  const stageB = feed.locator(".ev", { hasText: "Стадия Б: серая зона" });
+  await expect(stageB).toHaveCount(1);
   await expect(stageB.getByTestId("decision-passed")).toContainText("Балл БКИ 760");
+  // У этой заявки решение сразу на стадии Б — события стадии А нет, а не «в обработке».
+  await expect(feed.locator(".ev", { hasText: "Стадия А" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Нужно сделать" })).toHaveCount(0);
-  // У этой заявки решение сразу на стадии Б, записи стадии А нет: не «сейчас»
-  // и не «в обработке», а честное «нет записи».
-  const stageA = path.locator(".timeline__step", { hasText: "Стадия А" });
-  await expect(stageA.locator(".stage__outcome")).toHaveText("нет записи");
-  await expect(stageA.getByText("сейчас", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Нужно ваше действие/)).toBeVisible();
 });

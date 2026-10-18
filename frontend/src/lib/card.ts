@@ -33,7 +33,7 @@ export function ocrValue(ocrFields: Record<string, unknown> | null | undefined, 
   return value === undefined || value === null || value === "" ? null : String(value);
 }
 
-function ageYears(isoDate: string, now: Date): number {
+export function ageYears(isoDate: string, now: Date): number {
   const birth = new Date(isoDate);
   let years = now.getFullYear() - birth.getFullYear();
   const beforeBirthday =

@@ -2798,169 +2798,6 @@ mark {
   color: var(--status-bad);
 }
 
-/* ===== Карточка заявки (T23, передизайн по отзыву) =====
-   Шапка с номером и статусом, под ней две колонки: слева рабочая (решение,
-   что нужно сделать, стадии, ручные проверки, анкета), справа справочная
-   (путь заявки, главное, рейтинг клиента, анализ ИИ). Каждый блок — одна и та
-   же панель: белый фон, тонкая рамка, скругление. Цвет — только у статусов:
-   точки, плашки исходов, заголовок вердикта. Никаких цветных полос по краям. */
-
-.ac {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.ac-header {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.ac-header__back {
-  width: fit-content;
-  font-size: var(--font-sm);
-  color: var(--color-text-muted);
-}
-
-.ac-header__back:hover {
-  color: var(--color-text);
-  text-decoration: none;
-}
-
-.ac-header__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-1);
-}
-
-.ac-header__title {
-  font-size: var(--font-xl);
-  font-weight: var(--weight-bold);
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-}
-
-.ac-header__row .badge {
-  padding: 2px 10px;
-  border: var(--line);
-  border-radius: 999px;
-  background: var(--color-subtle);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-medium);
-}
-
-.ac-header__meta {
-  display: flex;
-  flex-wrap: wrap;
-  margin: 0;
-  font-size: var(--font-sm);
-  color: var(--color-text-muted);
-}
-
-.ac-header__meta > span + span::before {
-  content: "·";
-  margin: 0 var(--space-2);
-  color: var(--color-border-strong);
-}
-
-.app-main-v2:has(.ac) {
-  max-width: calc(1480px + 2 * var(--page-pad-x));
-}
-
-.ac-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 460px;
-  gap: var(--space-4);
-  align-items: start;
-}
-
-.ac-main,
-.ac-aside {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-@media (max-width: 1200px) {
-  .ac-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* Панель — общий вид всех блоков карточки. */
-.ac-panel,
-.ac-panel.section {
-  margin: 0;
-  padding: var(--space-4) var(--space-5);
-  border: var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  min-width: 0;
-}
-
-.ac-aside .ac-panel {
-  padding: var(--space-4);
-}
-
-.ac-panel__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.ac-panel__title {
-  margin: 0 0 var(--space-3);
-  font-size: var(--font-md);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0;
-}
-
-.ac-panel__head .ac-panel__title {
-  margin: 0;
-}
-
-/* Вердикт — единственный цветной блок: мягкая подложка цвета исхода. */
-.verdict {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-5);
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--status-neutral-soft);
-}
-
-.verdict--approve {
-  border-color: var(--status-ok-line);
-  background: var(--status-ok-soft);
-}
-
-.verdict--gray {
-  border-color: var(--status-gray-line);
-  background: var(--status-gray-soft);
-}
-
-.verdict--reject {
-  border-color: var(--status-bad-line);
-  background: var(--status-bad-soft);
-}
-
-.verdict-main {
-  min-width: 0;
-}
-
-.verdict-kicker {
-  margin-bottom: var(--space-1);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-medium);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
 .verdict-title {
   display: flex;
   align-items: center;
@@ -2968,43 +2805,6 @@ mark {
   margin: 0 0 var(--space-1);
   font-size: var(--font-2xl);
   line-height: 1.2;
-}
-
-.verdict--approve .verdict-title { color: var(--status-ok); }
-.verdict--gray .verdict-title { color: var(--status-gray); }
-.verdict--reject .verdict-title { color: var(--status-bad); }
-
-.verdict-reason {
-  margin: 0;
-  font-size: var(--font-md);
-  font-weight: var(--weight-medium);
-}
-
-.verdict .help-text {
-  margin: var(--space-1) 0 var(--space-2);
-  background: var(--color-surface);
-}
-
-.verdict-score {
-  flex-shrink: 0;
-  width: 240px;
-  padding: var(--space-3) var(--space-4);
-  border: var(--line);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-}
-
-.verdict-score-value {
-  font-size: var(--font-2xl);
-  font-weight: var(--weight-bold);
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-}
-
-.verdict-score-value .unit {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-normal);
-  color: var(--color-text-muted);
 }
 
 /* Шкала балла: зоны отказ / серая / одобрение по порогам решения. */
@@ -3041,17 +2841,6 @@ mark {
   font-variant-numeric: tabular-nums;
 }
 
-@media (max-width: 720px) {
-  .verdict {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .verdict-score {
-    width: auto;
-  }
-}
-
 /* Ручные проверки (ФССП, Федресурс): строка на человека — статус точкой,
    под ней шаги. Несколько людей — через тонкую линию. */
 .manual-check {
@@ -3060,12 +2849,6 @@ mark {
   gap: var(--space-2);
   padding: var(--space-3) 0;
   border-top: var(--line);
-}
-
-.ac-panel__title + .manual-check,
-.ac-panel__head + .manual-check {
-  padding-top: 0;
-  border-top: 0;
 }
 
 .manual-check:last-child {
@@ -3226,187 +3009,198 @@ mark {
   margin: 0;
 }
 
-/* Анкета и документы: одна панель, разделы через тонкую линию. */
-.ac-panel.ac-data {
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
-.ac-data__row {
-  padding: var(--space-4) 0;
-  border-top: var(--line);
-}
-
-.ac-data__row:first-child {
-  border-top: 0;
-}
-
-.ac-data__row > p:last-child,
-.ac-data__row > .plain-list:last-child {
-  margin-bottom: 0;
-}
-
-.ac-data__row > p.muted {
-  margin-bottom: 0;
-}
-
-.ac-data .disclosure {
-  margin-top: 0;
-}
-
-/* Путь заявки — вертикальная шкала: точка, название шага, дата. */
-.timeline {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.timeline__step {
-  position: relative;
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  column-gap: var(--space-3);
-  padding-bottom: var(--space-4);
-}
-
-.timeline__step:last-child {
-  padding-bottom: 0;
-}
-
-.timeline__step::after {
-  content: "";
-  position: absolute;
-  left: 11px;
-  top: 24px;
-  bottom: 0;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--color-border);
-}
-
-.timeline__step:last-child::after {
-  display: none;
-}
-
-.timeline__step--done::after {
-  background: var(--status-ok);
-}
-
-.timeline__dot {
-  position: relative;
-  z-index: 1;
-  grid-row: span 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: 2px solid var(--color-border-strong);
-  border-radius: 50%;
-  background: var(--color-surface);
+/* Анализ ИИ — заготовка интерфейса: модели ещё нет, блок приглушён. */
+.soon-tag {
+  padding: 1px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
   color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: var(--weight-bold);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
 }
 
-.timeline__step--done .timeline__dot {
-  border-color: var(--status-ok);
-  background: var(--status-ok);
-  color: var(--color-surface);
-}
-
-.timeline__step--bad .timeline__dot {
-  border-color: var(--status-bad);
-  background: var(--status-bad);
-  color: var(--color-surface);
-}
-
-.timeline__step--gray .timeline__dot {
-  border-color: var(--status-gray);
-  background: var(--status-gray);
-  color: var(--color-surface);
-}
-
-.timeline__step--current .timeline__dot {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  box-shadow: 0 0 0 3px var(--color-accent-soft);
-}
-
-.timeline__step--skipped {
-  opacity: 0.5;
-}
-
-.timeline__step--missing .timeline__dot {
-  border-style: dashed;
-}
-
-.timeline__label {
-  padding-top: 2px;
+/* Вердикт: то, что делается не в карточке, — строкой под причиной. */
+.verdict-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
 }
 
-.timeline__date {
+.action-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 4px;
+  border: 1px solid var(--status-gray-line);
+  border-radius: 999px;
+  background: var(--status-gray-soft);
+  color: var(--status-gray);
   font-size: var(--font-xs);
-  color: var(--color-text-muted);
-}
-
-/* Главное: подпись слева, значение и пояснение справа. */
-.ac-facts {
-  display: grid;
-  margin: 0;
-}
-
-.ac-fact {
-  display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-  border-top: var(--line);
-}
-
-.ac-fact:first-child {
-  padding-top: 0;
-  border-top: 0;
-}
-
-.ac-fact:last-child {
-  padding-bottom: 0;
-}
-
-.ac-fact dt {
-  font-size: var(--font-sm);
-  color: var(--color-text-muted);
-}
-
-.ac-fact dd {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-}
-
-.ac-fact__value {
-  font-size: var(--font-sm);
   font-weight: var(--weight-bold);
 }
 
-.ac-fact--ok .ac-fact__value { color: var(--status-ok); }
-.ac-fact--bad .ac-fact__value { color: var(--status-bad); }
-.ac-fact--gray .ac-fact__value { color: var(--status-gray); }
+.action-tag::before {
+  content: "!";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--status-gray);
+  color: var(--color-surface);
+  font-size: 11px;
+}
 
-.ac-fact__hint {
+.stage__reason {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-sm);
+}
+
+.stage__reasons {
+  margin-bottom: var(--space-2);
+}
+
+.stage__reasons .subhead {
+  margin: var(--space-2) 0 var(--space-1);
+}
+
+.stage__reasons .subhead:first-child {
+  margin-top: 0;
+}
+
+/* ===== Карточка заявки: «Профиль и лента» (T23, выбор владельца — вариант 5) =====
+   Сверху цветная полоса-обложка. Слева профиль клиента: аватар с инициалами,
+   анкета, рейтинг, анализ ИИ. Справа заявка: решение, закреплённый блок
+   «Нужно ваше действие», три главные цифры, лента событий от новых к старым,
+   ручные проверки и данные. Все блоки — белые панели с тонкой рамкой; цвет —
+   только у статусов. */
+
+.app-main-v2:has(.pf) {
+  max-width: calc(1480px + 2 * var(--page-pad-x));
+}
+
+.pf-card {
+  border: var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  min-width: 0;
+}
+
+.pf .pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
   font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+}
+
+.pf .pill-ok { background: var(--status-ok-soft); color: var(--status-ok); }
+.pf .pill-bad { background: var(--status-bad-soft); color: var(--status-bad); }
+.pf .pill-mute { border: var(--line); background: var(--color-subtle); color: var(--color-text-muted); }
+
+.pf-section-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0;
+}
+
+/* Обложка */
+.pf-cover {
+  height: 96px;
+  border-radius: 16px;
+  background: linear-gradient(110deg, #1e2a5a, var(--color-accent) 55%, #5b7cfa);
+}
+
+.pf-back {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-sm);
+}
+
+.pf-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+  margin-top: -48px;
+  padding: 0 var(--space-4);
+}
+
+/* Профиль клиента */
+.pf-person {
+  padding: 0 22px 22px;
+}
+
+.pf-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 84px;
+  margin-top: -36px;
+  border: 4px solid var(--color-surface);
+  border-radius: 20px;
+  background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.12);
+  color: #3730a3;
+  font-size: 28px;
+  font-weight: var(--weight-bold);
+}
+
+.pf-name {
+  margin: var(--space-3) 0 2px;
+  font-size: var(--font-xl);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.pf-sub {
+  margin: 0;
   color: var(--color-text-muted);
 }
 
-/* Рейтинг клиента — в правой колонке: сумма крупно, критерии строками. */
-.rating .ac-panel__title {
-  margin-bottom: 2px;
+.pf-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--space-3) 0 var(--space-4);
 }
 
+.pf-tags:empty {
+  margin-bottom: var(--space-2);
+}
+
+.pf-person .kv-grid {
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  font-size: var(--font-sm);
+}
+
+.pf-person .kv-grid dd {
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+
+/* Разделы профиля — через линию во всю ширину карточки. */
+.pf-person .rating,
+.pf-ai {
+  margin: var(--space-4) -22px 0;
+  padding: var(--space-4) 22px 0;
+  border-top: var(--line);
+}
+
+/* Рейтинг клиента */
 .rating__badge {
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--space-2);
   font-size: var(--font-xs);
   color: var(--color-text-muted);
 }
@@ -3418,9 +3212,9 @@ mark {
 }
 
 .rating__number {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: var(--weight-bold);
-  line-height: 1;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
@@ -3428,33 +3222,53 @@ mark {
 .rating__number--down { color: var(--status-bad); }
 
 .rating__unit {
-  font-size: var(--font-sm);
   color: var(--color-text-muted);
 }
 
 .rating__partial {
-  margin: var(--space-1) 0 0;
+  margin: 2px 0 0;
   font-size: var(--font-xs);
   color: var(--color-text-muted);
 }
 
 .rating-list {
   display: grid;
+  gap: 6px;
   margin: var(--space-3) 0;
   padding: 0;
   list-style: none;
 }
 
 .rating-chip {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: 6px 0;
-  border-top: var(--line);
-  font-size: var(--font-sm);
+  display: grid;
+  grid-template-columns: 76px minmax(40px, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-xs);
 }
 
+.rating-chip__bar {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--color-subtle);
+}
+
+.rating-chip__bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--status-neutral);
+}
+
+.rating-chip--up .rating-chip__bar i { background: var(--status-ok); }
+.rating-chip--down .rating-chip__bar i { background: var(--status-bad); }
+
 .rating-chip__points {
+  min-width: 32px;
+  text-align: right;
+  white-space: nowrap;
   font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
@@ -3472,7 +3286,7 @@ mark {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius);
   background: var(--status-bad-soft);
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
 }
 
 .rating__guarantor--ok {
@@ -3509,7 +3323,18 @@ mark {
 .points--up { color: var(--status-ok); }
 .points--down { color: var(--status-bad); }
 
-/* Анализ ИИ — заготовка интерфейса: модели ещё нет, блок приглушён. */
+/* Анализ ИИ — заготовка, приглушена. */
+.pf-ai__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.pf-ai__head .pf-section-title {
+  margin: 0;
+}
+
 .soon-tag {
   padding: 1px 8px;
   border: 1px solid var(--color-border-strong);
@@ -3520,72 +3345,166 @@ mark {
 }
 
 .ai-panel__note {
-  margin: 0 0 var(--space-3);
-  font-size: var(--font-sm);
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-xs);
   color: var(--color-text-muted);
 }
 
 .ai-panel__list {
   display: grid;
-  gap: var(--space-2);
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .ai-panel__item {
-  display: grid;
-  gap: 2px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px dashed var(--color-border-strong);
-  border-radius: var(--radius);
-}
-
-.ai-panel__label {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-muted);
-}
-
-.ai-panel__hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--font-xs);
   color: var(--color-text-muted);
 }
 
-.ai-panel__placeholder {
-  width: 55%;
+.ai-panel__item::before {
+  content: "";
+  width: 6px;
   height: 6px;
-  margin-top: var(--space-1);
-  border-radius: 999px;
-  background: var(--color-border);
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: 50%;
 }
 
-/* Вердикт: то, что делается не в карточке, — строкой под причиной. */
+/* Правая колонка — заявка */
+.pf-main {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding-top: 64px;
+}
+
+.pf-verdict {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.pf-verdict__main {
+  min-width: 0;
+}
+
+.pf-kicker {
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.pf-verdict__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.pf-verdict__title .verdict-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 2px 0;
+  font-size: var(--font-2xl);
+  line-height: 1.2;
+}
+
+.pf-verdict--ok .verdict-title { color: var(--status-ok); }
+.pf-verdict--warn .verdict-title { color: var(--status-gray); }
+.pf-verdict--bad .verdict-title { color: var(--status-bad); }
+
+.pf-verdict__title .badge {
+  padding: 2px 10px;
+  border: var(--line);
+  border-radius: 999px;
+  background: var(--color-surface);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+}
+
+.pf-verdict__reason {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-medium);
+}
+
+.pf-verdict .help-text {
+  margin: var(--space-1) 0;
+}
+
 .verdict-action {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
-  margin: var(--space-3) 0 0;
-  padding-top: var(--space-3);
-  border-top: 1px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+  margin: var(--space-2) 0 0;
   font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.pf-verdict__deal {
+  display: grid;
+  gap: 4px;
+  flex-shrink: 0;
+  min-width: 240px;
+  margin: 0;
+  font-size: var(--font-sm);
+}
+
+.pf-verdict__deal div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.pf-verdict__deal dt {
+  color: var(--color-text-muted);
+}
+
+.pf-verdict__deal dd {
+  margin: 0;
   font-weight: var(--weight-medium);
 }
 
-/* Раздел, где нужно действие сотрудника. Пометка — уведомление, а не кнопка:
-   янтарная («внимание»), чтобы не сливаться с синими кнопками действий. */
-.ac-panel--action,
-.ac-panel.ac-panel--action {
+/* «Нужно ваше действие» — закреплён сверху, янтарный (уведомление, не кнопка). */
+.pf-action {
+  padding: var(--space-4) var(--space-5);
   border-color: var(--status-gray-line);
-  box-shadow: 0 0 0 3px var(--status-gray-soft);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--status-gray-soft) 70%, var(--color-surface)), var(--color-surface));
+}
+
+.pf-action__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  font-weight: var(--weight-bold);
+}
+
+.pf-action__icon,
+.action-tag::before {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--status-gray);
+  color: var(--color-surface);
+  font-size: 12px;
+  font-weight: var(--weight-bold);
 }
 
 .action-tag {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 10px 2px 4px;
+  padding: 2px 10px 2px 3px;
   border: 1px solid var(--status-gray-line);
   border-radius: 999px;
   background: var(--status-gray-soft);
@@ -3596,98 +3515,344 @@ mark {
 
 .action-tag::before {
   content: "!";
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
-  background: var(--status-gray);
-  color: var(--color-surface);
-  font-size: 11px;
+  font-size: 10px;
 }
 
-/* Путь заявки: у стадий — итог плашкой справа и подробности под шагом. */
-.timeline__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.timeline__detail {
-  grid-column: 2;
-  margin-top: var(--space-2);
-  padding: var(--space-3);
+/* Одна ручная проверка (ФССП / Федресурс). В блоке действия — белая плашка. */
+.mc {
+  padding: var(--space-3) var(--space-4);
   border: var(--line);
-  border-radius: var(--radius);
-  background: var(--color-subtle);
+  border-radius: 10px;
+  background: var(--color-surface);
 }
 
-.timeline__step--skipped .timeline__detail {
-  display: none;
+.mc + .mc {
+  margin-top: var(--space-2);
 }
 
-.timeline__detail .checklist {
+.mc__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.mc__title {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
+}
+
+.mc__why {
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.mc__head + .manual-check {
   padding-top: 0;
   border-top: 0;
 }
 
-.timeline__detail .stage__reasons + .checklist {
-  padding-top: var(--space-2);
+/* Ручные проверки, где действие не нужно, — обычный раздел, без плашек. */
+.pf-manual {
+  padding: var(--space-4) var(--space-5);
+}
+
+.pf-manual .mc {
+  padding: var(--space-3) 0 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.pf-manual .mc + .mc {
+  margin-top: var(--space-3);
   border-top: var(--line);
 }
 
-.timeline__detail > :last-child {
-  margin-bottom: 0;
+/* Три главные цифры */
+.pf-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
 }
 
-.stage__outcome {
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: var(--status-neutral-soft);
+.pf-kpi {
+  padding: var(--space-4) 18px;
+}
+
+.pf-kpi__label {
   font-size: var(--font-xs);
-  font-weight: var(--weight-bold);
-  white-space: nowrap;
+  color: var(--color-text-muted);
 }
 
-.stage__outcome--ok { background: var(--status-ok-soft); color: var(--status-ok); }
-.stage__outcome--bad { background: var(--status-bad-soft); color: var(--status-bad); }
-.stage__outcome--gray { background: var(--status-gray-soft); color: var(--status-gray); }
-.stage__outcome--neutral { background: var(--color-accent-soft); color: var(--color-accent); }
+.pf-kpi__value {
+  margin: 2px 0 var(--space-2);
+  font-size: var(--font-2xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
 
-.stage__outcome--pending {
-  border: 1px dashed var(--color-border-strong);
+.pf-kpi__of {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-normal);
+  color: var(--color-text-muted);
+}
+
+.pf-kpi__hint {
+  margin-top: var(--space-1);
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.score-scale {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    var(--status-bad) 0 var(--reject-at, 45%),
+    var(--status-gray) var(--reject-at, 45%) var(--approve-at, 70%),
+    var(--status-ok) var(--approve-at, 70%) 100%
+  );
+  opacity: 0.85;
+}
+
+.score-scale .marker {
+  position: absolute;
+  top: -4px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border: 3px solid var(--color-text);
+  border-radius: 50%;
+  background: var(--color-surface);
+}
+
+.pti-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-subtle);
+  border: var(--line);
+}
+
+.pti-bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--status-ok);
+}
+
+.pti-bar__fill--bad {
+  background: var(--status-bad);
+}
+
+.pti-bar__limit {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  background: var(--status-bad);
+}
+
+/* Лента событий */
+.pf-feed .pf-section-title {
+  margin-bottom: var(--space-3);
+}
+
+.feed {
+  position: relative;
+  margin: 0;
+  padding: 0 0 0 32px;
+  list-style: none;
+}
+
+.feed::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--color-border);
+}
+
+.ev {
+  position: relative;
+}
+
+.ev + .ev {
+  margin-top: var(--space-3);
+}
+
+.ev__icon {
+  position: absolute;
+  left: -32px;
+  top: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px var(--color-bg);
+  color: var(--color-surface);
+  font-size: 12px;
+  font-weight: var(--weight-bold);
+}
+
+.ev--ok .ev__icon { background: var(--status-ok); }
+.ev--bad .ev__icon { background: var(--status-bad); }
+.ev--warn .ev__icon { background: var(--status-gray); }
+.ev--info .ev__icon { background: var(--color-accent); }
+
+.ev--wait .ev__icon {
+  border: 2px dashed var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.ev__card {
+  padding: 14px 18px;
+}
+
+.ev--wait .ev__card {
+  border-style: dashed;
   background: transparent;
+}
+
+.ev__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ev__title {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
+}
+
+.ev--wait .ev__title {
   color: var(--color-text-muted);
   font-weight: var(--weight-medium);
 }
 
-.stage__reason {
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-sm);
-}
-
-.stage__note {
-  margin: 0 0 var(--space-2);
+.ev__time {
+  flex-shrink: 0;
   font-size: var(--font-xs);
   color: var(--color-text-muted);
 }
 
-.stage__reasons {
-  margin-bottom: var(--space-2);
+.ev__text {
+  margin: 6px 0 0;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
 }
 
-.stage__reasons .subhead {
-  margin: var(--space-2) 0 var(--space-1);
+.ev__card .stage__reasons {
+  margin: var(--space-2) 0 0;
 }
 
-.stage__reasons .subhead:first-child {
+.ev__card .override {
+  margin-top: var(--space-2);
+}
+
+.ev__checks {
+  margin-top: var(--space-2);
+}
+
+.ev__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-sm);
+}
+
+.ev__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ev__chip::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-ok);
+}
+
+.ev__chip--bad::before { background: var(--status-bad); }
+.ev__chip--warn::before { background: var(--status-gray); }
+
+.ev__chip-note {
+  color: var(--color-text-muted);
+}
+
+.ev__more {
+  font-size: var(--font-sm);
+}
+
+.ev__checks .checklist {
+  margin-top: var(--space-2);
+}
+
+.pf--gray .reason-item--cause::before {
+  background: var(--status-gray);
+}
+
+/* Данные: условия сделки, проверки таблицей, документы, история. */
+.pf-data {
+  padding: 0 var(--space-5);
+}
+
+.pf-data__row {
+  padding: var(--space-4) 0;
+  border-top: var(--line);
+}
+
+.pf-data__row:first-child {
+  border-top: 0;
+}
+
+.pf-data__row > p:last-child,
+.pf-data__row > .plain-list:last-child {
+  margin-bottom: 0;
+}
+
+.pf-data .disclosure {
   margin-top: 0;
 }
 
-/* Серая зона: причина — янтарной точкой, а не красной. */
-.ac--gray .reason-item--cause::before {
-  background: var(--status-gray);
+.pf-data .kv-grid {
+  font-size: var(--font-sm);
+}
+
+@media (max-width: 1100px) {
+  .pf-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pf-main {
+    padding-top: 0;
+  }
+
+  .pf-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pf-verdict {
+    flex-direction: column;
+  }
 }

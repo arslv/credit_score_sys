@@ -13,18 +13,20 @@ function tone(points: number | null | undefined): "up" | "down" | "zero" | "none
 }
 
 // T23: рейтинг клиента по скоркарте («Рейтинг клиента.docx») — баллы по
-// критериям складываются. Панель в правой колонке карточки: сумма крупно и
-// строка на каждый критерий; правила начисления — по кнопке. Пока
+// критериям складываются. Раздел профиля клиента в карточке: сумма крупно,
+// по каждому критерию — полоска и баллы; правила начисления — по кнопке. Пока
 // информационно: пороги суммы не названы (affects_decision=false).
 export function ClientRatingPanel({ rating }: { rating: Rating }) {
   const [open, setOpen] = useState(false);
   const missing = rating.items.filter((i) => i.points == null).length;
   const totalTone = tone(rating.total);
   const needGuarantor = rating.guarantor_reasons.length > 0;
+  // Длина полоски — доля от самого «весомого» критерия этой заявки.
+  const maxAbs = Math.max(1, ...rating.items.map((i) => Math.abs(i.points ?? 0)));
 
   return (
-    <section className="ac-panel rating" data-testid="client-rating">
-      <h2 className="ac-panel__title">Рейтинг клиента</h2>
+    <section className="rating" data-testid="client-rating">
+      <h2 className="pf-section-title">Рейтинг клиента</h2>
       {!rating.affects_decision && <p className="rating__badge">информационно — на решение пока не влияет</p>}
 
       <div className="rating__total">
@@ -41,6 +43,9 @@ export function ClientRatingPanel({ rating }: { rating: Rating }) {
         {rating.items.map((item) => (
           <li key={item.criterion} className={`rating-chip rating-chip--${tone(item.points)}`} title={item.label}>
             <span className="rating-chip__title">{item.title}</span>
+            <span className="rating-chip__bar" aria-hidden="true">
+              {item.points != null && <i style={{ width: `${(Math.abs(item.points) / maxAbs) * 100}%` }} />}
+            </span>
             <span className="rating-chip__points">{item.points == null ? "нет данных" : signed(item.points)}</span>
           </li>
         ))}

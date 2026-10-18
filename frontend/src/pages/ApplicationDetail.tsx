@@ -14,7 +14,7 @@ import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
 import { VerdictTitle } from "../components/VerdictTitle";
 import { ErrorState, LoadingState } from "../components/ui";
-import { clientRows, dealRows, latestStageBPayload, ocrValue } from "../lib/card";
+import { ageYears, clientRows, dealRows, latestStageBPayload, ocrValue } from "../lib/card";
 import { explainDecision } from "../lib/explain";
 import { formatAmount, formatDate, formatDateTime } from "../lib/format";
 import {
@@ -28,25 +28,48 @@ import {
   passportCheckLabel,
   passportCheckStatusLabel,
   reasonCodeLabel,
+  sourceMeta,
   stageLabel,
   subjectTypeLabel,
 } from "../lib/labels";
+
+type Decision = components["schemas"]["DecisionOut"];
+type CheckRow = components["schemas"]["CheckOut"];
+type ManualOverride = components["schemas"]["ManualOverrideOut"];
+type EventTone = "ok" | "bad" | "warn" | "info" | "wait";
 
 // Числа в карточке — без копеек (780, а не 780.00): баллы и пороги целые.
 function wholeNumber(value: number | string): string {
   return String(Math.round(Number(value)));
 }
 
-function decisionVerdictClass(outcome: string | undefined): string {
-  if (outcome === "approve") return "verdict--approve";
-  if (outcome === "reject") return "verdict--reject";
-  if (outcome === "manual_review") return "verdict--gray";
-  return "verdict--pending";
+function verdictTone(outcome: string | undefined): string {
+  if (outcome === "approve") return "pf-verdict--ok";
+  if (outcome === "reject") return "pf-verdict--bad";
+  if (outcome === "manual_review") return "pf-verdict--warn";
+  return "pf-verdict--wait";
 }
 
-type ManualOverride = components["schemas"]["ManualOverrideOut"];
+function decisionEventTone(d: Decision): EventTone {
+  if (d.outcome === "approve") return "ok";
+  if (d.outcome === "reject") return "bad";
+  return d.stage === "B" ? "warn" : "info";
+}
 
-// T23: оператор заказчика сменил статус у себя после решения системы — что
+const EVENT_ICON: Record<EventTone, string> = { ok: "✓", bad: "✕", warn: "!", info: "→", wait: "…" };
+
+// Инициалы для аватара: первые буквы фамилии и имени.
+function initials(name: string | null): string {
+  if (!name) return "?";
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
+}
+
+// T23: оператор в CRM сменил статус у себя после решения системы — что
 // решила система, что поставил оператор и почему, обычными словами.
 function OperatorOverride({ override: o }: { override: ManualOverride }) {
   const tone = o.reason_code === "PARTNER_OPERATOR_OVERRIDE_APPROVE" ? "approve" : "reject";
@@ -54,7 +77,6 @@ function OperatorOverride({ override: o }: { override: ManualOverride }) {
     <div className={`override override--${tone}`}>
       <div className="override__head">
         <span className="override__title">{reasonCodeLabel(o.reason_code)}</span>
-        <span className="override__date">{formatDateTime(o.created_at)}</span>
       </div>
       <dl className="override__rows">
         <dt>Решение системы</dt>
@@ -66,6 +88,63 @@ function OperatorOverride({ override: o }: { override: ManualOverride }) {
         <dt>Причина</dt>
         <dd>{o.comment ?? "оператор не указал"}</dd>
       </dl>
+    </div>
+  );
+}
+
+// Проверки стадии одной строкой точек; полный список с паспортом по пунктам
+// и кнопкой «Повторить» — по кнопке «подробнее».
+function CheckSummary({
+  checks,
+  passport,
+  canRetry,
+  retry,
+  busy,
+}: {
+  checks: CheckRow[];
+  passport: PassportCheck[];
+  canRetry: boolean;
+  retry: (checkId: string) => void;
+  busy: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  if (checks.length === 0 && passport.length === 0) return null;
+  const passportTone = passport.some((i) => i.status === "fail")
+    ? "bad"
+    : passport.some((i) => i.status !== "ok")
+      ? "warn"
+      : "ok";
+  const passportOk = passport.filter((i) => i.status === "ok").length;
+  return (
+    <div className="ev__checks">
+      <ul className="ev__chips">
+        {passport.length > 0 && (
+          <li className={`ev__chip ev__chip--${passportTone}`}>
+            Паспорт {passportOk}/{passport.length}
+          </li>
+        )}
+        {checks.map((c) => (
+          <li key={c.id} className={`ev__chip ev__chip--${checkTone(c.status)}`}>
+            {sourceMeta(c.source).label}
+            {c.subject_type === "guarantor" && " (поручитель)"}
+            {checkTone(c.status) !== "ok" && <span className="ev__chip-note">· {checkResultLabel(c.source, c.status)}</span>}
+          </li>
+        ))}
+        <li>
+          <button type="button" className="btn-link ev__more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+            {open ? "скрыть" : "подробнее"}
+          </button>
+        </li>
+      </ul>
+      {open && (
+        <CheckList
+          checks={checks}
+          canRetry={canRetry}
+          retry={retry}
+          busy={busy}
+          leading={passport.length > 0 ? <PassportRow items={passport} /> : null}
+        />
+      )}
     </div>
   );
 }
@@ -111,6 +190,7 @@ export function ApplicationDetailPage() {
   // T23: ролей три — повтор проверки у admin, ФССП у admin и operator.
   const canRetry = employee?.role === "admin";
   const canOperateFssp = employee?.role === "operator" || employee?.role === "admin";
+  const retry = (checkId: string) => retryMutation.mutate(checkId);
 
   const findLatestCheck = (
     source: "fssp" | "fedresurs" | "fns_inn", subjectType: "applicant" | "guarantor", subjectId: string | null,
@@ -122,13 +202,29 @@ export function ApplicationDetailPage() {
     return matches.reduce((latest, c) => (c.started_at > latest.started_at ? c : latest));
   };
 
-  const latestDecision = app.decisions.length > 0 ? app.decisions[app.decisions.length - 1] : null;
+  const latestDecision = app.decisions.length > 0 ? app.decisions[app.decisions.length - 1]! : null;
   const stageB = latestStageBPayload(app.external_snapshots);
+  const explanation = latestDecision ? explainDecision(latestDecision) : null;
 
-  // T23 (по отзыву): отдельного блока «Нужно сделать» нет — чтобы не
-  // дублировать. Раздел, где нужно действие, помечен «требуется действие»;
-  // то, что делается не в карточке (серая зона в CRM, проверка по перечням),
-  // — строкой в вердикте.
+  const decisionsA = app.decisions.filter((d) => d.stage === "A");
+  const decisionsB = app.decisions.filter((d) => d.stage === "B");
+  const latestA = decisionsA.length > 0 ? decisionsA[decisionsA.length - 1]! : null;
+  const latestB = decisionsB.length > 0 ? decisionsB[decisionsB.length - 1]! : null;
+  const rejectedAtA = latestA?.outcome === "reject" && !latestB;
+  const reviewSnapshots = app.external_snapshots.filter((s) => s.stage === "B");
+  const reviewedAt = reviewSnapshots.length > 0 ? reviewSnapshots[reviewSnapshots.length - 1]!.received_at : null;
+
+  const visibleChecks = app.checks.filter((c) => c.source !== "mvd");
+  // Ручные проверки (ФССП, Федресурс) и поручитель — после звонка, к стадии Б.
+  const isManual = (c: CheckRow) => c.source === "fssp" || c.source === "fedresurs";
+  const checksA = visibleChecks.filter((c) => c.subject_type !== "guarantor" && !isManual(c));
+  const checksB = visibleChecks.filter((c) => c.subject_type === "guarantor" || isManual(c));
+
+  // T23 (по отзыву): отдельного списка дел нет. Что требует действия здесь —
+  // в закреплённом блоке «Нужно ваше действие» с самими проверками; что
+  // делается не здесь (серая зона в CRM, проверка по перечням) — строкой под
+  // решением.
+  const applicantFssp = findLatestCheck("fssp", "applicant", null);
   const applicantFedresurs = findLatestCheck("fedresurs", "applicant", null);
   const grayStageB = latestDecision?.outcome === "manual_review" && latestDecision.stage === "B";
   const fsspNeedsAction =
@@ -138,14 +234,8 @@ export function ApplicationDetailPage() {
   // Банкротство проверяется вручную — пока по заявителю нет отметки и заявка
   // ещё в работе (после отказа или истечения — незачем).
   const fedresursNeedsAction =
-    !applicantFedresurs &&
-    app.decisions.length > 0 &&
-    !["rejected_a", "rejected_b", "expired"].includes(app.status);
-
-  // T20: причина — один раз, в вердикте; «Почему» — только детали: что ещё
-  // привело к решению («Причина») и что пройдено («В норме»). Пройденные
-  // сравнения больше не попадают в список сработавших стоп-факторов.
-  const explanation = latestDecision ? explainDecision(latestDecision) : null;
+    !applicantFedresurs && app.decisions.length > 0 && !["rejected_a", "rejected_b", "expired"].includes(app.status);
+  const actionCount = Number(fsspNeedsAction) + Number(fedresursNeedsAction);
 
   const clientBlock = clientRows({
     clientName: app.client_name,
@@ -169,25 +259,6 @@ export function ApplicationDetailPage() {
     installmentSource: latestDecision?.installment_payment_source ?? null,
   });
 
-  // T23 (правка по отзыву): стадии А и Б — отдельными карточками под шкалой
-  // «Путь заявки»; рейтинг клиента — цветной карточкой сразу под вердиктом;
-  // анкета, полная таблица проверок и история — по кнопке (<details>, содержимое
-  // остаётся в DOM — поиск по странице и тесты видят его и в свёрнутом виде).
-  const decisionsA = app.decisions.filter((d) => d.stage === "A");
-  const decisionsB = app.decisions.filter((d) => d.stage === "B");
-  const latestA = decisionsA.length > 0 ? decisionsA[decisionsA.length - 1] : null;
-  const latestB = decisionsB.length > 0 ? decisionsB[decisionsB.length - 1] : null;
-  const rejectedAtA = latestA?.outcome === "reject" && !latestB;
-  const reviewSnapshots = app.external_snapshots.filter((s) => s.stage === "B");
-  const reviewedAt = reviewSnapshots.length > 0 ? reviewSnapshots[reviewSnapshots.length - 1]!.received_at : null;
-  const callDone = Boolean(latestB) || reviewedAt != null;
-
-  const visibleChecks = app.checks.filter((c) => c.source !== "mvd");
-  // Ручные проверки (ФССП, Федресурс) — после звонка, в карточке стадии Б.
-  const isManual = (c: CheckRow) => c.source === "fssp" || c.source === "fedresurs";
-  const checksA = visibleChecks.filter((c) => c.subject_type !== "guarantor" && !isManual(c));
-  const checksB = visibleChecks.filter((c) => c.subject_type === "guarantor" || isManual(c));
-
   // Поиск на Федресурсе: ИНН (если ФНС его нашла — точное совпадение) или ФИО;
   // дата рождения — чтобы сверить найденного однофамильца.
   const innOf = (subjectType: "applicant" | "guarantor", subjectId: string | null) => {
@@ -201,144 +272,229 @@ export function ApplicationDetailPage() {
         .join(" ")
     : null;
 
-  const retry = (checkId: string) => retryMutation.mutate(checkId);
-  const steps: {
-    label: string;
-    date: string | null;
-    state: StepState;
-    outcome?: React.ReactNode;
-    detail?: React.ReactNode;
-  }[] = [
-    { label: "Подача", date: app.submitted_at, state: "done" },
-    {
-      label: "Стадия А",
-      date: latestA?.created_at ?? null,
-      // Без решения стадии А заявка «сейчас на стадии А», только пока дальше
-      // она не ушла. Если звонок или стадия Б уже есть, а записи стадии А нет,
-      // честно говорим «нет записи» (так бывает у заявок, заведённых сразу на
-      // стадии Б, например в тестовых данных), а не «в обработке».
-      state: latestA ? (latestA.outcome === "reject" ? "bad" : "done") : callDone ? "missing" : "current",
-      outcome: <OutcomePill decision={latestA} pending={callDone ? "нет записи" : "в обработке"} />,
-      detail: !latestA && callDone ? (
-        <p className="stage__reason muted">Решение стадии А не записано — проверок стадии А по этой заявке нет.</p>
-      ) : (
-        <>
-          {latestDecision?.stage === "A" && explanation ? (
-            <DecisionReasons explanation={explanation} />
-          ) : (
-            latestA?.reason_text && <p className="stage__reason">{latestA.reason_text}</p>
-          )}
-          <CheckList
-            checks={checksA}
-            canRetry={canRetry}
-            retry={retry}
-            busy={retryMutation.isPending}
-            leading={app.passport_checks.length > 0 ? <PassportRow items={app.passport_checks} /> : null}
-          />
-        </>
-      ),
-    },
-    {
-      label: "Звонок оператора",
-      date: reviewedAt,
-      state: callDone ? "done" : rejectedAtA ? "skipped" : latestA ? "current" : "pending",
-    },
-    {
-      label: "Стадия Б",
-      date: latestB?.created_at ?? null,
-      state: latestB
-        ? latestB.outcome === "approve" ? "done" : latestB.outcome === "reject" ? "bad" : "gray"
-        : app.status === "stage_b" ? "current" : rejectedAtA ? "skipped" : "pending",
-      outcome: rejectedAtA ? undefined : <OutcomePill decision={latestB} pending={app.status === "stage_b" ? "идёт" : "ждёт звонка"} />,
-      detail: rejectedAtA ? undefined : (
-        <>
-          {latestDecision?.stage === "B" && explanation && <DecisionReasons explanation={explanation} />}
-          {decisionsB.length > 1 && (
-            <p className="stage__note">
-              Ранее:{" "}
-              {decisionsB
-                .slice(0, -1)
-                .map((d) => `${decisionOutcomeLabel(d.stage, d.outcome)} (${formatDateTime(d.created_at)})`)
-                .join(", ")}
-              .
-            </p>
-          )}
-          {checksB.length > 0 ? (
-            <CheckList checks={checksB} canRetry={canRetry} retry={retry} busy={retryMutation.isPending} />
-          ) : (
-            !latestB && (
-              <p className="stage__reason muted">
-                Начнётся, когда оператор позвонит клиенту и нажмёт «Рассмотреть» в CRM.
-              </p>
-            )
-          )}
-        </>
-      ),
-    },
-  ];
-
-  const applicantFssp = findLatestCheck("fssp", "applicant", null);
+  // Профиль клиента: возраст из паспорта, отметки, анкета без ФИО (оно в заголовке).
+  const birthDate = ocrValue(app.ocr_result?.fields ?? null, "birth_date");
+  const age = birthDate ? ageYears(birthDate, new Date()) : null;
   const guarantorNeeded = (app.client_rating?.guarantor_reasons.length ?? 0) > 0;
-  const facts: { label: string; value: string; hint?: string; tone?: Tone }[] = [
-    {
-      label: "ПДН",
-      value: latestB?.pti != null ? `${Math.round(latestB.pti * 100)}%` : "—",
-      hint: latestB?.pti != null && latestB.pti_max != null ? `порог отказа ${Math.round(latestB.pti_max * 100)}%` : "после стадии Б",
-      tone: latestB?.pti != null && latestB.pti_max != null ? (latestB.pti > latestB.pti_max ? "bad" : "ok") : undefined,
-    },
-    {
-      label: "Поручитель",
-      value: app.has_guarantor ? "есть" : guarantorNeeded ? "нужен, нет" : "не нужен",
-      hint: guarantorNeeded ? "по условиям рассрочки" : undefined,
-      tone: guarantorNeeded && !app.has_guarantor ? "bad" : app.has_guarantor ? "ok" : undefined,
-    },
-    {
-      label: "Сумма и срок",
-      value: app.term_months > 0 ? `${formatAmount(app.requested_amount)} ₽` : "—",
-      hint: app.term_months > 0 ? `на ${app.term_months} мес.` : "после «Рассмотреть»",
-    },
-  ];
+  const profileRows = clientBlock.filter((row) => row.label !== "ФИО");
+  const innFound = Boolean(innOf("applicant", null));
 
-  // T23 (передизайн по отзыву): две колонки. Слева — с чем работают: решение,
-  // ручные проверки (с пометкой «требуется действие», отдельного списка дел
-  // нет — чтобы не дублировать), решение оператора, анкета. Справа — путь
-  // заявки с подробностями стадий А и Б, главное, анализ ИИ, рейтинг клиента.
+  // Лента событий заявки — от новых к старым. У последнего решения каждой
+  // стадии — причины и проверки этой стадии.
+  type FeedEvent = { key: string; at: string | null; tone: EventTone; title: string; body?: React.ReactNode };
+  const events: FeedEvent[] = [
+    {
+      key: "submitted",
+      at: app.submitted_at,
+      tone: "ok" as const,
+      title: app.ocr_result ? "Заявка подана, паспорт распознан" : "Заявка подана",
+      body:
+        app.documents.length > 0 ? (
+          <p className="ev__text">
+            Фото: {app.documents.map((d) => documentKindLabel(d.kind).toLowerCase()).join(", ")}.
+          </p>
+        ) : undefined,
+    },
+    ...app.decisions.map((d): FeedEvent => {
+      const isLatestOfStage = d === (d.stage === "A" ? latestA : latestB);
+      const outcome = decisionOutcomeLabel(d.stage, d.outcome);
+      return {
+        key: `decision-${d.id}`,
+        at: d.created_at,
+        tone: decisionEventTone(d),
+        title: `Стадия ${stageLabel(d.stage)}: ${outcome[0]!.toLowerCase()}${outcome.slice(1)}`,
+        body: isLatestOfStage ? (
+          <>
+            {/* Причина последнего решения — уже под заголовком решения, здесь только детали. */}
+            {d === latestDecision && explanation ? (
+              <DecisionReasons explanation={explanation} />
+            ) : (
+              d.reason_text && <p className="ev__text">{d.reason_text}</p>
+            )}
+            <CheckSummary
+              checks={d.stage === "A" ? checksA : checksB}
+              passport={d.stage === "A" ? app.passport_checks : []}
+              canRetry={canRetry}
+              retry={retry}
+              busy={retryMutation.isPending}
+            />
+          </>
+        ) : (
+          d.reason_text && <p className="ev__text">{d.reason_text}</p>
+        ),
+      };
+    }),
+    ...(reviewedAt
+      ? [{ key: "call", at: reviewedAt, tone: "ok" as const, title: "Оператор позвонил и нажал «Рассмотреть» в CRM" }]
+      : []),
+    ...app.manual_overrides.map(
+      (o): FeedEvent => ({
+        key: `override-${o.id}`,
+        at: o.created_at,
+        tone: o.reason_code === "PARTNER_OPERATOR_OVERRIDE_APPROVE" ? "ok" : "bad",
+        title: "Решение оператора в CRM",
+        body: <OperatorOverride override={o} />,
+      }),
+    ),
+  ]
+    // От новых к старым; при одинаковом времени — в порядке хода заявки
+    // (подача → стадия А → звонок → стадия Б), только перевёрнутом.
+    .map((e, order) => ({ e, order }))
+    .sort((a, b) => (b.e.at ?? "").localeCompare(a.e.at ?? "") || b.order - a.order)
+    .map(({ e }) => e);
+  // Что ждём дальше — сверху ленты, без времени.
+  if (!latestA && !reviewedAt && !latestB) {
+    events.unshift({ key: "next", at: null, tone: "wait", title: "Идут проверки стадии А" });
+  } else if (latestA && !rejectedAtA && !reviewedAt && !latestB) {
+    events.unshift({
+      key: "next",
+      at: null,
+      tone: "wait",
+      title: "Ждём звонка оператора",
+      body: <p className="ev__text">Стадия Б начнётся, когда оператор позвонит клиенту и нажмёт «Рассмотреть» в CRM.</p>,
+    });
+  }
+
+  const ptiPercent = latestB?.pti != null ? Math.round(latestB.pti * 100) : null;
+  const ptiMaxPercent = latestB?.pti_max != null ? Math.round(latestB.pti_max * 100) : null;
+  const score = latestDecision?.score ?? null;
+
+  const fsspSection = (
+    <section className="mc" key="fssp">
+      <div className="mc__head">
+        <h3 id="fssp" className="mc__title">
+          ФССП
+        </h3>
+        {fsspNeedsAction && <span className="action-tag">требуется действие</span>}
+        {fsspNeedsAction && grayStageB && <span className="mc__why">без неё одобрение недоступно</span>}
+      </div>
+      <FsspPanel
+        applicationId={app.id}
+        subjectType="applicant"
+        subjectLabel="заявитель"
+        subjectId={null}
+        latestCheck={applicantFssp}
+        canOperate={canOperateFssp}
+        hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("applicant")}
+      />
+      {app.has_guarantor && app.guarantor_id && (
+        <FsspPanel
+          applicationId={app.id}
+          subjectType="guarantor"
+          subjectLabel="поручитель"
+          subjectId={app.guarantor_id}
+          latestCheck={findLatestCheck("fssp", "guarantor", app.guarantor_id)}
+          canOperate={canOperateFssp}
+          hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("guarantor")}
+        />
+      )}
+    </section>
+  );
+
+  const fedresursSection = (
+    <section className="mc" key="fedresurs">
+      <div className="mc__head">
+        <h3 id="fedresurs" className="mc__title">
+          Банкротство (Федресурс)
+        </h3>
+        {fedresursNeedsAction && <span className="action-tag">требуется действие</span>}
+      </div>
+      <FedresursPanel
+        applicationId={app.id}
+        subjectType="applicant"
+        subjectLabel="заявитель"
+        subjectId={null}
+        fullName={app.client_name ?? null}
+        birthDate={birthText(birthDate)}
+        inn={innOf("applicant", null)}
+        latestCheck={applicantFedresurs}
+        canOperate={canOperateFssp}
+      />
+      {app.has_guarantor && app.guarantor_id && (
+        <FedresursPanel
+          applicationId={app.id}
+          subjectType="guarantor"
+          subjectLabel="поручитель"
+          subjectId={app.guarantor_id}
+          fullName={guarantorName || null}
+          birthDate={birthText(app.guarantor_profile?.birth_date as string | undefined)}
+          inn={innOf("guarantor", app.guarantor_id)}
+          latestCheck={findLatestCheck("fedresurs", "guarantor", app.guarantor_id)}
+          canOperate={canOperateFssp}
+        />
+      )}
+    </section>
+  );
+
+  // T23 (выбор владельца, вариант 5 «Профиль и лента»): слева — профиль
+  // клиента (кто это, анкета, рейтинг, анализ ИИ), справа — заявка: решение,
+  // закреплённый блок «Нужно ваше действие», главные цифры и лента событий.
   return (
-    <div className={latestDecision?.outcome === "manual_review" ? "ac ac--gray" : "ac"}>
-      <header className="ac-header">
-        <Link className="ac-header__back" to="/applications">
-          ← Заявки
-        </Link>
-        <div className="ac-header__row">
-          <span className="ac-header__title">Заявка №{app.number}</span>
-          <Badge value={app.status} label={applicationStatusLabel(app.status)} />
-        </div>
-        <p className="ac-header__meta">
-          <span>{app.client_name ?? "Клиент скрыт"}</span>
-          {app.goods_name && app.goods_name !== "—" && <span>{app.goods_name}</span>}
-          {app.term_months > 0 && (
-            <span>
-              {formatAmount(app.requested_amount)} ₽ на {app.term_months} мес.
-            </span>
-          )}
-          <span>подана {formatDateTime(app.submitted_at)}</span>
-          <span>в CRM: {app.external_id}</span>
-        </p>
-      </header>
+    <div className={latestDecision?.outcome === "manual_review" ? "pf pf--gray" : "pf"}>
+      <p className="back-link pf-back">
+        <Link to="/applications">← Заявки</Link>
+      </p>
+      <div className="pf-cover" aria-hidden="true" />
 
-      <div className="ac-layout">
-        <div className="ac-main">
-          <div className={`verdict ${decisionVerdictClass(latestDecision?.outcome)}`}>
-            <div className="verdict-main">
-              <div className="verdict-kicker">
-                {latestDecision ? `Решение системы · стадия ${stageLabel(latestDecision.stage)}` : "Заявка в обработке"}
+      <div className="pf-layout">
+        <aside className="pf-profile">
+          <section className="pf-card pf-person">
+            <div className="pf-avatar" aria-hidden="true">
+              {initials(app.client_name)}
+            </div>
+            <h2 className="pf-name">{app.client_name ?? "Клиент скрыт"}</h2>
+            <p className="pf-sub">
+              {[age != null ? `${age} лет` : null, app.goods_category].filter(Boolean).join(" · ") || "данные паспорта не распознаны"}
+            </p>
+            <div className="pf-tags">
+              {innFound && <span className="pill pill-ok">ИНН найден</span>}
+              {app.has_guarantor ? (
+                <span className="pill pill-mute">есть поручитель</span>
+              ) : guarantorNeeded ? (
+                <span className="pill pill-bad">нужен поручитель</span>
+              ) : null}
+            </div>
+            {profileRows.length > 0 && <KeyValue rows={profileRows} />}
+            {app.guarantor_profile && (
+              <details className="fold">
+                <summary>Данные поручителя</summary>
+                <KeyValue
+                  rows={Object.entries(app.guarantor_profile)
+                    .filter(([, value]) => value != null && value !== "")
+                    .map(([field, value]) => ({
+                      label: humanizeFieldPath(field),
+                      value: field.endsWith("_date") ? formatDate(String(value)) : String(value),
+                    }))}
+                />
+              </details>
+            )}
+
+            {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
+
+            <section className="pf-ai">
+              <div className="pf-ai__head">
+                <h2 className="pf-section-title">Анализ ИИ</h2>
+                <span className="soon-tag">в разработке</span>
               </div>
-              <VerdictTitle
-                title={latestDecision ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome) : "В обработке"}
-                help={explanation?.help ?? null}
-              />
-              {explanation?.reason && <p className="verdict-reason">{explanation.reason}</p>}
-              {/* Что делается не в этой карточке — строкой прямо в вердикте. */}
+              <AiAnalysisPanel />
+            </section>
+          </section>
+        </aside>
+
+        <div className="pf-main">
+          <header className={`pf-verdict ${verdictTone(latestDecision?.outcome)}`}>
+            <div className="pf-verdict__main">
+              <div className="pf-kicker">
+                Заявка №{app.number} · подана {formatDateTime(app.submitted_at)}
+              </div>
+              <div className="pf-verdict__title">
+                <VerdictTitle
+                  title={latestDecision ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome) : "В обработке"}
+                  help={explanation?.help ?? null}
+                />
+                <Badge value={app.status} label={applicationStatusLabel(app.status)} />
+              </div>
+              {explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>}
               {grayInCrm && <p className="verdict-action">Решение принимает оператор в CRM.</p>}
               {latestDecision?.freeze && (
                 <p className="verdict-action">
@@ -349,158 +505,134 @@ export function ApplicationDetailPage() {
                 </p>
               )}
             </div>
-            {latestDecision?.score != null && (
-              <div className="verdict-score">
-                <div className="verdict-score-value">
-                  {wholeNumber(latestDecision.score)} <span className="unit">баллов БКИ</span>
-                </div>
-                {latestDecision.score_auto_approve_above != null && latestDecision.score_auto_reject_below != null && (
-                  <>
-                    {/* Зоны шкалы — отказ / серая / одобрение по порогам ЭТОГО решения. */}
-                    <div
-                      className="score-scale"
-                      style={
-                        {
-                          "--reject-at": `${(Number(latestDecision.score_auto_reject_below) / 999) * 100}%`,
-                          "--approve-at": `${(Number(latestDecision.score_auto_approve_above) / 999) * 100}%`,
-                        } as React.CSSProperties
-                      }
-                    >
-                      <div
-                        className="marker"
-                        style={{
-                          left: `${Math.min(100, Math.max(0, (Number(latestDecision.score) / 999) * 100))}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="score-scale-labels">
-                      <span>0</span>
-                      <span>{wholeNumber(latestDecision.score_auto_reject_below)} — отказ</span>
-                      <span>{wholeNumber(latestDecision.score_auto_approve_above)} — одобрение</span>
-                      <span>999</span>
-                    </div>
-                  </>
-                )}
+            <dl className="pf-verdict__deal">
+              <div>
+                <dt>Товар</dt>
+                <dd>{app.goods_name && app.goods_name !== "—" ? app.goods_name : "—"}</dd>
               </div>
-            )}
-          </div>
+              <div>
+                <dt>Сумма</dt>
+                <dd>{app.term_months > 0 ? `${formatAmount(app.requested_amount)} ₽ · ${app.term_months} мес.` : "после «Рассмотреть»"}</dd>
+              </div>
+              <div>
+                <dt>В CRM</dt>
+                <dd>{app.external_id}</dd>
+              </div>
+            </dl>
+          </header>
 
-          <section className={fsspNeedsAction ? "ac-panel ac-panel--action" : "ac-panel"}>
-            <div className="ac-panel__head">
-              <h2 id="fssp" className="ac-panel__title">
-                ФССП
-              </h2>
-              {fsspNeedsAction && <span className="action-tag">требуется действие</span>}
+          {actionCount > 0 && (
+            <div className="pf-card pf-action">
+              <div className="pf-action__head">
+                <span className="pf-action__icon" aria-hidden="true">
+                  !
+                </span>
+                Нужно ваше действие — {actionCount === 1 ? "1 проверка" : `${actionCount} проверки`}
+              </div>
+              {fsspNeedsAction && fsspSection}
+              {fedresursNeedsAction && fedresursSection}
             </div>
-            <FsspPanel
-              applicationId={app.id}
-              subjectType="applicant"
-              subjectLabel="заявитель"
-              subjectId={null}
-              latestCheck={applicantFssp}
-              canOperate={canOperateFssp}
-              hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("applicant")}
-            />
-            {app.has_guarantor && app.guarantor_id && (
-              <FsspPanel
-                applicationId={app.id}
-                subjectType="guarantor"
-                subjectLabel="поручитель"
-                subjectId={app.guarantor_id}
-                latestCheck={findLatestCheck("fssp", "guarantor", app.guarantor_id)}
-                canOperate={canOperateFssp}
-                hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("guarantor")}
-              />
-            )}
-          </section>
-
-          <section className={fedresursNeedsAction ? "ac-panel ac-panel--action" : "ac-panel"}>
-            <div className="ac-panel__head">
-              <h2 id="fedresurs" className="ac-panel__title">
-                Банкротство (Федресурс)
-              </h2>
-              {fedresursNeedsAction && <span className="action-tag">требуется действие</span>}
-            </div>
-            <FedresursPanel
-              applicationId={app.id}
-              subjectType="applicant"
-              subjectLabel="заявитель"
-              subjectId={null}
-              fullName={app.client_name ?? null}
-              birthDate={birthText(ocrValue(app.ocr_result?.fields ?? null, "birth_date"))}
-              inn={innOf("applicant", null)}
-              latestCheck={applicantFedresurs}
-              canOperate={canOperateFssp}
-            />
-            {app.has_guarantor && app.guarantor_id && (
-              <FedresursPanel
-                applicationId={app.id}
-                subjectType="guarantor"
-                subjectLabel="поручитель"
-                subjectId={app.guarantor_id}
-                fullName={guarantorName || null}
-                birthDate={birthText(app.guarantor_profile?.birth_date as string | undefined)}
-                inn={innOf("guarantor", app.guarantor_id)}
-                latestCheck={findLatestCheck("fedresurs", "guarantor", app.guarantor_id)}
-                canOperate={canOperateFssp}
-              />
-            )}
-          </section>
-
-          {app.manual_overrides.length > 0 && (
-            <section className="ac-panel">
-              <h2 className="ac-panel__title">Решение оператора в CRM</h2>
-              {app.manual_overrides.map((o) => (
-                <OperatorOverride key={o.id} override={o} />
-              ))}
-            </section>
           )}
 
-          {/* Анкета и документы — одна панель, разделы через тонкую линию; длинное — по кнопке. */}
-          <div className="ac-panel ac-data">
-            {(clientBlock.length > 0 || dealBlock.length > 0 || app.guarantor_profile) && (
-              <section className="ac-data__row">
-                <h2 className="ac-panel__title">Клиент и сделка</h2>
-                <p className="muted">
-                  {[app.client_name ?? "Клиент скрыт", app.goods_name !== "—" ? app.goods_name : null, app.goods_category]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-                <details className="fold">
-                  <summary>Показать анкету</summary>
-                  <div className="section-columns">
-                    {clientBlock.length > 0 && (
-                      <div className="subsection">
-                        <h3 className="subhead">Клиент</h3>
-                        <KeyValue rows={clientBlock} />
-                      </div>
-                    )}
-                    {dealBlock.length > 0 && (
-                      <div className="subsection">
-                        <h3 className="subhead">Сделка</h3>
-                        <KeyValue rows={dealBlock} />
-                      </div>
-                    )}
+          <div className="pf-kpis">
+            <div className="pf-card pf-kpi">
+              <div className="pf-kpi__label">Балл БКИ</div>
+              <div className="pf-kpi__value">{score != null ? wholeNumber(score) : "—"}</div>
+              {score != null &&
+              latestDecision?.score_auto_approve_above != null &&
+              latestDecision.score_auto_reject_below != null ? (
+                <>
+                  <div
+                    className="score-scale"
+                    style={
+                      {
+                        "--reject-at": `${(Number(latestDecision.score_auto_reject_below) / 999) * 100}%`,
+                        "--approve-at": `${(Number(latestDecision.score_auto_approve_above) / 999) * 100}%`,
+                      } as React.CSSProperties
+                    }
+                  >
+                    <div className="marker" style={{ left: `${Math.min(100, Math.max(0, (Number(score) / 999) * 100))}%` }} />
                   </div>
-                </details>
-                {app.guarantor_profile && (
-                  <details className="fold">
-                    <summary>Данные поручителя</summary>
-                    <KeyValue
-                      rows={Object.entries(app.guarantor_profile)
-                        .filter(([, value]) => value != null && value !== "")
-                        .map(([field, value]) => ({
-                          label: humanizeFieldPath(field),
-                          value: field.endsWith("_date") ? formatDate(String(value)) : String(value),
-                        }))}
-                    />
-                  </details>
-                )}
+                  <div className="pf-kpi__hint">
+                    отказ ниже {wholeNumber(latestDecision.score_auto_reject_below)} · одобрение от{" "}
+                    {wholeNumber(latestDecision.score_auto_approve_above)}
+                  </div>
+                </>
+              ) : (
+                <div className="pf-kpi__hint">{score != null ? "пороги не заданы" : "после стадии Б"}</div>
+              )}
+            </div>
+            <div className="pf-card pf-kpi">
+              <div className="pf-kpi__label">Долговая нагрузка (ПДН)</div>
+              <div className="pf-kpi__value">
+                {ptiPercent != null ? `${ptiPercent}%` : "—"}
+                {ptiPercent != null && ptiMaxPercent != null && <span className="pf-kpi__of"> из {ptiMaxPercent}%</span>}
+              </div>
+              {ptiPercent != null && ptiMaxPercent != null ? (
+                <div className="pti-bar">
+                  <i
+                    className={ptiPercent > ptiMaxPercent ? "pti-bar__fill pti-bar__fill--bad" : "pti-bar__fill"}
+                    style={{ width: `${Math.min(100, ptiPercent)}%` }}
+                  />
+                  <u className="pti-bar__limit" style={{ left: `${Math.min(100, ptiMaxPercent)}%` }} />
+                </div>
+              ) : (
+                <div className="pf-kpi__hint">после стадии Б</div>
+              )}
+            </div>
+            <div className="pf-card pf-kpi">
+              <div className="pf-kpi__label">Платёж в месяц</div>
+              <div className="pf-kpi__value">
+                {latestDecision?.installment_payment ? `${formatAmount(latestDecision.installment_payment)} ₽` : "—"}
+              </div>
+              <div className="pf-kpi__hint">
+                {app.term_months > 0
+                  ? `взнос ${formatAmount(app.down_payment)} ₽ · ${app.term_months} мес.`
+                  : "после «Рассмотреть»"}
+              </div>
+            </div>
+          </div>
+
+          <section className="pf-feed">
+            <h2 className="pf-section-title">Ход заявки</h2>
+            <ol className="feed">
+              {events.map((e) => (
+                <li key={e.key} className={`ev ev--${e.tone}`}>
+                  <span className="ev__icon" aria-hidden="true">
+                    {EVENT_ICON[e.tone]}
+                  </span>
+                  <div className="pf-card ev__card">
+                    <div className="ev__head">
+                      <h3 className="ev__title">{e.title}</h3>
+                      {e.at && <span className="ev__time">{formatDateTime(e.at)}</span>}
+                    </div>
+                    {e.body}
+                  </div>
+                </li>
+              ))}
+            </ol>
+            {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
+          </section>
+
+          {(!fsspNeedsAction || !fedresursNeedsAction) && (
+            <div className="pf-card pf-manual">
+              <h2 className="pf-section-title">Ручные проверки</h2>
+              {!fsspNeedsAction && fsspSection}
+              {!fedresursNeedsAction && fedresursSection}
+            </div>
+          )}
+
+          {/* Анкета сделки, проверки таблицей, документы и история — одна панель; длинное — по кнопке. */}
+          <div className="pf-card pf-data">
+            {dealBlock.length > 0 && (
+              <section className="pf-data__row">
+                <h2 className="pf-section-title">Условия сделки</h2>
+                <KeyValue rows={dealBlock} />
               </section>
             )}
 
-            <section className="ac-data__row">
-              <h2 className="ac-panel__title">Что проверили</h2>
+            <section className="pf-data__row">
+              <h2 className="pf-section-title">Что проверили</h2>
               <details className="fold">
                 <summary>Все проверки одной таблицей ({visibleChecks.length})</summary>
                 <table className="table">
@@ -532,8 +664,8 @@ export function ApplicationDetailPage() {
               </details>
             </section>
 
-            <section className="ac-data__row">
-              <h2 className="ac-panel__title">Документы</h2>
+            <section className="pf-data__row">
+              <h2 className="pf-section-title">Документы</h2>
               {app.documents.length === 0 && <p className="muted">Документов нет.</p>}
               <ul className="plain-list">
                 {app.documents.map((doc) => (
@@ -557,8 +689,8 @@ export function ApplicationDetailPage() {
               </ul>
             </section>
 
-            <section className="ac-data__row">
-              <h2 className="ac-panel__title">История</h2>
+            <section className="pf-data__row">
+              <h2 className="pf-section-title">История</h2>
               <details className="fold">
                 <summary>Показать историю статусов ({app.status_history.length})</summary>
                 <table className="table">
@@ -591,7 +723,7 @@ export function ApplicationDetailPage() {
             {/* Сырьё — не в основном виде (T17, часть 2): распознанные поля паспорта
                 с уверенностью и полные снимки анкеты, для того, кто проверяет
                 распознавание или ищет, что именно менял оператор. */}
-            <details className="disclosure ac-data__row">
+            <details className="disclosure pf-data__row">
               <summary>Подробности</summary>
               {app.ocr_result ? (
                 <>
@@ -629,88 +761,8 @@ export function ApplicationDetailPage() {
             </details>
           </div>
         </div>
-
-        <aside className="ac-aside">
-          {/* Путь заявки: шаги сверху вниз; у стадий А и Б под шагом — итог,
-              причины и проверки этой стадии. */}
-          <section className="ac-panel">
-            <h2 className="ac-panel__title">Путь заявки</h2>
-            <ol className="timeline">
-              {steps.map((s, i) => (
-                <li key={s.label} className={`timeline__step timeline__step--${s.state}`}>
-                  <span className="timeline__dot" aria-hidden="true">
-                    {s.state === "done" ? "✓" : s.state === "bad" ? "✕" : s.state === "gray" ? "!" : s.state === "missing" ? "–" : i + 1}
-                  </span>
-                  <div className="timeline__head">
-                    <span className="timeline__label">{s.label}</span>
-                    {s.outcome}
-                  </div>
-                  <span className="timeline__date">{s.date ? formatDateTime(s.date) : STEP_STATE_TEXT[s.state]}</span>
-                  {s.detail && <div className="timeline__detail">{s.detail}</div>}
-                </li>
-              ))}
-            </ol>
-            {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
-          </section>
-
-          <section className="ac-panel">
-            <h2 className="ac-panel__title">Главное</h2>
-            <dl className="ac-facts">
-              {facts.map((f) => (
-                <div key={f.label} className={f.tone ? `ac-fact ac-fact--${f.tone}` : "ac-fact"}>
-                  <dt>{f.label}</dt>
-                  <dd>
-                    <span className="ac-fact__value">{f.value}</span>
-                    {f.hint && <span className="ac-fact__hint">{f.hint}</span>}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-
-          <section className="ac-panel">
-            <div className="ac-panel__head">
-              <h2 className="ac-panel__title">Анализ ИИ</h2>
-              <span className="soon-tag">в разработке</span>
-            </div>
-            <AiAnalysisPanel />
-          </section>
-
-          {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
-        </aside>
       </div>
     </div>
-  );
-}
-
-type Tone = "ok" | "bad" | "gray";
-type StepState = "done" | "bad" | "gray" | "current" | "pending" | "skipped" | "missing";
-type Decision = components["schemas"]["DecisionOut"];
-type CheckRow = components["schemas"]["CheckOut"];
-
-const STEP_STATE_TEXT: Record<StepState, string> = {
-  done: "",
-  bad: "",
-  gray: "",
-  current: "сейчас",
-  pending: "ещё впереди",
-  skipped: "не понадобилась",
-  missing: "",
-};
-
-function stageTone(decision: Decision | null): string {
-  if (!decision) return "pending";
-  if (decision.outcome === "approve") return "ok";
-  if (decision.outcome === "reject") return "bad";
-  return decision.stage === "B" ? "gray" : "neutral";
-}
-
-function OutcomePill({ decision, pending }: { decision: Decision | null; pending: string }) {
-  if (!decision) return <span className="stage__outcome stage__outcome--pending">{pending}</span>;
-  return (
-    <span className={`stage__outcome stage__outcome--${stageTone(decision)}`}>
-      {decisionOutcomeLabel(decision.stage, decision.outcome)}
-    </span>
   );
 }
 
