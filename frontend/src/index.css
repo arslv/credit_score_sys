@@ -2712,15 +2712,16 @@ mark {
   background: var(--status-ok);
 }
 
-.checklist__item--bad .checklist__icon { background: var(--status-bad); }
-.checklist__item--warn .checklist__icon { background: var(--status-gray); }
+/* Только своя иконка (>): у строки «Паспорт» внутри — свои пункты со своим цветом. */
+.checklist__item--bad > .checklist__icon { background: var(--status-bad); }
+.checklist__item--warn > .checklist__icon { background: var(--status-gray); }
 
 .checklist__result {
   color: var(--color-text-muted);
   text-align: right;
 }
 
-.checklist__item--bad .checklist__result { color: var(--status-bad); font-weight: var(--weight-medium); }
+.checklist__item--bad > .checklist__result { color: var(--status-bad); font-weight: var(--weight-medium); }
 
 /* Складные блоки внутри секций («Показать анкету», «Все проверки»…). */
 .fold {
@@ -3336,6 +3337,10 @@ mark {
   opacity: 0.5;
 }
 
+.timeline__step--missing .timeline__dot {
+  border-style: dashed;
+}
+
 .timeline__label {
   padding-top: 2px;
   font-size: var(--font-sm);
@@ -3568,23 +3573,38 @@ mark {
   font-weight: var(--weight-medium);
 }
 
-/* Раздел, где нужно действие сотрудника: пометка у заголовка и рамка акцента. */
+/* Раздел, где нужно действие сотрудника. Пометка — уведомление, а не кнопка:
+   янтарная («внимание»), чтобы не сливаться с синими кнопками действий. */
 .ac-panel--action,
 .ac-panel.ac-panel--action {
-  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
-  box-shadow: 0 0 0 3px var(--color-accent-soft);
+  border-color: var(--status-gray-line);
+  box-shadow: 0 0 0 3px var(--status-gray-soft);
 }
 
 .action-tag {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 10px;
+  padding: 2px 10px 2px 4px;
+  border: 1px solid var(--status-gray-line);
   border-radius: 999px;
-  background: var(--color-accent);
-  color: var(--color-on-accent);
+  background: var(--status-gray-soft);
+  color: var(--status-gray);
   font-size: var(--font-xs);
   font-weight: var(--weight-bold);
+}
+
+.action-tag::before {
+  content: "!";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--status-gray);
+  color: var(--color-surface);
+  font-size: 11px;
 }
 
 /* Путь заявки: у стадий — итог плашкой справа и подробности под шагом. */

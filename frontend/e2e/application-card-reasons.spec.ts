@@ -194,4 +194,9 @@ test("путь заявки: под стадиями А и Б — итог и п
   await expect(stageB.locator(".stage__outcome")).toHaveText("Серая зона");
   await expect(stageB.getByTestId("decision-passed")).toContainText("Балл БКИ 760");
   await expect(page.getByRole("heading", { name: "Нужно сделать" })).toHaveCount(0);
+  // У этой заявки решение сразу на стадии Б, записи стадии А нет: не «сейчас»
+  // и не «в обработке», а честное «нет записи».
+  const stageA = path.locator(".timeline__step", { hasText: "Стадия А" });
+  await expect(stageA.locator(".stage__outcome")).toHaveText("нет записи");
+  await expect(stageA.getByText("сейчас", { exact: true })).toHaveCount(0);
 });

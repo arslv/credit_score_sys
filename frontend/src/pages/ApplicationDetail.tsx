@@ -213,9 +213,15 @@ export function ApplicationDetailPage() {
     {
       label: "Стадия А",
       date: latestA?.created_at ?? null,
-      state: latestA ? (latestA.outcome === "reject" ? "bad" : "done") : "current",
-      outcome: <OutcomePill decision={latestA} pending="в обработке" />,
-      detail: (
+      // Без решения стадии А заявка «сейчас на стадии А», только пока дальше
+      // она не ушла. Если звонок или стадия Б уже есть, а записи стадии А нет,
+      // честно говорим «нет записи» (так бывает у заявок, заведённых сразу на
+      // стадии Б, например в тестовых данных), а не «в обработке».
+      state: latestA ? (latestA.outcome === "reject" ? "bad" : "done") : callDone ? "missing" : "current",
+      outcome: <OutcomePill decision={latestA} pending={callDone ? "нет записи" : "в обработке"} />,
+      detail: !latestA && callDone ? (
+        <p className="stage__reason muted">Решение стадии А не записано — проверок стадии А по этой заявке нет.</p>
+      ) : (
         <>
           {latestDecision?.stage === "A" && explanation ? (
             <DecisionReasons explanation={explanation} />
@@ -633,7 +639,7 @@ export function ApplicationDetailPage() {
               {steps.map((s, i) => (
                 <li key={s.label} className={`timeline__step timeline__step--${s.state}`}>
                   <span className="timeline__dot" aria-hidden="true">
-                    {s.state === "done" ? "✓" : s.state === "bad" ? "✕" : s.state === "gray" ? "!" : i + 1}
+                    {s.state === "done" ? "✓" : s.state === "bad" ? "✕" : s.state === "gray" ? "!" : s.state === "missing" ? "–" : i + 1}
                   </span>
                   <div className="timeline__head">
                     <span className="timeline__label">{s.label}</span>
@@ -678,7 +684,7 @@ export function ApplicationDetailPage() {
 }
 
 type Tone = "ok" | "bad" | "gray";
-type StepState = "done" | "bad" | "gray" | "current" | "pending" | "skipped";
+type StepState = "done" | "bad" | "gray" | "current" | "pending" | "skipped" | "missing";
 type Decision = components["schemas"]["DecisionOut"];
 type CheckRow = components["schemas"]["CheckOut"];
 
@@ -689,6 +695,7 @@ const STEP_STATE_TEXT: Record<StepState, string> = {
   current: "сейчас",
   pending: "ещё впереди",
   skipped: "не понадобилась",
+  missing: "",
 };
 
 function stageTone(decision: Decision | null): string {
