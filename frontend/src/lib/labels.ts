@@ -26,7 +26,7 @@ const FIELD_LABELS: Record<string, string> = {
   term_months: "Срок, мес.",
   merchant_name: "Продавец",
   merchant_city: "Город продавца",
-  status: "Статус у заказчика",
+  status: "Статус в CRM",
   ip: "IP",
   given_at: "Дата согласия",
   text_version: "Версия текста",
@@ -211,8 +211,8 @@ const REASON_CODE_LABELS: Record<string, string> = {
   RISK_TARIFF_DOWN_PAYMENT_REQUIRED: "Требуется больший первый взнос",
   // Ручной итог оператора (app/integrations/adapter.py) — пишется, когда оператор
   // в системе заказчика сменил решение нашего сервиса.
-  PARTNER_OPERATOR_OVERRIDE_APPROVE: "Оператор заказчика одобрил заявку вручную",
-  PARTNER_OPERATOR_OVERRIDE_REJECT: "Оператор заказчика отказал вручную",
+  PARTNER_OPERATOR_OVERRIDE_APPROVE: "Оператор одобрил заявку вручную в CRM",
+  PARTNER_OPERATOR_OVERRIDE_REJECT: "Оператор отказал вручную в CRM",
 };
 
 export function reasonCodeLabel(reasonCode: string): string {

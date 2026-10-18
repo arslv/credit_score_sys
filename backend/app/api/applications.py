@@ -797,7 +797,7 @@ async def _client_rating(session: AsyncSession, application: Application, *, ful
         guarantor_reasons=[
             GuarantorReasonOut(
                 # Причина называет возраст/село — ПД; без доступа — без подробностей.
-                reason=r.reason if full_pii else "условие заказчика для поручителя",
+                reason=r.reason if full_pii else "условие для поручителя",
                 satisfied=r.satisfied,
             )
             for r in rating.guarantor_reasons

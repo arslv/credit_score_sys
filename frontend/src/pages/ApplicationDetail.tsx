@@ -136,7 +136,7 @@ export function ApplicationDetailPage() {
   const canOperateFssp = employee?.role === "operator" || employee?.role === "admin";
 
   const findLatestCheck = (
-    source: "fssp" | "fedresurs", subjectType: "applicant" | "guarantor", subjectId: string | null,
+    source: "fssp" | "fedresurs" | "fns_inn", subjectType: "applicant" | "guarantor", subjectId: string | null,
   ) => {
     const matches = app.checks.filter(
       (c) => c.source === source && c.subject_type === subjectType && (c.subject_id ?? null) === subjectId,
@@ -156,7 +156,7 @@ export function ApplicationDetailPage() {
     if (latestDecision.reason_code === "FSSP_NOT_CHECKED") {
       actionItems.push({ key: "fssp", text: "Проверить ФССП — без этого одобрение недоступно", href: "#fssp", button: "К проверке ФССП" });
     } else {
-      actionItems.push({ key: "gray", text: "Серая зона — решение принимает оператор в системе заказчика" });
+      actionItems.push({ key: "gray", text: "Серая зона — решение принимает оператор в CRM" });
     }
   }
   if (latestDecision?.freeze) {
@@ -237,9 +237,13 @@ export function ApplicationDetailPage() {
   const checksA = visibleChecks.filter((c) => c.subject_type !== "guarantor" && !isManual(c));
   const checksB = visibleChecks.filter((c) => c.subject_type === "guarantor" || isManual(c));
 
-  // Строка для поиска на Федресурсе: ФИО и дата рождения.
-  const searchTextFor = (name: string | null | undefined, birth: string | null | undefined) =>
-    name ? [name, birth ? formatDate(birth) : null].filter(Boolean).join(" ") : null;
+  // Поиск на Федресурсе: ИНН (если ФНС его нашла — точное совпадение) или ФИО;
+  // дата рождения — чтобы сверить найденного однофамильца.
+  const innOf = (subjectType: "applicant" | "guarantor", subjectId: string | null) => {
+    const inn = findLatestCheck("fns_inn", subjectType, subjectId)?.parsed?.inn;
+    return typeof inn === "string" && inn ? inn : null;
+  };
+  const birthText = (birth: string | null | undefined) => (birth ? formatDate(birth) : null);
   const guarantorName = app.guarantor_profile
     ? [app.guarantor_profile.last_name, app.guarantor_profile.first_name, app.guarantor_profile.middle_name]
         .filter((part) => typeof part === "string" && part)
@@ -289,7 +293,7 @@ export function ApplicationDetailPage() {
     {
       label: "Поручитель",
       value: app.has_guarantor ? "есть" : guarantorNeeded ? "нужен, нет" : "не нужен",
-      hint: guarantorNeeded ? "по условиям заказчика" : undefined,
+      hint: guarantorNeeded ? "по условиям рассрочки" : undefined,
       tone: guarantorNeeded && !app.has_guarantor ? "bad" : app.has_guarantor ? "ok" : undefined,
     },
     {
@@ -321,7 +325,7 @@ export function ApplicationDetailPage() {
             />
             {explanation?.reason && <p className="verdict-reason">{explanation.reason}</p>}
             <p className="verdict-meta">
-              <span>Заявка №{app.number} (у заказчика {app.external_id})</span>
+              <span>Заявка №{app.number} (в CRM {app.external_id})</span>
               <span>{app.client_name ?? "Клиент скрыт"}</span>
               {app.term_months > 0 && <span>{formatAmount(app.requested_amount)} ₽ на {app.term_months} мес.</span>}
               <span>подана {formatDateTime(app.submitted_at)}</span>
@@ -447,7 +451,7 @@ export function ApplicationDetailPage() {
 
         {app.manual_overrides.length > 0 && (
           <section className="section">
-            <h2>Решение оператора заказчика</h2>
+            <h2>Решение оператора в CRM</h2>
             {app.manual_overrides.map((o) => (
               <OperatorOverride key={o.id} override={o} />
             ))}
@@ -512,7 +516,9 @@ export function ApplicationDetailPage() {
             subjectType="applicant"
             subjectLabel="заявитель"
             subjectId={null}
-            searchText={searchTextFor(app.client_name, ocrValue(app.ocr_result?.fields ?? null, "birth_date"))}
+            fullName={app.client_name ?? null}
+            birthDate={birthText(ocrValue(app.ocr_result?.fields ?? null, "birth_date"))}
+            inn={innOf("applicant", null)}
             latestCheck={applicantFedresurs}
             canOperate={canOperateFssp}
           />
@@ -522,7 +528,9 @@ export function ApplicationDetailPage() {
               subjectType="guarantor"
               subjectLabel="поручитель"
               subjectId={app.guarantor_id}
-              searchText={searchTextFor(guarantorName, app.guarantor_profile?.birth_date as string | undefined)}
+              fullName={guarantorName || null}
+              birthDate={birthText(app.guarantor_profile?.birth_date as string | undefined)}
+              inn={innOf("guarantor", app.guarantor_id)}
               latestCheck={findLatestCheck("fedresurs", "guarantor", app.guarantor_id)}
               canOperate={canOperateFssp}
             />

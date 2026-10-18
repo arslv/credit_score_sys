@@ -13,9 +13,13 @@ test("оператор отмечает проверку банкротства;
   const section = page.locator("#fedresurs").locator("xpath=ancestor::section[1]");
   await expect(section).toHaveClass(/section--flash/);
   await expect(section.getByText("не проверено")).toBeVisible();
-  await expect(section.getByRole("link", { name: /bankrot\.fedresurs\.ru/ })).toHaveAttribute(
-    "href", "https://bankrot.fedresurs.ru/",
-  );
+  // Ссылка сразу открывает поиск с подставленным ИНН или ФИО заявителя.
+  const href = await section.getByRole("link", { name: /Найти на Федресурсе/ }).getAttribute("href");
+  const url = new URL(href ?? "");
+  expect(url.origin + url.pathname).toBe("https://bankrot.fedresurs.ru/bankrupts");
+  const query = url.searchParams.get("searchString") ?? "";
+  expect(query.length).toBeGreaterThan(0);
+  await expect(section.locator(".manual-check__query").first()).toHaveText(query);
 
   await section.getByRole("button", { name: "Найдено банкротство" }).click();
   const save = section.getByRole("button", { name: "Сохранить" });

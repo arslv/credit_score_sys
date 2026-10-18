@@ -5,9 +5,10 @@ import { formatDateTime } from "../lib/format";
 
 // T23: банкротство (Федресурс) — ручная проверка рядом с ФССП. Сайт закрыт
 // защитой от ботов (Qrator), автоматически его не опросить без обхода защиты —
-// этого не делаем. Сотрудник копирует ФИО и дату рождения, ищет на сайте и
-// отмечает результат; отметка — обычная строка checks(source=fedresurs),
-// повторная проверка добавляет новую.
+// этого не делаем. Кнопка открывает поиск на сайте в браузере сотрудника уже
+// с подставленным ИНН (если ФНС его нашла) или ФИО; сотрудник смотрит
+// результат и отмечает его здесь. Отметка — обычная строка
+// checks(source=fedresurs), повторная проверка добавляет новую.
 
 interface FedresursCheckSummary {
   id: string;
@@ -16,14 +17,27 @@ interface FedresursCheckSummary {
   parsed: Record<string, unknown> | null;
 }
 
-const FEDRESURS_URL = "https://bankrot.fedresurs.ru/";
+// Поиск должников: строка поиска принимает ФИО, ИНН или СНИЛС. Дату рождения
+// в ссылку не передать — сайт её не фильтрует, её сверяют глазами.
+export function fedresursSearchUrl(query: string): string {
+  const params = new URLSearchParams({
+    searchString: query,
+    regionId: "all",
+    isActiveLegalCase: "null",
+    offset: "0",
+    limit: "15",
+  });
+  return `https://bankrot.fedresurs.ru/bankrupts?${params.toString()}`;
+}
 
 export function FedresursPanel({
   applicationId,
   subjectType,
   subjectLabel,
   subjectId,
-  searchText,
+  fullName,
+  birthDate,
+  inn,
   latestCheck,
   canOperate,
 }: {
@@ -31,8 +45,11 @@ export function FedresursPanel({
   subjectType: "applicant" | "guarantor";
   subjectLabel: string;
   subjectId: string | null;
-  /** ФИО и дата рождения для поиска на сайте — копируются в буфер обмена. */
-  searchText: string | null;
+  fullName: string | null;
+  /** Уже в виде ДД.ММ.ГГГГ — для сверки с найденным на сайте. */
+  birthDate: string | null;
+  /** ИНН из проверки ФНС — по нему поиск точный, без однофамильцев. */
+  inn: string | null;
   latestCheck: FedresursCheckSummary | null;
   canOperate: boolean;
 }) {
@@ -69,14 +86,17 @@ export function FedresursPanel({
     onError: (e: Error) => setError(e.message),
   });
 
-  async function copySearchText() {
-    if (!searchText) return;
+  const query = inn ?? fullName;
+  const searchUrl = query ? fedresursSearchUrl(query) : null;
+
+  async function copyQuery() {
+    if (!query) return;
     try {
-      await navigator.clipboard.writeText(searchText);
+      await navigator.clipboard.writeText(query);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      setError("Не удалось скопировать — выделите ФИО ниже и скопируйте вручную.");
+      setError("Не удалось скопировать — выделите текст и скопируйте вручную.");
     }
   }
 
@@ -104,24 +124,30 @@ export function FedresursPanel({
       {showForm && (
         <ol className="manual-check__steps">
           <li>
-            <span>Скопируйте ФИО и дату рождения</span>
-            {searchText ? (
+            <span>Откройте поиск — данные уже подставлены</span>
+            {searchUrl ? (
               <>
-                <code className="manual-check__query">{searchText}</code>
-                <button type="button" className="btn btn-small" onClick={() => void copySearchText()}>
-                  {copied ? "Скопировано ✓" : "Скопировать"}
-                </button>
+                <a className="btn btn-small btn-primary" href={searchUrl} target="_blank" rel="noreferrer">
+                  Найти на Федресурсе ↗
+                </a>
+                <span className="manual-check__query-line">
+                  {inn ? "по ИНН" : "по ФИО"} <code className="manual-check__query">{query}</code>
+                  <button type="button" className="btn-link" onClick={() => void copyQuery()}>
+                    {copied ? "скопировано ✓" : "скопировать"}
+                  </button>
+                </span>
               </>
             ) : (
-              <span className="muted">нет данных распознавания — возьмите из анкеты</span>
+              <span className="muted">нет ФИО — возьмите его из анкеты</span>
             )}
           </li>
-          <li>
-            <span>Найдите человека на сайте</span>
-            <a className="btn btn-small" href={FEDRESURS_URL} target="_blank" rel="noreferrer">
-              Открыть bankrot.fedresurs.ru ↗
-            </a>
-          </li>
+          {!inn && birthDate && (
+            <li>
+              <span>Сверьте дату рождения</span>
+              <code className="manual-check__query">{birthDate}</code>
+              <span className="muted">однофамильцы — не он</span>
+            </li>
+          )}
           <li>
             <span>Отметьте результат</span>
             <button

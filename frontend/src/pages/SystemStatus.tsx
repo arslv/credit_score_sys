@@ -32,7 +32,7 @@ export function SystemStatusPage() {
   const header = (
     <PageHeader
       title="Состояние системы"
-      description="Работает ли конвейер: источники, реестры, интеграция с заказчиком, зависшие заявки. Обновляется каждые 30 секунд."
+      description="Работает ли конвейер: источники, реестры, обмен с CRM, зависшие заявки. Обновляется каждые 30 секунд."
     />
   );
   if (query.isLoading) return <section>{header}<LoadingState /></section>;
@@ -83,7 +83,7 @@ export function SystemStatusPage() {
             <DetailRow label="БКИ подключено" value={s.bki_configured ? "да" : "нет"} />
             <DetailRow label="Платных запросов в БКИ за месяц" value={String(s.bki_paid_requests_this_month)} />
             <DetailRow label="ФССП найдено после решения" value={String(s.fssp_results_after_decision)} />
-            <DetailRow label="Ошибок интеграции с заказчиком за сутки" value={String(s.partner_integration_errors_last_24h)} />
+            <DetailRow label="Ошибок обмена с CRM за сутки" value={String(s.partner_integration_errors_last_24h)} />
             <DetailRow label="Заявок без изменений больше часа" value={String(s.stuck_applications_over_1h)} />
             <DetailRow label="Заявок, зависших в распознавании паспорта" value={String(s.stuck_in_ocr)} />
             <DetailRow

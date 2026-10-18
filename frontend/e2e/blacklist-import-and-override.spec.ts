@@ -39,9 +39,9 @@ test("решение оператора заказчика — что решил
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.application.id}`);
 
-  await expect(page.getByRole("heading", { name: "Решение оператора заказчика" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Решение оператора в CRM" })).toBeVisible();
   const section = page.locator(".override").first();
-  await expect(section.getByText("Оператор заказчика одобрил заявку вручную")).toBeVisible();
+  await expect(section.getByText("Оператор одобрил заявку вручную в CRM")).toBeVisible();
   await expect(section.getByText("Решение системы")).toBeVisible();
   await expect(section.getByText("Итог оператора")).toBeVisible();
   await expect(section.getByText("Одобрено")).toBeVisible();

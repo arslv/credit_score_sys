@@ -136,7 +136,7 @@ function ptiComparison(d: DecisionForExplain): Comparison | null {
 function ptiUnknown(d: DecisionForExplain): string | null {
   if (d.pti_status === "no_income") return "ПДН: не вычислимо (нет данных о доходе)";
   if (d.pti_status === "no_installment") {
-    return "ПДН: не вычислимо (нет платежа по рассрочке — заказчик не прислал, у тарифа нет наценки в правилах)";
+    return "ПДН: не вычислимо (нет платежа по рассрочке — CRM его не прислала, у тарифа нет наценки в правилах)";
   }
   if (d.pti_status === "no_credit_history") return "ПДН: не вычислимо (кредитная история не получена)";
   return null;

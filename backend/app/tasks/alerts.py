@@ -102,7 +102,7 @@ async def _check_outbox_stuck(session, settings) -> str | None:
     ).scalar_one()
     if stuck:
         return (
-            f"{stuck} ответов заказчику не доставлены дольше "
+            f"{stuck} ответов в CRM не доставлены дольше "
             f"{settings.partner_outbox_stuck_minutes} мин. (очередь partner_outbox_events)."
         )
     return None

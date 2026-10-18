@@ -3448,6 +3448,18 @@ mark {
   margin-right: var(--space-2);
 }
 
+.manual-check__query-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.manual-check__query-line .manual-check__query {
+  margin-right: 0;
+}
+
 .manual-check__query {
   margin-right: var(--space-2);
   padding: 2px 6px;

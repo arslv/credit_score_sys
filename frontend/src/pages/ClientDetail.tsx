@@ -43,7 +43,7 @@ export function ClientDetailPage() {
           <thead>
             <tr>
               <th>№</th>
-              <th>№ заказчика</th>
+              <th>№ в CRM</th>
               <th>Подана</th>
               <th>Состояние</th>
             </tr>

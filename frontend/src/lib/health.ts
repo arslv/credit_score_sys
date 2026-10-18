@@ -77,8 +77,8 @@ export function healthProblems(s: HealthInput): HealthProblem[] {
   if (s.partner_integration_errors_last_24h > 0) {
     problems.push({
       key: "partner",
-      what: `Ошибок обмена с системой заказчика за сутки: ${s.partner_integration_errors_last_24h}.`,
-      todo: "Ответы заказчику повторяются автоматически. Если число растёт — проверьте адрес и токен их системы и что она доступна.",
+      what: `Ошибок обмена с CRM за сутки: ${s.partner_integration_errors_last_24h}.`,
+      todo: "Ответы в CRM отправляются повторно автоматически. Если число растёт — проверьте адрес и токен CRM и что она доступна.",
     });
   }
   if (s.fssp_results_after_decision > 0) {

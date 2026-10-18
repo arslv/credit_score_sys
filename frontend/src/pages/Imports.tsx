@@ -176,7 +176,7 @@ export function ImportsPage() {
     <section>
       <PageHeader
         title="Импорт данных"
-        description="Выгрузки из учётной системы заказчика: договоры, графики, платежи и исторические заявки. Формат колонок — config/import_mappings/*.yaml; повторная загрузка того же файла дублей не создаёт."
+        description="Выгрузки из учётной системы: договоры, графики, платежи и исторические заявки. Формат колонок — config/import_mappings/*.yaml; повторная загрузка того же файла дублей не создаёт."
       />
       {uploadError && <ErrorState message={uploadError} />}
 

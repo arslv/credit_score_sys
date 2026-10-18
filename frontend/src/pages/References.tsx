@@ -212,7 +212,7 @@ function CategoryModal({
         <label className="field">
           Код
           <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
-          <span className="field-hint">Как приходит из системы заказчика.</span>
+          <span className="field-hint">Как приходит из CRM.</span>
         </label>
         <label className="field">
           Ликвидность

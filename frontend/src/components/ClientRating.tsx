@@ -88,7 +88,7 @@ export function ClientRatingPanel({ rating }: { rating: Rating }) {
             </tbody>
           </table>
           {rating.not_yet_counted.length > 0 && (
-            <p className="hint">Пока не учитывается (ждём уточнений заказчика): {rating.not_yet_counted.join("; ")}.</p>
+            <p className="hint">Пока не учитывается (правила ещё уточняются): {rating.not_yet_counted.join("; ")}.</p>
           )}
         </>
       )}

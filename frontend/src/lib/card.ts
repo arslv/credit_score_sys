@@ -94,7 +94,7 @@ export function dealRows(input: {
       label: "Платёж в месяц",
       value: input.installmentPayment
         ? `${formatAmount(input.installmentPayment)} ₽${
-            input.installmentSource === "tariff" ? " (рассчитан по тарифу, не из системы заказчика)" : ""
+            input.installmentSource === "tariff" ? " (рассчитан по тарифу, не из CRM)" : ""
           }`
         : "",
     },
