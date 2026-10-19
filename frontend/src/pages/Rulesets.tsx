@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import * as yaml from "js-yaml";
 import { api } from "../api/client";
-import { EmptyState, ErrorState, LoadingState, PageHeader } from "../components/ui";
+import { ErrorState, LoadingState, PageHeader } from "../components/ui";
+import { RulesetReference } from "../components/RulesetReference";
 import { formatDateTime } from "../lib/format";
 import { reasonCodeLabel } from "../lib/labels";
 
@@ -148,55 +149,57 @@ function findRule(config: any, ruleId: string): any {
 const QUICK_FIELDS: QuickField[] = [
   {
     key: "auto_approve_above", label: "Автоодобрение выше", section: "thresholds", unit: "балл",
-    help: "Балл БКИ, выше которого заявка одобряется автоматически (при отсутствии стоп-факторов и пройденной ФССП). Для сделок дороже порога матрицы может действовать свой порог.",
+    help: "С этого балла — одобрение (если нет стоп-факторов и ФССП пройдена). Для особых случаев — свои пороги в матрице.",
     min: 0, max: 999,
     get: (c) => c?.score_thresholds?.auto_approve_above, set: (c, v) => { c.score_thresholds.auto_approve_above = v; },
   },
   {
     key: "auto_reject_below", label: "Автоотказ ниже", section: "thresholds", unit: "балл",
-    help: "Балл БКИ, ниже которого отказ без ручного рассмотрения. Между отказом и одобрением — серая зона, решение за человеком.",
+    help: "Ниже — автоотказ. Между двумя порогами — серая зона, решает оператор.",
     min: 0, max: 999,
     get: (c) => c?.score_thresholds?.auto_reject_below, set: (c, v) => { c.score_thresholds.auto_reject_below = v; },
   },
   {
     key: "amount_min", label: "Мин. сумма", section: "limits", unit: "₽",
-    help: "Минимальная сумма сделки, которую система рассматривает.",
+    help: "Сумма рассрочки: цена минус первый взнос.",
     min: 0, max: 100_000_000,
     get: (c) => c?.limits?.amount_min, set: (c, v) => { c.limits.amount_min = v; },
   },
   {
     key: "amount_max", label: "Макс. сумма", section: "limits", unit: "₽",
-    help: "Максимальная сумма сделки. Выше — заявка не рассматривается автоматически.",
+    help: "Больше — отказ, если не подходит другой тариф.",
     min: 0, max: 100_000_000,
     get: (c) => c?.limits?.amount_max, set: (c, v) => { c.limits.amount_max = v; },
   },
   {
     key: "term_min", label: "Мин. срок, мес.", section: "limits", unit: "мес.",
-    help: "Минимальный срок рассрочки в месяцах.",
+    help: "Короче — отказ.",
     min: 1, max: 120,
     get: (c) => c?.limits?.term_min, set: (c, v) => { c.limits.term_min = v; },
   },
   {
     key: "term_max", label: "Макс. срок, мес.", section: "limits", unit: "мес.",
-    help: "Максимальный срок рассрочки в месяцах.",
+    help: "Дольше — отказ.",
     min: 1, max: 120,
     get: (c) => c?.limits?.term_max, set: (c, v) => { c.limits.term_max = v; },
   },
   {
     key: "pti_max", label: "ПДН (заявленный до БКИ и по КИ): отказ выше", percent: true, section: "pti", unit: "%",
-    help:
-      "ПДН — доля дохода, которая уходит на платежи по долгам, с платежом по нашей рассрочке. Один порог отказа на оба ПДН: заявленный клиентом (до запроса в БКИ) и по кредитной истории.",
+    help: "Доля дохода на все долги вместе с нашей рассрочкой. Один порог и для слов клиента, и для КИ.",
     min: 0, max: 100,
     get: (c) => c?.limits?.pti_max, set: (c, v) => { c.limits.pti_max = v; },
   },
   {
     key: "pti_high", label: "ПДН по КИ: ручная проверка выше", percent: true, section: "pti", unit: "%",
-    help: "ПДН по кредитной истории выше этого значения, но не выше порога отказа — заявка уходит на ручную проверку.",
+    help: "Выше — серая зона (но не выше порога отказа).",
     min: 0, max: 100,
     get: (c) => findRule(c, "pti_high")?.value,
     set: (c, v) => { const r = findRule(c, "pti_high"); if (r) r.value = v; },
   },
 ];
+
+// История версий: сразу видно последние, остальные — по кнопке.
+const VERSIONS_SHOWN = 6;
 
 const SECTION_TITLES: Record<QuickField["section"], string> = {
   thresholds: "Пороги решения (балл БКИ)",
@@ -389,6 +392,7 @@ export function RulesetsPage() {
   const [rollbackReason, setRollbackReason] = useState("");
   const [rollbackError, setRollbackError] = useState<string | null>(null);
   const [publishComment, setPublishComment] = useState("");
+  const [showAllVersions, setShowAllVersions] = useState(false);
 
   // Симуляция относится к конкретному тексту конфига: любая правка сбрасывает её,
   // иначе «Опубликовать» отправило бы устаревший прогон (бэкенд всё равно отклонит).
@@ -558,131 +562,171 @@ export function RulesetsPage() {
         <p role="alert" className="alert">Файл конфига на диске не проходит схему: {fileConflict.error}</p>
       )}
 
-      <div className="grid-2 rules-layout">
-        <div>
+      {/* T23 (по отзыву): компактно. Слева — типовые пороги строками «название ·
+          подсказка · значение»; справа — шаги проверки и публикации с результатом
+          симуляции; ниже — экспертный режим: YAML и справочник полей рядом. */}
+      <div className="rules-grid">
+        <div className="rules-form">
           {(["thresholds", "limits", "pti"] as const).map((section) => (
-            <div key={section} className="rules-section">
-              <h2>{SECTION_TITLES[section]}</h2>
-              <div className="form-grid">
+            <section key={section} className="rules-group">
+              <h2 className="rules-group__title">{SECTION_TITLES[section]}</h2>
               {QUICK_FIELDS.filter((f) => f.section === section).map((f) => {
                 const raw = parsed ? f.get(parsed) : null;
                 const displayed = raw == null ? "" : f.percent ? Math.round(Number(raw) * 1000) / 10 : (raw as number);
                 const err = fieldErrors[f.key];
+                const inputId = `rule-${f.key}`;
                 return (
-                  <label className="field" key={f.key}>
-                    {f.label}
-                    {f.percent ? " (%)" : ""}
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={String(displayed)}
-                      aria-invalid={!!err}
-                      onChange={(e) => updateQuickField(f, e.target.value)}
-                    />
-                    <span className="field-hint">{f.help}</span>
-                    {err && <span role="alert" className="field-error">{err}</span>}
-                  </label>
+                  <div className="rule-row" key={f.key}>
+                    <div className="rule-row__text">
+                      <label htmlFor={inputId} className="rule-row__label">
+                        {f.label}
+                        {f.percent ? " (%)" : ""}
+                      </label>
+                      <span className="rule-row__hint">{f.help}</span>
+                      {err && <span role="alert" className="field-error">{err}</span>}
+                    </div>
+                    <div className={err ? "rule-row__input rule-row__input--error" : "rule-row__input"}>
+                      <input
+                        id={inputId}
+                        type="text"
+                        inputMode="decimal"
+                        value={String(displayed)}
+                        aria-invalid={!!err}
+                        onChange={(e) => updateQuickField(f, e.target.value)}
+                      />
+                      <span className="rule-row__unit">{f.percent ? "%" : f.unit}</span>
+                    </div>
+                  </div>
                 );
               })}
-              </div>
               {section === "thresholds" && orderError && (
                 <p role="alert" className="alert">{orderError}</p>
               )}
-            </div>
+            </section>
           ))}
+          <p className="rules-more">
+            Остальное — стоп-факторы, матрица особых условий, тарифы, источники — в экспертном режиме ниже.
+          </p>
+        </div>
 
-          <details className="disclosure">
-            <summary>Экспертный режим — YAML напрямую</summary>
-            <textarea
-              value={yamlText}
-              onChange={(e) => setYamlText(e.target.value)}
-              rows={24}
-              className="code-input stack"
-            />
-            {parseError && <p role="alert" className="alert">YAML не читается: {parseError}</p>}
-          </details>
-
-          <div className="rules-publish">
-            <p className="muted text-xs">
-              1. Проверьте изменения на истории заявок. 2. Опишите, что и зачем меняете. 3. Опубликуйте.
-            </p>
+        <aside className="rules-publish">
+          <div className="rules-step">
+            <div className="rules-step__head">
+              <span className="rules-step__n">1</span>Проверьте на истории заявок
+            </div>
             <button
               className="btn"
               disabled={simulateMutation.isPending || hasInputErrors}
               onClick={() => simulateMutation.mutate()}
             >
-              Проверить на истории
+              {simulateMutation.isPending ? "Считаем…" : "Проверить на истории"}
             </button>
+            {simulateError && <p role="alert" className="alert">{simulateError}</p>}
+            {!simulation && (
+              <p className="rules-step__hint">
+                Измените пороги и нажмите — увидите, сколько решений поменяется. Без проверки опубликовать нельзя.
+              </p>
+            )}
+            {simulation && <SimulationResult simulation={simulation} />}
+          </div>
+          <div className="rules-step">
+            <div className="rules-step__head">
+              <span className="rules-step__n">2</span>Опишите, что и зачем меняете
+            </div>
             <label className="field">
               Комментарий к версии (обязательно)
               <input
                 type="text"
                 value={publishComment}
                 onChange={(e) => setPublishComment(e.target.value)}
-                placeholder="что меняете и зачем"
+                placeholder="например: порог одобрения 720 → 700 по итогам пилота"
               />
             </label>
-            <div className="row stack">
-              <button
-                className="btn btn-primary"
-                disabled={!simulation || !publishComment.trim() || saveMutation.isPending}
-                onClick={() => saveMutation.mutate()}
-              >
-                Опубликовать
-              </button>
-            </div>
           </div>
-          {simulateError && <p role="alert" className="alert">{simulateError}</p>}
-          {saveError && <p role="alert" className="alert">{saveError}</p>}
-          {saveSuccess && <p className="badge badge-success">{saveSuccess}</p>}
-        </div>
-
-        <div>
-          <h2>Результат симуляции</h2>
-          {!simulation && (
-            <EmptyState
-              title="Симуляции ещё не было"
-              hint="Измените пороги слева и нажмите «Проверить на истории» — здесь появится, сколько решений поменяется."
-            />
-          )}
-          {simulation && <SimulationResult simulation={simulation} />}
-        </div>
+          <div className="rules-step">
+            <div className="rules-step__head">
+              <span className="rules-step__n">3</span>Опубликуйте
+            </div>
+            <button
+              className="btn btn-primary"
+              disabled={!simulation || !publishComment.trim() || saveMutation.isPending}
+              onClick={() => saveMutation.mutate()}
+            >
+              Опубликовать
+            </button>
+            {saveError && <p role="alert" className="alert">{saveError}</p>}
+            {saveSuccess && <p className="badge badge-success">{saveSuccess}</p>}
+          </div>
+        </aside>
       </div>
 
-      <h2>История версий</h2>
+      <details className="rules-expert">
+        <summary>
+          Экспертный режим — YAML напрямую
+          <span className="muted"> · все правила конфига и справочник полей</span>
+        </summary>
+        <div className="rules-expert__body">
+          <div className="rules-expert__editor">
+            <textarea
+              value={yamlText}
+              onChange={(e) => setYamlText(e.target.value)}
+              spellCheck={false}
+              aria-label="YAML конфига правил"
+              className="code-input"
+            />
+            {parseError && <p role="alert" className="alert">YAML не читается: {parseError}</p>}
+            <p className="rules-step__hint">
+              Правки здесь и в полях выше — одно и то же: поля просто меняют этот текст. Проверка на истории и
+              публикация — те же шаги справа вверху.
+            </p>
+          </div>
+          <RulesetReference />
+        </div>
+      </details>
+
+      <h2 className="rules-history-title">История версий</h2>
       {versionsQuery.isLoading && <LoadingState />}
       {versionsQuery.data && (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Версия</th>
-              <th>Комментарий</th>
-              <th>Вступила в силу</th>
-              <th>Что изменилось</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {versionsQuery.data.versions.map((v) => (
-              <tr key={v.id}>
-                <td>
-                  {v.version} {v.is_active && <span className="badge badge-success">активна</span>}
-                </td>
-                <td>{v.comment ?? "—"}</td>
-                <td>{formatDateTime(v.effective_from)}</td>
-                <td className="muted">{v.changes.length > 0 ? v.changes.join("; ") : "—"}</td>
-                <td>
-                  {!v.is_active && (
-                    <button className="btn btn-small" onClick={() => setRollbackTarget(v.version)}>
-                      Откатить
-                    </button>
-                  )}
-                </td>
-                <td></td>
+        <>
+          <table className="table table--compact rules-history">
+            <thead>
+              <tr>
+                <th>Версия</th>
+                <th>Комментарий</th>
+                <th>Вступила в силу</th>
+                <th>Что изменилось</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {(showAllVersions ? versionsQuery.data.versions : versionsQuery.data.versions.slice(0, VERSIONS_SHOWN)).map(
+                (v) => (
+                  <tr key={v.id} className={v.is_active ? "rules-history__active" : undefined}>
+                    <td>{v.version}</td>
+                    <td>
+                      {v.comment ?? "—"}
+                      {v.is_active && <span className="badge badge-success rules-history__badge">активна</span>}
+                    </td>
+                    <td className="muted">{formatDateTime(v.effective_from)}</td>
+                    <td className="muted">{v.changes.length > 0 ? v.changes.join("; ") : "—"}</td>
+                    <td className="cell-actions">
+                      {!v.is_active && (
+                        <button className="btn btn-small" onClick={() => setRollbackTarget(v.version)}>
+                          Откатить
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+          {versionsQuery.data.versions.length > VERSIONS_SHOWN && (
+            <button type="button" className="btn-link rules-history__more" onClick={() => setShowAllVersions((v) => !v)}>
+              {showAllVersions ? "Свернуть" : `Показать все версии (${versionsQuery.data.versions.length})`}
+            </button>
+          )}
+        </>
       )}
 
       {rollbackTarget != null && (

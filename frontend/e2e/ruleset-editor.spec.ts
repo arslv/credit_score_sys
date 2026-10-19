@@ -35,3 +35,16 @@ test("оператор не видит раздел «Правила и поро
   await page.goto("/rulesets");
   await expect(page.getByText("Недостаточно прав.")).toBeVisible();
 });
+
+// Экспертный режим: рядом с YAML — справочник полей с поиском.
+test("справочник полей YAML: поиск находит признаки просрочки по КИ", async ({ page }) => {
+  const seed = loadSeed();
+  await login(page, seed.admin.email, seed.admin.password);
+  await page.goto("/rulesets");
+
+  await page.getByText("Экспертный режим — YAML напрямую").click();
+  const reference = page.getByRole("complementary", { name: "Справочник полей" });
+  await reference.getByLabel("Поиск по справочнику полей").fill("просрочк");
+  await expect(reference.getByText("features.bki_max_overdue_6mo / 12mo / 24mo")).toBeVisible();
+  await expect(reference.getByText("limits.amount_min / amount_max")).toHaveCount(0);
+});
