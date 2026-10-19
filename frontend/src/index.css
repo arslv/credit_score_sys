@@ -255,7 +255,49 @@ a:hover {
 }
 
 .sidebar-foot__user {
+  flex: 1 1 0;
   min-width: 0;
+}
+
+.sidebar-foot {
+  flex-wrap: wrap;
+}
+
+/* Переключатель темы — строкой над пользователем. */
+.theme-switch {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: var(--space-2);
+}
+
+.theme-switch__label {
+  flex: 1;
+}
+
+.theme-switch__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.theme-switch__btn:hover {
+  color: var(--color-text);
+}
+
+.theme-switch__btn--on {
+  border-color: var(--color-border);
+  background: var(--color-subtle);
+  color: var(--color-text);
 }
 
 .sidebar-foot__name {

@@ -38,6 +38,9 @@ type CheckRow = components["schemas"]["CheckOut"];
 type ManualOverride = components["schemas"]["ManualOverrideOut"];
 type EventTone = "ok" | "bad" | "warn" | "info" | "wait";
 
+// Статусы, которые просто повторяют последнее решение системы.
+const STATUS_MIRRORS_DECISION = new Set(["approved", "gray_zone", "rejected_a", "rejected_b", "to_operator"]);
+
 // Числа в карточке — без копеек (780, а не 780.00): баллы и пороги целые.
 function wholeNumber(value: number | string): string {
   return String(Math.round(Number(value)));
@@ -492,7 +495,11 @@ export function ApplicationDetailPage() {
                   title={latestDecision ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome) : "В обработке"}
                   help={explanation?.help ?? null}
                 />
-                <Badge value={app.status} label={applicationStatusLabel(app.status)} />
+                {/* Статус дублирует решение («Серая зона» дважды) — показываем,
+                    только когда он говорит что-то своё (истекла, идёт стадия Б…). */}
+                {!STATUS_MIRRORS_DECISION.has(app.status) && (
+                  <Badge value={app.status} label={applicationStatusLabel(app.status)} />
+                )}
               </div>
               {explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>}
               {grayInCrm && <p className="verdict-action">Решение принимает оператор в CRM.</p>}

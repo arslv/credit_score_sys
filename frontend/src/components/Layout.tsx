@@ -3,6 +3,7 @@ import { BarChart3, Briefcase, ClipboardList, HelpCircle, Settings, ShieldAlert,
 import { useAuth } from "../auth/AuthProvider";
 import { roleLabel } from "../lib/labels";
 import { Logo } from "./Logo";
+import { ThemeSwitch } from "./ThemeSwitch";
 
 // T17, шаг 3 (навигация+роли): 5 разделов вместо плоского списка из 11
 // вкладок (ваш брифинг — «Пустых разделов, которые роль не может
@@ -128,6 +129,7 @@ export function Layout() {
         {/* T23: пользователь и «Выйти» — внизу меню; верхняя полоса только
             под вкладки раздела, без пустой строки ради одной кнопки. */}
         <div className="sidebar-foot">
+          <ThemeSwitch />
           {employee && (
             <div className="sidebar-foot__user">
               <div className="sidebar-foot__name" title={employee.full_name}>{employee.full_name}</div>
