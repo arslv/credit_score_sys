@@ -17,7 +17,14 @@ from app.config import get_settings
 from app.db import get_session
 from app.engine.ruleset_simulation import ApplicationSimulationRow, SimulationSummary, run_simulation
 from app.engine.schema import parse_ruleset
-from app.engine.versions import compute_config_hash, get_active_ruleset_version, load_config, save_ruleset_version
+from app.engine.versions import (
+    FileVsActive,
+    compare_file_with_active,
+    compute_config_hash,
+    get_active_ruleset_version,
+    load_config,
+    save_ruleset_version,
+)
 from app.models import Employee, RulesetSimulation, RulesetVersion
 from app.security.audit import record_audit
 from app.security.deps import has_full_pii, require_roles
@@ -383,20 +390,22 @@ async def list_versions(
         for r in rows
     ]
 
-    file_conflict: dict[str, Any] = {"conflict": False, "file_valid": True, "error": None}
+    file_conflict: dict[str, Any] = {"conflict": False, "reason": None, "file_valid": True, "error": None}
     if active is not None:
         try:
             from app.engine.schema import load_ruleset_from_yaml
 
             file_config = load_ruleset_from_yaml(settings.ruleset_path)
-            file_hash = compute_config_hash(file_config)
-            if file_hash != active.config_hash:
-                if active.author_id is not None:
-                    file_conflict["conflict"] = True
-                # хеш отличается, но у активной версии нет автора — это не
-                # конфликт, а обычная досинхронизация при следующем деплое
-                # (app.engine.versions.sync_ruleset_from_file), без ручных
-                # правок поверх файла — риск-менеджеру тут нечего решать.
+            verdict = compare_file_with_active(file_config, compute_config_hash(file_config), active)
+            # Та же классификация, что у sync_ruleset_from_file при старте.
+            # Конфликт — когда следующий деплой сам файл НЕ подхватит: поверх
+            # файла ручные правки (human_edits) или дата в файле раньше
+            # активной версии (file_older). Иначе (хеш отличается, автора нет,
+            # дата не раньше) — обычная досинхронизация при следующем деплое,
+            # риск-менеджеру тут нечего решать.
+            if verdict in (FileVsActive.HUMAN_EDITS, FileVsActive.FILE_OLDER):
+                file_conflict["conflict"] = True
+                file_conflict["reason"] = verdict.value
         except Exception as exc:
             file_conflict["file_valid"] = False
             file_conflict["error"] = str(exc)

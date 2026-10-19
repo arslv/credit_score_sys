@@ -39,6 +39,11 @@ def compute_config_hash(config: RulesetConfig) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def effective_from_datetime(config: RulesetConfig) -> datetime:
+    """effective_from из YAML — дата; в ruleset_versions — начало этого дня по UTC."""
+    return datetime.combine(config.effective_from, time.min, tzinfo=timezone.utc)
+
+
 async def save_ruleset_version(
     session: AsyncSession,
     config: RulesetConfig,
@@ -61,7 +66,7 @@ async def save_ruleset_version(
         config_hash=config_hash or compute_config_hash(config),
         comment=config.comment,
         author_id=author_id,
-        effective_from=datetime.combine(config.effective_from, time.min, tzinfo=timezone.utc),
+        effective_from=effective_from_datetime(config),
     )
     session.add(row)
     await session.flush()
@@ -91,11 +96,40 @@ def load_config(row: RulesetVersion) -> RulesetConfig:
     return RulesetConfig.model_validate(row.config)
 
 
+class FileVsActive(StrEnum):
+    """Как файл на диске соотносится с активной версией. Одна функция и для
+    синхронизации при старте, и для плашки «файл разошёлся» в админке
+    (app/api/rulesets.py::list_versions) — чтобы они не разъехались."""
+
+    SAME = "same"  # правила совпадают по хешу
+    HUMAN_EDITS = "human_edits"  # активную версию сохранил человек — файл её не затирает
+    FILE_OLDER = "file_older"  # effective_from файла раньше активной — версия из файла не стала бы активной
+    FILE_AHEAD = "file_ahead"  # файл можно завести новой версией
+
+
+def compare_file_with_active(
+    file_config: RulesetConfig, file_hash: str, active: RulesetVersion | None
+) -> FileVsActive:
+    if active is None:
+        return FileVsActive.FILE_AHEAD
+    if active.config_hash == file_hash:
+        return FileVsActive.SAME
+    if active.author_id is not None:
+        return FileVsActive.HUMAN_EDITS
+    # Строго раньше: при равной дате get_active_ruleset_version выберет
+    # более новую по номеру, т.е. версию из файла, — её заводить имеет смысл.
+    if effective_from_datetime(file_config) < active.effective_from:
+        return FileVsActive.FILE_OLDER
+    return FileVsActive.FILE_AHEAD
+
+
 class RulesetSyncResult(StrEnum):
     UNCHANGED = "unchanged"
     CREATED = "created"
     CONFLICT = "conflict"
     FILE_INVALID = "file_invalid"
+    FILE_OUTDATED = "file_outdated"
+    ALREADY_SAVED = "already_saved"
 
 
 async def sync_ruleset_from_file(
@@ -112,13 +146,24 @@ async def sync_ruleset_from_file(
       в YAML на диске.
     - Активной версии в БД ещё нет -> CREATED, первая версия из файла, author=system.
     - Хеш файла совпадает с хешем активной версии -> UNCHANGED, ничего не делаем.
-    - Хеш отличается, но у активной версии НЕТ автора (author_id is None, т.е. она
-      сама когда-то пришла из файла, а не сохранена человеком через админку) ->
-      файл просто уехал вперёд, CREATED, новая версия из файла, author=system.
     - Хеш отличается, а у активной версии ЕСТЬ автор (человек её сохранил через
       будущую админку) -> CONFLICT: файл не должен молча затереть ручные правки.
       Warning в лог с номером активной версии, новая версия НЕ создаётся — пусть
       человек разберётся (обновит файл под ручные правки или наоборот).
+    - Хеш отличается, у активной версии нет автора, но effective_from файла
+      РАНЬШЕ, чем у активной (типично после «Принять версию из файла» — та
+      ставит сегодняшнюю дату, а в файле дата старая) -> FILE_OUTDATED:
+      версия из файла всё равно не стала бы активной (get_active_ruleset_version
+      выбирает по effective_from). Раньше она создавалась на каждом
+      перезапуске api и копилась мёртвыми строками в истории. Warning в лог,
+      ничего не пишем; админка показывает это как конфликт с файлом, решается
+      кнопкой «Принять версию из файла» или новой датой в файле.
+    - Иначе — файл просто уехал вперёд: CREATED, новая версия из файла,
+      author=system. Кроме случая, когда версия с тем же хешем и той же
+      effective_from уже есть (файл с датой в будущем: заведена при прошлом
+      старте, ждёт своей даты) -> ALREADY_SAVED, повторно не пишем.
+      Дедупликация по паре, не по одному хешу: файл, возвращённый к правилам
+      старой версии с новой датой, — законная новая версия.
     """
     try:
         config = load_ruleset_from_yaml(ruleset_path)
@@ -130,12 +175,13 @@ async def sync_ruleset_from_file(
 
     async with session_factory() as session:
         active = await get_active_ruleset_version(session)
+        verdict = compare_file_with_active(config, file_hash, active)
 
-        if active is not None and active.config_hash == file_hash:
+        if verdict == FileVsActive.SAME:
             logger.info("ruleset_sync_unchanged", active_version=active.version)
             return RulesetSyncResult.UNCHANGED
 
-        if active is not None and active.author_id is not None:
+        if verdict == FileVsActive.HUMAN_EDITS:
             logger.warning(
                 "ruleset_sync_conflict",
                 active_version=active.version,
@@ -143,6 +189,35 @@ async def sync_ruleset_from_file(
                 ruleset_path=str(ruleset_path),
             )
             return RulesetSyncResult.CONFLICT
+
+        if verdict == FileVsActive.FILE_OLDER:
+            logger.warning(
+                "ruleset_sync_file_outdated",
+                active_version=active.version,
+                active_effective_from=active.effective_from.isoformat(),
+                file_effective_from=config.effective_from.isoformat(),
+                ruleset_path=str(ruleset_path),
+            )
+            return RulesetSyncResult.FILE_OUTDATED
+
+        existing = (
+            await session.execute(
+                select(RulesetVersion)
+                .where(
+                    RulesetVersion.config_hash == file_hash,
+                    RulesetVersion.effective_from == effective_from_datetime(config),
+                )
+                .order_by(RulesetVersion.version.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            logger.info(
+                "ruleset_sync_already_saved",
+                version=existing.version,
+                active_version=active.version if active else None,
+            )
+            return RulesetSyncResult.ALREADY_SAVED
 
         row = await save_ruleset_version(session, config, author_id=None, config_hash=file_hash)
         await session.commit()
