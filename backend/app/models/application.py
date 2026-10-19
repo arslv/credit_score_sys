@@ -10,6 +10,9 @@ from app.models.base import Base
 
 APPLICATION_STATUSES = (
     "received",
+    # Распознавание паспорта выключено в админке (настройка ocr_enabled):
+    # заявка ждёт паспортные данные от CRM в /review, стадии не запускаются.
+    "awaiting_data",
     "ocr",
     "ocr_failed",
     "stage_a",

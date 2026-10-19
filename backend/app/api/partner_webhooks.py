@@ -34,7 +34,9 @@ from app.config import get_settings
 from app.db import get_session
 from app.integrations.adapter import content_hash as compute_content_hash
 from app.models import Application, Document, ExternalSnapshot, PartnerInboundEvent, StatusHistory
+from app.ocr.service import crm_form_ocr_result, fields_from_crm
 from app.storage.base import Storage
+from app.system_settings import is_ocr_enabled
 
 logger = structlog.get_logger()
 
@@ -106,6 +108,27 @@ class GuarantorIn(BaseModel):
     phone: str | None = None
 
 
+class ApplicantPassportIn(BaseModel):
+    """Паспортные данные заявителя — обязательны в /review, пока заявка ждёт
+    их в статусе awaiting_data (распознавание фото было выключено в админке,
+    когда она пришла): тогда их вводит оператор CRM. Ключевые — серия, номер,
+    дата рождения (ФИО берём отсюда или из /applications). В остальных
+    случаях блок игнорируется — данные берутся с фото."""
+
+    last_name: str | None = None
+    first_name: str | None = None
+    middle_name: str | None = None
+    birth_date: str | None = None
+    birth_place: str | None = None
+    gender: str | None = None
+    passport_series: str | None = None
+    passport_number: str | None = None
+    issue_date: str | None = None
+    issued_by: str | None = None
+    department_code: str | None = None
+    registration_address: str | None = None
+
+
 class ContactIn(BaseModel):
     """T23: контактное лицо из анкеты (ТЗ, «Анкета» → «Контакты»). relation —
     кем приходится: parent | sibling | relative | spouse | friend | colleague |
@@ -141,6 +164,9 @@ class ReviewIn(BaseModel):
     income: dict[str, Any] = Field(default_factory=dict)
     obligations: dict[str, Any] = Field(default_factory=dict)
     bki_consent: BkiConsentIn
+    # Распознавание выключено -> паспортные данные заявителя от CRM (см.
+    # ApplicantPassportIn); иначе не нужен.
+    applicant: ApplicantPassportIn | None = None
     guarantor: GuarantorIn | None = None
     # T23: контакты для рейтинга клиента; необязательны (старый формат тела
     # без них по-прежнему принимается).
@@ -257,10 +283,13 @@ async def receive_new_application(
         photos["passport_reg"] = await _fetch_photo(payload.photos.passport_reg)
 
     now = datetime.now(timezone.utc)
+    # Распознавание выключено в админке -> заявка ждёт паспортные данные от
+    # CRM в /review, стадия А сейчас не запускается.
+    initial_status = "received" if await is_ocr_enabled(session) else "awaiting_data"
     if existing_application_id is None:
         application = Application(
             external_id=payload.external_id,
-            status="received",
+            status=initial_status,
             # Параметры сделки неизвестны на этом шаге в новой схеме (ТЗ T18:
             # они появляются в /review) — те же плейсхолдеры, что раньше
             # ставил polling-адаптер при отсутствии данных у партнёра.
@@ -282,7 +311,9 @@ async def receive_new_application(
         await session.flush()
         application_id = application.id
         session.add(
-            StatusHistory(application_id=application_id, from_status=None, to_status="received", actor_type="system")
+            StatusHistory(
+                application_id=application_id, from_status=None, to_status=initial_status, actor_type="system",
+            )
         )
 
         storage: Storage = request.app.state.storage
@@ -324,7 +355,7 @@ async def receive_new_application(
     )
     await session.commit()
 
-    if created:
+    if created and initial_status == "received":
         from app.tasks.stage_a import process_single_application_task
 
         process_single_application_task.delay(str(application_id))
@@ -350,6 +381,28 @@ async def receive_review(payload: ReviewIn, session: AsyncSession = Depends(get_
             status_code=status.HTTP_404_NOT_FOUND,
             detail="external_id не известен — заявка не приходила через /api/v1/partner/applications",
         )
+
+    # Заявка ждёт паспортные данные от CRM (распознавание было выключено):
+    # без них стадию А провести не из чего — 422 до любой записи, CRM
+    # поправит и пришлёт снова.
+    crm_passport = None
+    if application.status == "awaiting_data":
+        applicant = payload.applicant.model_dump() if payload.applicant else {}
+        profile = application.profile or {}
+        values = {
+            **applicant,
+            "last_name": applicant.get("last_name") or profile.get("last_name"),
+            "first_name": applicant.get("first_name") or profile.get("first_name"),
+            "middle_name": applicant.get("middle_name") or profile.get("middle_name"),
+        }
+        fields, missing = fields_from_crm(values)
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="распознавание паспорта выключено — пришлите паспортные данные заявителя в applicant; "
+                f"нет или неверный формат: {', '.join(missing)}",
+            )
+        crm_passport = (applicant, fields)
 
     deal = payload.deal
     if deal.goods_name is not None:
@@ -389,6 +442,9 @@ async def receive_review(payload: ReviewIn, session: AsyncSession = Depends(get_
             content_hash=compute_content_hash(payload_raw),
         )
     )
+    if crm_passport is not None:
+        raw_applicant, fields = crm_passport
+        session.add(crm_form_ocr_result(application.id, raw={"applicant": raw_applicant}, fields=fields))
     session.add(
         PartnerInboundEvent(
             event_id=payload.event_id, endpoint="review",
@@ -398,8 +454,14 @@ async def receive_review(payload: ReviewIn, session: AsyncSession = Depends(get_
     await session.commit()
     application_id = application.id
 
-    from app.tasks.stage_b import process_single_application_task
+    if crm_passport is not None:
+        # Стадия А по данным CRM, затем сразу стадия Б (app/tasks/stage_a.py).
+        from app.tasks.stage_a import process_crm_data_task
 
-    process_single_application_task.delay(str(application_id))
+        process_crm_data_task.delay(str(application_id))
+    else:
+        from app.tasks.stage_b import process_single_application_task
+
+        process_single_application_task.delay(str(application_id))
 
     return {"status": "accepted"}

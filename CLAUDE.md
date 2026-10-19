@@ -37,6 +37,13 @@ docker compose stop worker beat && docker compose exec api python -m app.cli.see
   `checks(source=fedresurs)`, на решение не влияет — «флаг оператору» по ТЗ). ФССП не вызывается
   автоматически ни на одной стадии — только по ручному действию (капча решается человеком,
   см. «Словарь» → operator, `app/api/fssp.py`).
+- **Распознавание выключено** (тумблер в админке «Настройки → Распознавание паспорта»,
+  `system_settings.ocr_enabled`, `app/system_settings.py`): новая заявка получает статус
+  `awaiting_data`, фото провайдеру не уходят. Паспортные данные вводит оператор CRM и
+  присылает в `/review` (блок `applicant`, без него — 422); они пишутся в `ocr_results`
+  с `provider=crm_form`, затем сразу стадия А и, если не отказ, стадия Б
+  (`app/tasks/stage_a.py::process_crm_data_task`). API-ключ распознавания — только в
+  `.env` (`ANTHROPIC_API_KEY`), админка показывает лишь «задан / не задан».
 - **Стадия Б** — оператор после звонка жмёт «Рассмотреть» в их системе. Дешёвые проверки
   (полнота, шариат, лимиты) → запрос в БКИ → финансовые правила и скор.
   Исходы: `rejected_b`, `gray_zone`, `approved`. Без КИ одобрить нельзя — только серая зона;
@@ -47,7 +54,7 @@ docker compose stop worker beat && docker compose exec api python -m app.cli.see
 
 1. **Ничего не перезаписываем.** Таблицы `decisions`, `feature_snapshots`, `checks`,
    `status_history`, `external_snapshots`, `ocr_results`, `integration_events`,
-   `ruleset_versions`, `audit_log`, `bki_reports` — только INSERT. Никаких UPDATE/DELETE
+   `ruleset_versions`, `audit_log`, `bki_reports`, `system_settings` — только INSERT. Никаких UPDATE/DELETE
    по ним. `applications.status` — единственный изменяемый указатель; каждое его
    изменение сопровождается записью в `status_history` в той же транзакции.
    (`bki_requests_in_flight` — исключение: техническое состояние

@@ -8,7 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Application, StatusHistory
 
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-    "received": {"ocr"},
+    "received": {"ocr", "awaiting_data"},
+    # Распознавание выключено: паспортные данные приходят от CRM в /review,
+    # сразу стадия А по ним (app.engine.pipeline.run_stage_a_from_crm_data).
+    "awaiting_data": {"stage_a"},
     "ocr": {"ocr_failed", "stage_a"},
     "ocr_failed": {"to_operator"},
     "stage_a": {"rejected_a", "to_operator"},

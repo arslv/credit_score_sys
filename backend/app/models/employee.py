@@ -28,6 +28,8 @@ AUDIT_LOG_ACTIONS = (
     "fssp_search_started", "fssp_code_submitted",
     # T23: ручная отметка проверки банкротства на Федресурсе, app/api/fedresurs.py.
     "fedresurs_manual_check",
+    # Изменение настройки сервиса в админке (system_settings), app/api/settings.py.
+    "change_setting",
 )
 STATUS_HISTORY_ACTOR_TYPES = ("system", "employee", "client")
 

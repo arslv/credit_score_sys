@@ -258,6 +258,8 @@ CREATE TABLE partner_outbox_events (
 stateDiagram-v2
   [*] --> received
   received --> ocr
+  received --> awaiting_data
+  awaiting_data --> stage_a
   ocr --> ocr_failed
   ocr --> stage_a
   ocr_failed --> to_operator
@@ -276,6 +278,7 @@ stateDiagram-v2
 | Состояние | Что означает | Кто переводит дальше |
 | --- | --- | --- |
 | received | Заявка получена из системы заказчика | Система |
+| awaiting\_data | Распознавание фото выключено в админке: ждём паспортные данные от системы заказчика вместе с «Рассмотреть», затем сразу стадии А и Б | Система заказчика |
 | ocr | Распознавание фото | Система |
 | ocr\_failed | Фото нечитаемы или уверенность ниже порога | Оператор |
 | stage\_a | Бесплатные проверки по паспорту, без БКИ | Система |
