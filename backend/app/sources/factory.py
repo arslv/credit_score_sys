@@ -58,8 +58,9 @@ def build_fns_egrip_source(settings: Settings):
 
 def build_fssp_captcha_source(settings: Settings) -> FsspCaptchaSource:
     """Используется ТОЛЬКО из app/api/fssp.py по действию оператора (T16) —
-    никогда из автоматического конвейера стадии А/Б."""
-    if settings.external_sources_mode == "http":
+    никогда из автоматического конвейера стадии А/Б. Режим — fssp_source_mode,
+    а если он не задан — общий external_sources_mode."""
+    if (settings.fssp_source_mode or settings.external_sources_mode) == "http":
         return FsspCaptchaHttpSource(
             redis=get_redis(),
             request_timeout_seconds=settings.fssp_request_timeout_seconds,

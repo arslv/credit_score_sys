@@ -270,3 +270,17 @@ async def test_dev_fssp_source_shows_readable_captcha_and_accepts_its_code():
         code_id=challenge.code_id, code="123456", subject=subject, region_code="05"
     )
     assert wrong.kind == "wrong_code"
+
+
+def test_fssp_source_mode_overrides_external_sources_mode():
+    """FSSP_SOURCE_MODE=http — настоящая капча ФССП, хотя остальные источники в fake."""
+    from app.config import Settings
+    from app.sources.factory import build_fssp_captcha_source
+    from app.sources.fssp import DevFsspCaptchaSource, FsspCaptchaHttpSource
+
+    assert isinstance(build_fssp_captcha_source(Settings(external_sources_mode="fake")), DevFsspCaptchaSource)
+    real = build_fssp_captcha_source(Settings(external_sources_mode="fake", fssp_source_mode="http"))
+    assert isinstance(real, FsspCaptchaHttpSource)
+    assert isinstance(
+        build_fssp_captcha_source(Settings(external_sources_mode="http", fssp_source_mode="fake")), DevFsspCaptchaSource
+    )

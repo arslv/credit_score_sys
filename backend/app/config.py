@@ -170,6 +170,10 @@ class Settings(BaseSettings):
     # ФССП (is-go.fssp.gov.ru) — капчу вводит оператор (T16), без кук
     # (подтверждено дважды живым тестом). Интервал — консервативная защита от
     # собственного флуда с нашей стороны, не измеренный порог сайта.
+    # Отдельный режим только для ФССП: пусто — как external_sources_mode;
+    # http — настоящая капча с is-go.fssp.gov.ru, даже когда ФНС и прочие
+    # источники в fake (капчу всё равно решает человек, автозапросов нет).
+    fssp_source_mode: str = ""  # "" | fake | http
     fssp_min_request_interval_seconds: float = 5.0
     fssp_request_timeout_seconds: float = 15.0
     fssp_regions_path: str = "config/fssp_regions.yaml"
