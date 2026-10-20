@@ -157,7 +157,7 @@ export function ApplicationDetailPage() {
   const { employee } = useAuth();
   const queryClient = useQueryClient();
   const [openDocumentId, setOpenDocumentId] = useState<string | null>(null);
-  const [acceptNoteOpen, setAcceptNoteOpen] = useState(false);
+  const [decisionStub, setDecisionStub] = useState<"accept" | "reject" | null>(null);
 
   const query = useQuery({
     queryKey: ["application", id],
@@ -528,25 +528,36 @@ export function ApplicationDetailPage() {
                 <dd>{app.external_id}</dd>
               </div>
             </dl>
-            {/* «Принять» — будущая отправка решения в CRM по API. Пока заглушка:
-                ничего не отправляет, только объясняет, что функция в разработке. */}
+            {/* «Принять» / «Отказать» — будущая отправка решения в CRM по API.
+                Пока заглушки: ничего не отправляют, только объясняют. Ширина
+                блока постоянная — пояснение не сдвигает раскладку. */}
             {canOperateFssp && (
-              <div className="accept-stub">
-                <div className="accept-stub__row">
+              <div className="decision-stub">
+                <div className="decision-stub__row">
                   <button
                     type="button"
-                    className="btn btn-primary accept-stub__btn"
-                    aria-describedby="accept-stub-note"
-                    onClick={() => setAcceptNoteOpen((v) => !v)}
+                    className="btn decision-stub__btn decision-stub__btn--accept"
+                    aria-pressed={decisionStub === "accept"}
+                    aria-describedby="decision-stub-note"
+                    onClick={() => setDecisionStub((v) => (v === "accept" ? null : "accept"))}
                   >
                     Принять
                   </button>
+                  <button
+                    type="button"
+                    className="btn decision-stub__btn decision-stub__btn--reject"
+                    aria-pressed={decisionStub === "reject"}
+                    aria-describedby="decision-stub-note"
+                    onClick={() => setDecisionStub((v) => (v === "reject" ? null : "reject"))}
+                  >
+                    Отказать
+                  </button>
                   <span className="soon-tag">в разработке</span>
                 </div>
-                <p id="accept-stub-note" className={acceptNoteOpen ? "accept-stub__note accept-stub__note--open" : "accept-stub__note"}>
-                  {acceptNoteOpen
-                    ? "Пока ничего не отправляется. Кнопка будет передавать в CRM решение «принять заявку» по нашим данным; сейчас решение принимается в CRM."
-                    : "Отправит в CRM решение «принять» — скоро."}
+                <p id="decision-stub-note" className="decision-stub__note">
+                  {decisionStub === null
+                    ? "Решение по заявке уйдёт в CRM отсюда — скоро."
+                    : `«${decisionStub === "accept" ? "Принять" : "Отказать"}» пока ничего не отправляет: передача решения в CRM по API в разработке.`}
                 </p>
               </div>
             )}

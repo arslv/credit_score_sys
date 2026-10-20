@@ -19,7 +19,7 @@ from app.sources.fns import (
     FnsInnHttpSource,
     FnsNpdHttpSource,
 )
-from app.sources.fssp import FakeFsspCaptchaSource, FsspCaptchaHttpSource, FsspCaptchaSource
+from app.sources.fssp import DevFsspCaptchaSource, FsspCaptchaHttpSource, FsspCaptchaSource
 
 
 def build_fns_inn_source(settings: Settings):
@@ -65,7 +65,8 @@ def build_fssp_captcha_source(settings: Settings) -> FsspCaptchaSource:
             request_timeout_seconds=settings.fssp_request_timeout_seconds,
             throttle_interval_seconds=settings.fssp_min_request_interval_seconds,
         )
-    return FakeFsspCaptchaSource()
+    # Режим разработки: читаемая капча с кодом 000000 (см. DevFsspCaptchaSource).
+    return DevFsspCaptchaSource()
 
 
 def build_bki_provider(settings: Settings) -> BkiProvider:

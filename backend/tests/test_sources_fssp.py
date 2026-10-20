@@ -247,3 +247,26 @@ async def test_http_submit_code_network_error_is_source_unavailable():
     )
     assert outcome.kind == "source_unavailable"
     assert outcome.check_result.status == CheckStatus.SOURCE_UNAVAILABLE
+
+
+async def test_dev_fssp_source_shows_readable_captcha_and_accepts_its_code():
+    """Режим разработки: картинка — настоящий PNG с кодом, код 000000
+    принимается без состояния (источник создаётся заново на каждый запрос)."""
+    from datetime import date
+
+    from app.sources.base import Subject
+    from app.sources.fssp import DEV_CAPTCHA_CODE, DevFsspCaptchaSource
+
+    subject = Subject(last_name="Тестова", first_name="Анна", birth_date=date(1990, 1, 1))
+    challenge = await DevFsspCaptchaSource().search(subject, region_code="05")
+    assert challenge.captcha_png.startswith(b"\x89PNG\r\n\x1a\n")
+    assert len(challenge.captcha_png) > 100  # не 1×1 заглушка
+
+    accepted = await DevFsspCaptchaSource().submit_code(
+        code_id=challenge.code_id, code=DEV_CAPTCHA_CODE, subject=subject, region_code="05"
+    )
+    assert accepted.kind == "ok"
+    wrong = await DevFsspCaptchaSource().submit_code(
+        code_id=challenge.code_id, code="123456", subject=subject, region_code="05"
+    )
+    assert wrong.kind == "wrong_code"

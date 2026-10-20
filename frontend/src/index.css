@@ -3959,36 +3959,57 @@ mark {
   display: grid;
   gap: var(--space-3);
   flex-shrink: 0;
-  min-width: 260px;
+  width: 340px;
 }
 
-/* «Принять» — заглушка: выглядит как действие, но с пометкой «в разработке». */
-.accept-stub {
+/* «Принять» / «Отказать» — заглушки: цвет действия, пометка «в разработке».
+   Высота пояснения постоянная (две строки) — текст не сдвигает раскладку. */
+.decision-stub {
   padding: var(--space-3);
   border: 1px dashed var(--color-border-strong);
   border-radius: var(--radius-lg);
 }
 
-.accept-stub__row {
+.decision-stub__row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.accept-stub__btn {
-  min-width: 120px;
+.decision-stub__btn {
+  min-width: 96px;
   justify-content: center;
-  opacity: 0.75;
+  color: #ffffff;
 }
 
-.accept-stub__note {
+.decision-stub__btn--accept,
+.decision-stub__btn--accept:hover {
+  border-color: var(--status-ok);
+  background: var(--status-ok);
+}
+
+.decision-stub__btn--reject,
+.decision-stub__btn--reject:hover {
+  border-color: var(--status-bad);
+  background: var(--status-bad);
+}
+
+/* Общий .btn:hover красит фон в светлый — у цветных кнопок только чуть светлее. */
+.decision-stub__btn:hover {
+  filter: brightness(1.1);
+}
+
+.decision-stub__btn[aria-pressed="true"] {
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.decision-stub__note {
+  height: 3.2em;
   margin: var(--space-2) 0 0;
+  overflow: hidden;
   font-size: var(--font-xs);
+  line-height: 1.6;
   color: var(--color-text-muted);
-}
-
-.accept-stub__note--open {
-  color: var(--color-text);
 }
 
 .pf-verdict__deal {

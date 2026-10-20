@@ -28,6 +28,9 @@ import base64
 import html as html_module
 import json
 import re
+import struct
+import uuid
+import zlib
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -217,6 +220,70 @@ class FakeFsspCaptchaSource:
             check_result=CheckResult(
                 status=status, response_raw={"productions": self._productions},
                 parsed={"productions": self._productions},
+            ),
+        )
+
+
+# --- Режим разработки (external_sources_mode = fake) ---------------------------
+
+DEV_CAPTCHA_CODE = "000000"
+
+# Цифра «0» 5×7 — другой в dev-капче не бывает.
+_DEV_ZERO = (" ### ", "#   #", "#  ##", "# # #", "##  #", "#   #", " ### ")
+
+
+def _render_dev_captcha_png(code: str, scale: int = 4) -> bytes:
+    """PNG (оттенки серого) с кодом крупными цифрами — без сторонних библиотек.
+    Только для режима разработки: настоящую картинку отдаёт сайт ФССП."""
+    glyph_w, glyph_h, gap, pad = 5 * scale, 7 * scale, 2 * scale, 3 * scale
+    width = pad * 2 + len(code) * glyph_w + (len(code) - 1) * gap
+    height = pad * 2 + glyph_h
+    pixels = [[236] * width for _ in range(height)]
+    for index, _digit in enumerate(code):
+        left = pad + index * (glyph_w + gap)
+        for row, line in enumerate(_DEV_ZERO):
+            for col, cell in enumerate(line):
+                if cell != "#":
+                    continue
+                for dy in range(scale):
+                    for dx in range(scale):
+                        pixels[pad + row * scale + dy][left + col * scale + dx] = 40
+    raw = b"".join(b"\x00" + bytes(row) for row in pixels)
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+
+
+class DevFsspCaptchaSource:
+    """ФССП в режиме разработки (external_sources_mode = fake): сайт не
+    вызывается, капча — картинка с кодом 000000, этот код принимается, итог —
+    «ничего не найдено». Без состояния: в отличие от FakeFsspCaptchaSource
+    (тесты), источник создаётся заново на каждый запрос API, поэтому выданные
+    code_id не запоминаются — узнаются по префиксу."""
+
+    source_name = "fssp"
+
+    async def search(self, subject: Subject, *, region_code: str) -> FsspCaptchaChallenge:
+        missing = missing_subject_field_error(subject, FSSP_SEARCH_REQUIRED_FIELDS)
+        if missing:
+            raise FsspValidationError(missing)
+        return FsspCaptchaChallenge(
+            code_id=f"dev-{uuid.uuid4().hex}", captcha_png=_render_dev_captcha_png(DEV_CAPTCHA_CODE)
+        )
+
+    async def submit_code(
+        self, *, code_id: str, code: str, subject: Subject, region_code: str,
+    ) -> FsspSubmitOutcome:
+        if not code_id.startswith("dev-") or code.strip() != DEV_CAPTCHA_CODE:
+            return FsspSubmitOutcome(kind="wrong_code")
+        return FsspSubmitOutcome(
+            kind="ok",
+            check_result=CheckResult(
+                status=CheckStatus.OK, response_raw={"productions": [], "dev_mode": True},
+                parsed={"productions": []},
             ),
         )
 
