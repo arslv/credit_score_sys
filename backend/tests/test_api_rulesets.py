@@ -427,6 +427,7 @@ async def test_versions_endpoint_shows_file_conflict_after_rollback(admin_client
     assert response.status_code == 200
     body = response.json()
     assert body["file_conflict"]["conflict"] is True
+    assert body["file_conflict"]["reason"] == "human_edits"
 
 
 async def test_versions_endpoint_shows_no_conflict_when_active_matches_file(
@@ -440,6 +441,31 @@ async def test_versions_endpoint_shows_no_conflict_when_active_matches_file(
     response = await admin_client.get("/api/rulesets/versions")
     assert response.status_code == 200
     assert response.json()["file_conflict"]["conflict"] is False
+
+
+async def test_versions_endpoint_shows_conflict_when_file_is_older_than_active(
+    admin_client, session_factory, active_ruleset
+):
+    """Активная версия без автора, но с effective_from позже, чем в файле
+    (dev.yaml — 2026-01-01, здесь — вчера), и правила разошлись: при старте
+    sync_ruleset_from_file такую версию из файла больше не заводит (она всё
+    равно не стала бы активной) — значит, «досинхронизируется при следующем
+    деплое» неправда, и плашка с «Принять версию из файла» нужна."""
+    from app.config import get_settings
+    from app.engine.versions import RulesetSyncResult, sync_ruleset_from_file
+
+    await create_employee(session_factory, email="rm11c@example.com", role="admin")
+    await login(admin_client, "rm11c@example.com")
+    await _save_version_with_different_rules(session_factory, active_ruleset)
+
+    response = await admin_client.get("/api/rulesets/versions")
+    assert response.status_code == 200
+    file_conflict = response.json()["file_conflict"]
+    assert file_conflict["conflict"] is True
+    assert file_conflict["reason"] == "file_older"
+
+    sync_result = await sync_ruleset_from_file(session_factory, get_settings().ruleset_path)
+    assert sync_result == RulesetSyncResult.FILE_OUTDATED
 
 
 async def test_accept_file_sets_author_none_and_is_idempotent(admin_client, session_factory, active_ruleset):

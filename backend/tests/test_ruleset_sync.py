@@ -205,3 +205,107 @@ async def test_sync_conflict_does_not_touch_human_authored_active_version(sessio
         active = await get_active_ruleset_version(session)
         assert active.version == human_row.version
         assert load_config(active).comment == marker_human  # ручная версия не тронута
+
+
+async def _count_versions(session_factory) -> int:
+    from sqlalchemy import func, select
+
+    from app.models import RulesetVersion
+
+    async with session_factory() as session:
+        return (await session.execute(select(func.count()).select_from(RulesetVersion))).scalar_one()
+
+
+async def _save_system_version(session_factory, config_dict: dict):
+    """Версия без автора — как «Принять версию из файла» (author_id=None,
+    effective_from — день нажатия) или прошлая автосинхронизация."""
+    async with session_factory() as session:
+        row = await save_ruleset_version(session, parse_ruleset(config_dict), author_id=None)
+        await session.commit()
+        return row
+
+
+async def test_sync_does_not_duplicate_file_version_older_than_active_on_restart(session_factory, tmp_path):
+    """Найденный баг: активная версия без автора с effective_from ПОЗЖЕ, чем в
+    файле (в dev-базе — v5 из «Принять версию из файла» от 16.10 против
+    effective_from 2026-01-01 в dev.yaml), а правила в файле с тех пор
+    поменялись. Раньше каждый перезапуск api создавал из файла новую версию,
+    которая проигрывала активной по effective_from и никогда не становилась
+    активной (v6–v18 в dev-базе). Теперь — FILE_OUTDATED, ничего не пишем."""
+    active_marker = _marker()
+    active_row = await _save_system_version(
+        session_factory, _valid_config_dict(active_marker, effective_from=(date.today() - timedelta(days=3)).isoformat()),
+    )
+    path = _write_yaml(
+        tmp_path,
+        _valid_config_dict(
+            _marker(),
+            effective_from=(date.today() - timedelta(days=1000)).isoformat(),
+            antifraud={"max_applications_per_phone_30d": 6, "duplicate_window_days": 30},
+        ),
+    )
+    before = await _count_versions(session_factory)
+
+    # Два «перезапуска api» подряд.
+    first = await sync_ruleset_from_file(session_factory, path)
+    second = await sync_ruleset_from_file(session_factory, path)
+
+    assert first == RulesetSyncResult.FILE_OUTDATED
+    assert second == RulesetSyncResult.FILE_OUTDATED
+    assert await _count_versions(session_factory) == before
+    async with session_factory() as session:
+        active = await get_active_ruleset_version(session)
+        assert active.version == active_row.version
+        assert load_config(active).comment == active_marker
+
+
+async def test_sync_does_not_duplicate_future_dated_file_version_on_restart(session_factory, tmp_path):
+    """Файл с effective_from в будущем: первая синхронизация заводит
+    отложенную версию, но активной до этой даты остаётся прежняя — и без
+    проверки «такая версия уже есть» каждый перезапуск плодил бы её копию."""
+    active_row = await _save_system_version(
+        session_factory, _valid_config_dict(_marker(), effective_from=(date.today() - timedelta(days=3)).isoformat()),
+    )
+    path = _write_yaml(
+        tmp_path,
+        _valid_config_dict(
+            _marker(),
+            effective_from=(date.today() + timedelta(days=30)).isoformat(),
+            antifraud={"max_applications_per_phone_30d": 7, "duplicate_window_days": 30},
+        ),
+    )
+    before = await _count_versions(session_factory)
+
+    first = await sync_ruleset_from_file(session_factory, path)
+    second = await sync_ruleset_from_file(session_factory, path)
+
+    assert first == RulesetSyncResult.CREATED
+    assert second == RulesetSyncResult.ALREADY_SAVED
+    assert await _count_versions(session_factory) == before + 1
+    async with session_factory() as session:
+        active = await get_active_ruleset_version(session)
+        assert active.version == active_row.version  # отложенная ещё не вступила
+
+
+async def test_sync_reverting_file_to_old_rules_with_new_date_creates_version(session_factory, tmp_path):
+    """Дедупликация — по паре (хеш, effective_from), не по одному хешу: файл
+    вернули к правилам старой версии, но с новой датой — это законная новая
+    версия, она должна стать активной, а не молча пропасть как «уже есть»."""
+    original = _valid_config_dict(_marker())
+    path = _write_yaml(tmp_path, original)
+    assert await sync_ruleset_from_file(session_factory, path) == RulesetSyncResult.CREATED
+
+    _write_yaml(
+        tmp_path,
+        _valid_config_dict(_marker(), antifraud={"max_applications_per_phone_30d": 8, "duplicate_window_days": 30}),
+    )
+    assert await sync_ruleset_from_file(session_factory, path) == RulesetSyncResult.CREATED
+
+    reverted_marker = _marker()
+    _write_yaml(tmp_path, {**original, "comment": reverted_marker, "effective_from": _unique_effective_from()})
+    result = await sync_ruleset_from_file(session_factory, path)
+
+    assert result == RulesetSyncResult.CREATED
+    async with session_factory() as session:
+        active = await get_active_ruleset_version(session)
+        assert load_config(active).comment == reverted_marker
