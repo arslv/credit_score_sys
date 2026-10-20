@@ -58,6 +58,7 @@ services:
       # app/sources/factory.py. Переключать явно через .env, не менять
       # дефолт здесь.
       EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-fake}
+      FSSP_SOURCE_MODE: ${FSSP_SOURCE_MODE:-}
     volumes:
       - storage_data:/data/storage
       - ./config:/app/config:ro
@@ -101,6 +102,7 @@ services:
       MVD_REGISTRY_URL: ${MVD_REGISTRY_URL:-}
       ROSFINMON_REGISTRY_URL: ${ROSFINMON_REGISTRY_URL:-}
       EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-fake}
+      FSSP_SOURCE_MODE: ${FSSP_SOURCE_MODE:-}
     volumes:
       - storage_data:/data/storage
       - ./config:/app/config:ro
