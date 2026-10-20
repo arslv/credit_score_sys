@@ -18,4 +18,9 @@ export default function globalTeardown(): void {
     );
   }
   console.log(`активная версия правил в dev-базе не изменилась: ${after?.version}`);
+
+  // T23: сотрудники, заведённые прогоном (e2e-*@example.com), удаляются —
+  // список сотрудников в dev-базе не разрастается от прогона к прогону.
+  const cleanup = JSON.parse(runInContainer("api", "cleanup_employees.py"));
+  console.log(`удалено e2e-сотрудников: ${cleanup.deleted}`);
 }

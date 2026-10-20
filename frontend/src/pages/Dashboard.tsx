@@ -9,9 +9,11 @@ import type { components } from "../api/schema";
 
 type Summary = components["schemas"]["DashboardSummary"];
 
-// T23: «Аналитика» перестроена — сверху ряд ключевых цифр, ниже три
-// тематических блока (заявки и решения → портфель → операционное). У каждого
-// графика по-прежнему заголовок-вывод (T17, часть 5), данные и запрос те же.
+// T23 (по отзыву «слишком много текста»): сверху четыре главные цифры, под
+// ними четыре главных графика (воронка, одобрения по неделям, причины отказов,
+// просрочка портфеля) с коротким заголовком-выводом (T17, часть 5) и без
+// пояснительных абзацев. Остальное — балл БКИ, когорты, операционное — в
+// свёрнутом блоке «Ещё показатели». Данные и запрос те же.
 // Графики — HTML/CSS без библиотек: столбики и полосы, подсказка при
 // наведении (data-tip), цвета — токены index.css (--dq-* проверены
 // валидатором палитры: один тон, светлота монотонна, обе темы).
@@ -89,7 +91,6 @@ function Funnel({ data }: { data: Summary }) {
           </div>
         );
       })}
-      <p className="dash-note">Справа — сколько дошло до шага от предыдущего.</p>
     </div>
   );
 }
@@ -102,13 +103,6 @@ function WeeklyApproval({ data }: { data: Summary }) {
   const totalApproved = weeks.reduce((s, w) => s + w.approved, 0);
   const totalDecided = weeks.reduce((s, w) => s + w.total, 0);
   const average = totalDecided ? totalApproved / totalDecided : 0;
-  // Текущая неделя ещё идёт — в «лучшая/худшая» не берём, как и недели
-  // меньше чем с 5 решениями (доля по ним случайна).
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
-  const rated = weeks.filter((w) => w.total >= 5 && new Date(w.week_start) <= weekAgo);
-  const best = rated.slice().sort((a, b) => b.approved / b.total - a.approved / a.total)[0];
-  const worst = rated.slice().sort((a, b) => a.approved / a.total - b.approved / b.total)[0];
   return (
     <>
       <div className="colchart" role="img" aria-label="Доля одобрений стадии Б по неделям">
@@ -130,13 +124,6 @@ function WeeklyApproval({ data }: { data: Summary }) {
           );
         })}
       </div>
-      {best && worst && best !== worst && (
-        <p className="dash-note">
-          Лучшая неделя <span>с {formatDate(best.week_start)}</span> — {pct(best.approved, best.total)}, худшая{" "}
-          <span>с {formatDate(worst.week_start)}</span> — {pct(worst.approved, worst.total)}. Бледные столбики — меньше
-          5 решений за неделю, доля по ним случайна.
-        </p>
-      )}
     </>
   );
 }
@@ -201,10 +188,6 @@ function ScoreHistogram({ data }: { data: Summary }) {
           <span className="legend__item legend__item--approve">одобрение — от {Math.round(approve)}</span>
         )}
       </div>
-      <p className="dash-note">
-        Пороги — действующей версии правил, без поправок матрицы по сумме сделки: ориентир по портфелю, а не порог
-        конкретного решения.
-      </p>
     </>
   );
 }
@@ -355,7 +338,7 @@ export function DashboardPage() {
     <section className="dashboard">
       <PageHeader
         title="Аналитика"
-        description="Как идут заявки, почему отказываем и как платит портфель — за выбранный период. Недели и месяцы — по московскому времени."
+        description="Заявки, решения и портфель за период."
       />
 
       <div className="dash-period">
@@ -370,34 +353,38 @@ export function DashboardPage() {
             { value: "custom", label: "Свой период" },
           ]}
         />
-        <label className="dash-date">
-          с
-          <input
-            type="date"
-            lang="ru"
-            value={periodFrom}
-            onChange={(e) => {
-              setPreset("custom");
-              setPeriodFrom(e.target.value);
-            }}
-          />
-          {/* Формат нативного календаря зависит от локали ОС — подпись рядом
-              всегда ДД.ММ.ГГГГ, тем же Intl, что в карточке. */}
-          <span className="muted">{formatDate(periodFrom)}</span>
-        </label>
-        <label className="dash-date">
-          по (не включая)
-          <input
-            type="date"
-            lang="ru"
-            value={periodTo}
-            onChange={(e) => {
-              setPreset("custom");
-              setPeriodTo(e.target.value);
-            }}
-          />
-          <span className="muted">{formatDate(periodTo)}</span>
-        </label>
+        {preset === "custom" ? (
+          <>
+            <label className="dash-date">
+              с
+              <input
+                type="date"
+                lang="ru"
+                value={periodFrom}
+                onChange={(e) => {
+                  setPreset("custom");
+                  setPeriodFrom(e.target.value);
+                }}
+              />
+            </label>
+            <label className="dash-date">
+              по (не включая)
+              <input
+                type="date"
+                lang="ru"
+                value={periodTo}
+                onChange={(e) => {
+                  setPreset("custom");
+                  setPeriodTo(e.target.value);
+                }}
+              />
+            </label>
+          </>
+        ) : null}
+        {/* Подпись периода — всегда ДД.ММ.ГГГГ: нативный календарь форматирует по локали ОС. */}
+        <span className="dash-range muted">
+          <span>{formatDate(periodFrom)}</span> — <span>{formatDate(periodTo)}</span>
+        </span>
       </div>
 
       {query.isLoading && <LoadingState />}
@@ -435,80 +422,56 @@ function DashboardBody({ d }: { d: Summary }) {
 
   return (
     <>
-      <div className="dash-kpis">
-        <Kpi label="Заявок за период" value={String(submitted)} hint={`дошли до решения стадии Б: ${weeklyDecided}`} />
-        <Kpi label="Одобрено" value={String(approved)} hint={`${pct(approved, submitted)} от поданных`} tone="ok" />
+      <div className="dash-kpis dash-kpis--4">
+        <Kpi label="Заявок" value={String(submitted)} hint={`до решения стадии Б: ${weeklyDecided}`} />
         <Kpi
-          label="Доля одобрений стадии Б"
-          value={pct(weeklyApproved, weeklyDecided)}
-          hint={`${weeklyApproved} из ${weeklyDecided} решений`}
+          label="Одобрено"
+          value={String(approved)}
+          hint={`${pct(approved, submitted)} поданных · ${pct(weeklyApproved, weeklyDecided)} решений Б`}
+          tone="ok"
         />
+        <Kpi label="Отказов" value={String(rejectedTotal)} hint={reasons[0] ? reasonCodeLabel(reasons[0].reason_code) : "нет"} />
         <Kpi
-          label="Отказов"
-          value={String(rejectedTotal)}
-          hint={reasons[0] ? `чаще всего — «${reasonCodeLabel(reasons[0].reason_code)}»` : "нет"}
-        />
-        <Kpi
-          label="Договоров с просрочкой"
+          label="Просрочка портфеля"
           value={pct(overdue, activeContracts)}
-          hint={`${overdue} из ${activeContracts} действующих · 90+: ${severe}`}
+          hint={`${overdue} из ${activeContracts} договоров · 90+: ${severe}`}
           tone={overdue > 0 ? "bad" : undefined}
         />
       </div>
 
-      <h2 className="dash-section">Заявки и решения</h2>
       <div className="dash-grid">
-        <Panel
-          title={submitted === 0 ? "Воронка заявок" : `До одобрения доходит ${pct(approved, submitted)} поданных заявок`}
-        >
+        <Panel title={submitted === 0 ? "Воронка заявок" : `До одобрения доходит ${pct(approved, submitted)} поданных заявок`}>
           <Funnel data={d} />
         </Panel>
         <Panel
-          title={
-            weeklyDecided === 0
-              ? "Доля одобрений по неделям"
-              : `За период одобрено ${pct(weeklyApproved, weeklyDecided)} решений стадии Б`
-          }
+          title={weeklyDecided === 0 ? "Одобрения по неделям" : `Одобряем ${pct(weeklyApproved, weeklyDecided)} решений стадии Б`}
         >
           <WeeklyApproval data={d} />
         </Panel>
-        <Panel
-          title={
-            reasons[0]
-              ? `Чаще всего отказывают по причине «${reasonCodeLabel(reasons[0].reason_code)}» (${pct(reasons[0].count, rejectedTotal)})`
-              : "Причины отказов"
-          }
-        >
+        <Panel title={reasons[0] ? `Главная причина отказа — «${reasonCodeLabel(reasons[0].reason_code)}»` : "Причины отказов"}>
           <RejectionReasons data={d} />
         </Panel>
-        <Panel title="Балл БКИ по решениям стадии Б">
-          <ScoreHistogram data={d} />
+        <Panel title={activeContracts === 0 ? "Просрочка портфеля" : `С просрочкой ${pct(overdue, activeContracts)} договоров`}>
+          <Delinquency data={d} />
         </Panel>
       </div>
 
-      <h2 className="dash-section">Портфель</h2>
+      <details className="dash-more">
+        <summary>Ещё показатели — балл БКИ, когорты выдач, работа операторов и источников</summary>
       <div className="dash-grid">
-        <Panel
-          title={
-            activeContracts === 0
-              ? "Просрочка сейчас"
-              : `С просрочкой сейчас ${pct(overdue, activeContracts)} действующих договоров`
-          }
-        >
-          <Delinquency data={d} />
+        <Panel title="Балл БКИ по решениям стадии Б">
+          <ScoreHistogram data={d} />
         </Panel>
         <Panel
           title={
             totalMature === 0
-              ? "Просрочка по месяцу выдачи (60+ за 6 мес.)"
-              : `Среди зрелых когорт просрочку 60+ за 6 мес. допускают ${pct(totalBad, totalMature)} договоров`
+              ? "Просрочка 60+ по месяцу выдачи"
+              : `Просрочку 60+ за 6 мес. допускают ${pct(totalBad, totalMature)} зрелых договоров`
           }
         >
           <Vintage data={d} />
         </Panel>
       </div>
-
-      <h2 className="dash-section">Операционное</h2>
       <div className="dash-grid dash-grid--3">
         <Panel
           title={
@@ -591,6 +554,7 @@ function DashboardBody({ d }: { d: Summary }) {
           )}
         </Panel>
       </div>
+      </details>
     </>
   );
 }

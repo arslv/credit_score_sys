@@ -157,6 +157,7 @@ export function ApplicationDetailPage() {
   const { employee } = useAuth();
   const queryClient = useQueryClient();
   const [openDocumentId, setOpenDocumentId] = useState<string | null>(null);
+  const [acceptNoteOpen, setAcceptNoteOpen] = useState(false);
 
   const query = useQuery({
     queryKey: ["application", id],
@@ -512,6 +513,7 @@ export function ApplicationDetailPage() {
                 </p>
               )}
             </div>
+            <div className="pf-verdict__side">
             <dl className="pf-verdict__deal">
               <div>
                 <dt>Товар</dt>
@@ -526,6 +528,29 @@ export function ApplicationDetailPage() {
                 <dd>{app.external_id}</dd>
               </div>
             </dl>
+            {/* «Принять» — будущая отправка решения в CRM по API. Пока заглушка:
+                ничего не отправляет, только объясняет, что функция в разработке. */}
+            {canOperateFssp && (
+              <div className="accept-stub">
+                <div className="accept-stub__row">
+                  <button
+                    type="button"
+                    className="btn btn-primary accept-stub__btn"
+                    aria-describedby="accept-stub-note"
+                    onClick={() => setAcceptNoteOpen((v) => !v)}
+                  >
+                    Принять
+                  </button>
+                  <span className="soon-tag">в разработке</span>
+                </div>
+                <p id="accept-stub-note" className={acceptNoteOpen ? "accept-stub__note accept-stub__note--open" : "accept-stub__note"}>
+                  {acceptNoteOpen
+                    ? "Пока ничего не отправляется. Кнопка будет передавать в CRM решение «принять заявку» по нашим данным; сейчас решение принимается в CRM."
+                    : "Отправит в CRM решение «принять» — скоро."}
+                </p>
+              </div>
+            )}
+            </div>
           </header>
 
           {actionCount > 0 && (

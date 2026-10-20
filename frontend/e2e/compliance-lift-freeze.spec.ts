@@ -30,6 +30,9 @@ test("проверка по перечням: снятие заморозки т
   await expect(confirmButton).toBeEnabled();
   await confirmButton.click();
 
+  // По умолчанию видны только ждущие разбора — снятое уходит в «Разобраны».
+  await expect(card).toHaveCount(0);
+  await page.getByRole("tab", { name: /Разобраны/ }).click();
   await expect(card.getByText("заморожено")).toHaveCount(0);
   await expect(card.getByText("снято")).toBeVisible();
 });

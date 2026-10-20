@@ -54,6 +54,10 @@ class Employee(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
+    # T23: «удалён» из админки. Строку не стираем — на неё ссылается история
+    # (audit_log и др. append-only, CLAUDE.md правило 1); удалённый скрыт из
+    # списка сотрудников и не может войти (active = false).
+    deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
 
 
 class Document(Base):

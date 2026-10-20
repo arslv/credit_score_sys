@@ -363,7 +363,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Employee */
+        delete: operations["delete_employee_api_employees__employee_id__delete"];
         options?: never;
         head?: never;
         /** Update Employee */
@@ -2821,6 +2822,8 @@ export interface operations {
     list_employees_api_employees_get: {
         parameters: {
             query?: {
+                /** @description и удалённые — для подписей в журнале аудита */
+                include_deleted?: boolean;
                 page?: number;
                 page_size?: number;
             };
@@ -2871,6 +2874,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EmployeeAccountOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_employee_api_employees__employee_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

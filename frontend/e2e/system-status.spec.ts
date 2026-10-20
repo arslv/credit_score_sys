@@ -1,5 +1,5 @@
-// T20: «Состояние системы» — одна строка-итог сверху и проблемы
-// человеческим языком; технические счётчики — в свёрнутых «Подробностях».
+// T20/T23: «Состояние системы» — итог сверху, проблемы человеческим языком
+// и плитки по узлам системы.
 import { test, expect } from "@playwright/test";
 import { healthProblems, type HealthInput } from "../src/lib/health";
 import { loadSeed } from "./fixtures";
@@ -42,16 +42,14 @@ test("каждая проблема — что случилось и что де
   }
 });
 
-test("экран: строка-итог сверху, подробности свёрнуты", async ({ page }) => {
+test("экран: итог сверху, плитки по узлам системы видны сразу", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/system");
 
   await expect(page.getByRole("heading", { name: "Состояние системы" })).toBeVisible();
   await expect(page.getByTestId("health-summary")).toHaveText(/^(Всё работает|Есть проблемы: \d+)$/);
-  const details = page.locator("details", { hasText: "Подробности" });
-  await expect(details).not.toHaveAttribute("open", /.*/);
-  await expect(page.getByText("Платных запросов в БКИ за месяц")).not.toBeVisible();
-  await details.locator("summary").click();
-  await expect(page.getByText("Платных запросов в БКИ за месяц")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Узлы системы" })).toBeVisible();
+  await expect(page.getByText(/платных запросов за месяц: \d+/)).toBeVisible();
+  await expect(page.locator(".sys-tile", { hasText: "Перечень Росфинмониторинга" })).toBeVisible();
 });

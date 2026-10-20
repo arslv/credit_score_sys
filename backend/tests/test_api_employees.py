@@ -130,3 +130,49 @@ async def test_employee_pages_do_not_overlap_when_names_repeat(admin_client, ses
 
     assert len(seen) == 25
     assert len(set(seen)) == 25
+
+
+async def test_admin_can_delete_employee_history_stays(admin_client, session_factory):
+    """T23: удаление — отметка deleted_at: сотрудник пропадает из списка, не
+    может войти, сессии закрыты; строка (и ссылки на неё в журнале) остаётся."""
+    await _admin_client(admin_client, session_factory)
+    target_id = await create_employee(session_factory, email="gone@example.com", role="operator")
+
+    response = await admin_client.delete(f"/api/employees/{target_id}")
+    assert response.status_code == 204
+
+    listed = await admin_client.get("/api/employees")
+    assert listed.status_code == 200
+    assert str(target_id) not in {item["id"] for item in listed.json()["items"]}
+    with_deleted = await admin_client.get("/api/employees", params={"include_deleted": True})
+    assert with_deleted.status_code == 200
+    assert str(target_id) in {item["id"] for item in with_deleted.json()["items"]}
+
+    async with session_factory() as session:
+        row = await session.get(Employee, target_id)
+        assert row is not None and row.deleted_at is not None and row.active is False
+
+    login_response = await admin_client.post(
+        "/api/auth/login", json={"email": "gone@example.com", "password": DEFAULT_PASSWORD}
+    )
+    assert login_response.status_code == 401
+
+
+async def test_cannot_delete_self_or_reuse_deleted_email(admin_client, session_factory):
+    admin_id = await create_employee(session_factory, email="root@example.com", role="admin")
+    await login(admin_client, "root@example.com")
+
+    self_delete = await admin_client.delete(f"/api/employees/{admin_id}")
+    assert self_delete.status_code == 409
+
+    target_id = await create_employee(session_factory, email="old@example.com", role="viewer")
+    deleted = await admin_client.delete(f"/api/employees/{target_id}")
+    assert deleted.status_code == 204
+    again = await admin_client.delete(f"/api/employees/{target_id}")
+    assert again.status_code == 404
+
+    reuse = await admin_client.post(
+        "/api/employees",
+        json={"full_name": "Новый", "email": "old@example.com", "role": "viewer", "password": "abc12345678"},
+    )
+    assert reuse.status_code == 409

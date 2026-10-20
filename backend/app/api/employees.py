@@ -1,10 +1,16 @@
 """T12: сотрудники — учётные записи и роли (ТЗ, «Сотрудники»: меняет admin).
 Смена пароля/роли/деактивации закрывает все сессии сотрудника; последнего
-активного admin нельзя деактивировать или понизить (ваши уточнения)."""
+активного admin нельзя деактивировать или понизить (ваши уточнения).
 
+T23: сотрудника можно удалить. Строку не стираем — на неё ссылается история
+(audit_log, status_history, ruleset_versions… — append-only): ставим
+deleted_at и active = false, закрываем сессии. Удалённый не виден в списке
+(кроме include_deleted — для подписей в журнале аудита) и не меняется."""
+
+from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +56,10 @@ async def _count_other_active_admins(session: AsyncSession, exclude_id: UUID) ->
         await session.execute(
             select(func.count())
             .select_from(Employee)
-            .where(Employee.role == "admin", Employee.active.is_(True), Employee.id != exclude_id)
+            .where(
+                Employee.role == "admin", Employee.active.is_(True), Employee.deleted_at.is_(None),
+                Employee.id != exclude_id,
+            )
         )
     ).scalar_one()
 
@@ -58,15 +67,21 @@ async def _count_other_active_admins(session: AsyncSession, exclude_id: UUID) ->
 @router.get("", response_model=Page[EmployeeAccountOut])
 async def list_employees(
     params: PageParams = Depends(),
+    include_deleted: bool = Query(False, description="и удалённые — для подписей в журнале аудита"),
     employee: Employee = Depends(require_roles(*_ADMIN_ONLY)),
     session: AsyncSession = Depends(get_session),
 ) -> Page[EmployeeAccountOut]:
-    total = (await session.execute(select(func.count()).select_from(Employee))).scalar_one()
+    visible = [] if include_deleted else [Employee.deleted_at.is_(None)]
+    total = (await session.execute(select(func.count()).select_from(Employee).where(*visible))).scalar_one()
     rows = (
         # id вторым ключом: при одинаковых ФИО порядок иначе не определён, и
         # соседние страницы пересекались — один сотрудник дважды, другой пропадал.
         await session.execute(
-            select(Employee).order_by(Employee.full_name, Employee.id).offset(params.offset).limit(params.page_size)
+            select(Employee)
+            .where(*visible)
+            .order_by(Employee.full_name, Employee.id)
+            .offset(params.offset)
+            .limit(params.page_size)
         )
     ).scalars().all()
     return Page(
@@ -83,6 +98,16 @@ async def create_employee(
 ) -> EmployeeAccountOut:
     if payload.role not in EMPLOYEE_ROLES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"неизвестная роль: {payload.role!r}")
+    existing = (
+        await session.execute(select(Employee).where(Employee.email == payload.email))
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="этот email был у удалённого сотрудника — укажите другой"
+            if existing.deleted_at is not None
+            else "сотрудник с таким email уже есть",
+        )
 
     row = Employee(
         full_name=payload.full_name, email=payload.email, role=payload.role,
@@ -105,7 +130,7 @@ async def update_employee(
     session: AsyncSession = Depends(get_session),
 ) -> EmployeeAccountOut:
     row = await session.get(Employee, employee_id)
-    if row is None:
+    if row is None or row.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="сотрудник не найден")
 
     demoting = payload.role is not None and payload.role != "admin" and row.role == "admin"
@@ -146,3 +171,30 @@ async def update_employee(
     )
     await session.commit()
     return EmployeeAccountOut(id=row.id, full_name=row.full_name, email=row.email, role=row.role, active=row.active)
+
+
+@router.delete("/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_employee(
+    employee_id: UUID, request: Request,
+    employee: Employee = Depends(require_roles(*_ADMIN_ONLY)),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    row = await session.get(Employee, employee_id)
+    if row is None or row.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="сотрудник не найден")
+    if row.id == employee.id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="нельзя удалить самого себя")
+    if row.role == "admin" and row.active and await _count_other_active_admins(session, exclude_id=row.id) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="нельзя удалить последнего активного администратора"
+        )
+
+    row.deleted_at = datetime.now(timezone.utc)
+    row.active = False
+    await revoke_all_sessions_for_employee(session, row.id)
+    await record_audit(
+        session, employee_id=employee.id, action="manage_employee",
+        object_type="employee", object_id=row.id, request=request, details={"deleted": True},
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

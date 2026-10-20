@@ -90,3 +90,29 @@ test("справка: поиск по терминам и оглавление",
   await page.getByRole("searchbox", { name: "Найти термин" }).fill("несуществующее слово");
   await expect(page.getByText("Такого термина нет")).toBeVisible();
 });
+
+// T23: сотрудника можно удалить — пропадает из списка; себя удалить нельзя.
+test("сотрудника можно удалить из окна редактирования", async ({ page }) => {
+  const seed = loadSeed();
+  await login(page, seed.admin.email, seed.admin.password);
+  await page.goto("/employees");
+
+  await page.getByRole("button", { name: "Новый сотрудник" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Новый сотрудник" });
+  const email = `e2e-delete-${Date.now()}@example.com`;
+  await dialog.getByLabel("ФИО").fill("Удаляемый Тест");
+  await dialog.getByLabel("Email").fill(email);
+  await dialog.getByRole("textbox", { name: /^Пароль/ }).fill("e2e-delete-password-123");
+  await dialog.getByRole("button", { name: "Создать" }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await page.getByRole("searchbox", { name: "Имя или email" }).fill(email);
+  const row = page.getByRole("row", { name: new RegExp(email) });
+  await row.getByRole("button", { name: "Изменить" }).click();
+  const edit = page.getByRole("dialog", { name: "Удаляемый Тест" });
+  await edit.getByRole("button", { name: "Удалить" }).click();
+  await expect(edit.getByText("Удалить сотрудника? Его действия в журнале сохранятся.")).toBeVisible();
+  await edit.getByRole("button", { name: "Удалить" }).click();
+  await expect(edit).toHaveCount(0);
+  await expect(row).toHaveCount(0);
+});

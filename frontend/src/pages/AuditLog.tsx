@@ -18,7 +18,10 @@ export function AuditLogPage() {
   const employeesQuery = useQuery({
     queryKey: ["employees"],
     queryFn: async () => {
-      const { data, error } = await api.GET("/api/employees", { params: { query: { page: 1, page_size: 100 } } });
+      // С удалёнными — их прошлые действия в журнале остаются и подписываются именем.
+      const { data, error } = await api.GET("/api/employees", {
+        params: { query: { page: 1, page_size: 100, include_deleted: true } },
+      });
       if (error) throw error;
       return data;
     },

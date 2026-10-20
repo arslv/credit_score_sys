@@ -1004,51 +1004,150 @@ a:hover {
 }
 
 /* Состояние системы */
-.health-summary {
+/* Состояние системы (T23, по отзыву): крупный итог, проблемы карточками,
+   плитки по узлам системы. */
+.sys-hero {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: var(--font-lg);
-  font-weight: var(--weight-bold);
-  margin: 0 0 var(--space-3);
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--status-ok-line);
+  border-radius: var(--radius-lg);
+  background: var(--status-ok-soft);
 }
 
-.health-summary::before {
-  content: "";
-  width: 10px;
-  height: 10px;
+.sys-hero--bad {
+  border-color: var(--status-bad-line);
+  background: var(--status-bad-soft);
+}
+
+.sys-hero__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: var(--status-ok);
+  color: var(--color-surface);
+  font-size: 22px;
+  font-weight: var(--weight-bold);
 }
 
-.health-summary--bad::before {
+.sys-hero--bad .sys-hero__icon {
   background: var(--status-bad);
 }
 
-.problem-list {
-  list-style: none;
+.sys-hero__title {
   margin: 0;
-  padding: 0;
-  max-width: 760px;
+  font-size: var(--font-xl);
+  font-weight: var(--weight-bold);
 }
 
-.problem-list > li {
-  padding: var(--space-3) 0;
-  border-top: var(--line);
-}
-
-.problem-list > li:first-child {
-  border-top: none;
-}
-
-.problem-what {
-  font-weight: var(--weight-medium);
-}
-
-.problem-todo {
-  color: var(--color-text-muted);
+.sys-hero__sub {
+  margin: 0;
   font-size: var(--font-sm);
+  color: var(--color-text-muted);
 }
+
+.sys-problems {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sys-problem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: var(--line);
+  border-left: 3px solid var(--status-bad);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.sys-problem__what {
+  font-weight: var(--weight-bold);
+}
+
+.sys-problem__todo {
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.sys-section {
+  margin: var(--space-5) 0 var(--space-3);
+  font-size: var(--font-md);
+}
+
+.sys-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.sys-tile {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border: var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.sys-tile__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.sys-tile__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--status-ok);
+  color: var(--color-surface);
+  font-size: 11px;
+  font-weight: var(--weight-bold);
+}
+
+.sys-tile--bad .sys-tile__icon { background: var(--status-bad); }
+.sys-tile--warn .sys-tile__icon { background: var(--status-gray); }
+
+.sys-tile--mute .sys-tile__icon {
+  border: 1.5px dashed var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.sys-tile__title {
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.sys-tile__value {
+  font-size: var(--font-xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+}
+
+.sys-tile--bad .sys-tile__value { color: var(--status-bad); }
+.sys-tile--warn .sys-tile__value { color: var(--status-gray); }
+.sys-tile--mute .sys-tile__value { color: var(--color-text-muted); }
+
+.sys-tile__hint {
+  margin-top: 2px;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
 
 /* --- T23: общие блоки экранов (components/ui.tsx) --- */
 
@@ -1408,30 +1507,54 @@ a:hover {
 /* Проверка по перечням (бывший «Комплаенс»): строка совпадения. */
 
 .match-list {
+  border: var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+/* Совпадение — одна строка: статус · заявка и клиент · дата и разбор · действия. */
+.match {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-4);
+}
+
+.match + .match {
   border-top: var(--line);
 }
 
-.match {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-2) var(--space-4);
-  padding: var(--space-3) 0;
-  border-bottom: var(--line);
+.match--frozen {
+  background: color-mix(in srgb, var(--status-bad-soft) 45%, var(--color-surface));
 }
 
-.match__title {
+.match__who {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
   font-weight: var(--weight-medium);
 }
 
+.match__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .match__meta {
-  font-size: var(--font-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-3);
+  font-size: var(--font-xs);
   color: var(--color-text-muted);
 }
 
 .match__actions {
   display: flex;
-  gap: var(--space-2);
-  align-items: flex-start;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .match__lift {
@@ -1445,6 +1568,39 @@ a:hover {
 .match__lift .field {
   flex: 1;
   margin-top: 0;
+}
+
+.match-more {
+  margin-top: var(--space-3);
+}
+
+/* Короткое пояснение страницы — свёрнуто, раскрывается по клику. */
+.explain-fold {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-sm);
+}
+
+.explain-fold > summary {
+  cursor: pointer;
+  color: var(--color-accent);
+  font-weight: var(--weight-medium);
+}
+
+.explain-fold ol {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3) var(--space-4) var(--space-3) 40px;
+  border-radius: var(--radius-lg);
+  background: var(--color-subtle);
+}
+
+@media (max-width: 900px) {
+  .match {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .match__actions {
+    justify-content: flex-start;
+  }
 }
 
 /* Справка: оглавление слева (липкое), разделы справа. */
@@ -3799,6 +3955,42 @@ mark {
   color: var(--color-text-muted);
 }
 
+.pf-verdict__side {
+  display: grid;
+  gap: var(--space-3);
+  flex-shrink: 0;
+  min-width: 260px;
+}
+
+/* «Принять» — заглушка: выглядит как действие, но с пометкой «в разработке». */
+.accept-stub {
+  padding: var(--space-3);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.accept-stub__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.accept-stub__btn {
+  min-width: 120px;
+  justify-content: center;
+  opacity: 0.75;
+}
+
+.accept-stub__note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.accept-stub__note--open {
+  color: var(--color-text);
+}
+
 .pf-verdict__deal {
   display: grid;
   gap: 4px;
@@ -4207,4 +4399,43 @@ mark {
   .pf-verdict {
     flex-direction: column;
   }
+}
+
+/* Аналитика: четыре главные цифры в ряд; остальное — в «Ещё показатели». */
+.dash-kpis--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dash-range {
+  font-size: var(--font-sm);
+}
+
+.dash-more {
+  margin-top: var(--space-5);
+}
+
+.dash-more > summary {
+  cursor: pointer;
+  padding: var(--space-3) 0;
+  color: var(--color-accent);
+  font-weight: var(--weight-medium);
+}
+
+@media (max-width: 900px) {
+  .dash-kpis--4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Подтверждение удаления в окне сотрудника. */
+.btn-danger {
+  border-color: var(--status-bad);
+  background: var(--status-bad);
+  color: var(--color-surface);
+}
+
+.modal-confirm {
+  font-size: var(--font-sm);
+  color: var(--status-bad);
+  font-weight: var(--weight-medium);
 }

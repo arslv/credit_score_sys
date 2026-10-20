@@ -4,17 +4,22 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { EmptyState, ErrorState, LoadingState, PageHeader, SearchInput, Segmented, Toolbar, matches } from "../components/ui";
 import { formatDateTime } from "../lib/format";
-import { complianceVerdictLabel, reasonCodeLabel } from "../lib/labels";
+import { complianceVerdictLabel } from "../lib/labels";
 
 // T23 (решение владельца): бывший «Комплаенс» — «Проверка по перечням».
 // Слово «комплаенс» людям непонятно; разбирают совпадения admin и operator.
+const PAGE = 20;
+
 export function CompliancePage() {
   const queryClient = useQueryClient();
   const [openReasonFor, setOpenReasonFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [freezeFilter, setFreezeFilter] = useState<"" | "frozen">("");
+  // T23 (по отзыву): по умолчанию — только то, что ждёт разбора; разобранные
+  // и вся история — по переключателю. Длинный список — порциями.
+  const [freezeFilter, setFreezeFilter] = useState<"frozen" | "done" | "">("frozen");
+  const [shown, setShown] = useState(PAGE);
 
   const query = useQuery({
     queryKey: ["compliance-matches"],
@@ -77,46 +82,56 @@ export function CompliancePage() {
   }
 
   // Замороженные — сверху: это очередь работы; снятые остаются ниже для истории.
-  const items = (query.data?.items ?? [])
+  const all = query.data?.items ?? [];
+  const items = all
     .filter(
       (m) =>
-        matches(search, m.external_id, m.client_name) && (freezeFilter === "" || m.freeze_active),
+        matches(search, m.external_id, m.client_name) &&
+        (freezeFilter === "" || (freezeFilter === "frozen" ? m.freeze_active : !m.freeze_active)),
     )
     .sort((a, b) => Number(b.freeze_active) - Number(a.freeze_active));
-  const frozenCount = (query.data?.items ?? []).filter((m) => m.freeze_active).length;
+  const frozenCount = all.filter((m) => m.freeze_active).length;
+  const visible = items.slice(0, shown);
 
   return (
     <section>
       <PageHeader
         title="Проверка по перечням"
-        description="Заявители, чьё ФИО совпало с перечнем Росфинмониторинга (террористы и экстремисты, 115-ФЗ). Такому клиенту рассрочку выдавать нельзя, поэтому система его замораживает и ждёт, пока человек разберётся."
+        description="ФИО заявителя совпало с перечнем Росфинмониторинга (115-ФЗ). Пока совпадение не разобрано, клиент заморожен: рассрочку ему не выдаём."
       />
-      <div className="page-explain">
-        <div className="page-explain__title">Как разобрать совпадение</div>
+      <details className="explain-fold">
+        <summary>Как разобрать совпадение</summary>
         <ol>
+          <li>Откройте заявку и сравните клиента с записью перечня: дату и место рождения, паспорт. Чаще всего это однофамилец.</li>
           <li>
-            Откройте заявку и сравните данные клиента с записью в перечне: дату и место рождения, паспорт. Совпадение
-            ищется по ФИО, поэтому часто это просто однофамилец.
+            <b>Не он</b> — укажите причину («другая дата рождения») и подтвердите снятие: клиент снова может получить
+            рассрочку.
           </li>
           <li>
-            <b>Не он</b> — нажмите «Не он — пометить ложным». Откроется поле: напишите, почему (например, «другая
-            дата рождения»), и нажмите «Подтвердить снятие». Клиент снова может получить рассрочку.
-          </li>
-          <li>
-            <b>Он</b> — нажмите «Он — подтвердить совпадение». Заморозка остаётся, рассрочку не выдаём. Клиенту
-            причину не сообщаем.
+            <b>Он</b> — заморозка остаётся, рассрочку не выдаём, клиенту причину не сообщаем.
           </li>
         </ol>
-      </div>
+      </details>
       <Toolbar>
-        <SearchInput value={search} onChange={setSearch} placeholder="Номер заявки или ФИО" />
+        <SearchInput
+          value={search}
+          onChange={(v) => {
+            setSearch(v);
+            setShown(PAGE);
+          }}
+          placeholder="Номер заявки или ФИО"
+        />
         <Segmented
           label="Заморозка"
           value={freezeFilter}
-          onChange={setFreezeFilter}
+          onChange={(v) => {
+            setFreezeFilter(v);
+            setShown(PAGE);
+          }}
           options={[
-            { value: "", label: "Все", count: query.data?.items.length },
-            { value: "frozen", label: "Заморожено", count: frozenCount },
+            { value: "frozen", label: "Ждут разбора", count: frozenCount },
+            { value: "done", label: "Разобраны", count: all.length - frozenCount },
+            { value: "", label: "Все", count: all.length },
           ]}
         />
       </Toolbar>
@@ -124,31 +139,34 @@ export function CompliancePage() {
       {query.isError && <ErrorState message="Не удалось загрузить совпадения." onRetry={() => void query.refetch()} />}
       {query.data && items.length === 0 && (
         <EmptyState
-          title={freezeFilter === "frozen" ? "Активных заморозок нет" : "Совпадений нет"}
+          title={freezeFilter === "frozen" ? "Разбирать нечего — заморозок нет" : "Совпадений нет"}
           hint="Новые совпадения появятся здесь автоматически после стадии А."
         />
       )}
-      {items.length > 0 && (
+      {visible.length > 0 && (
         <div className="match-list">
-          {items.map((m) => (
-            <article key={m.decision_id} className="match">
-              <div>
-                <div className="match__title">
-                  <Link to={`/applications/${m.application_id}`}>{m.external_id}</Link> · {m.client_name ?? "—"}
-                </div>
-                <div className="match__meta">
-                  {m.reason_code ? reasonCodeLabel(m.reason_code) : "—"} · {formatDateTime(m.decided_at)} ·{" "}
-                  <span className={`badge ${m.freeze_active ? "badge-danger" : "badge-neutral"}`}>
-                    {m.freeze_active ? "заморожено" : "снято"}
-                  </span>{" "}
-                  · разбор: {complianceVerdictLabel(m.latest_review_verdict)}
-                </div>
+          {visible.map((m) => (
+            <article key={m.decision_id} className={m.freeze_active ? "match match--frozen" : "match"}>
+              <span className="match__status">
+                <span className={m.freeze_active ? "badge badge-danger" : "badge badge-neutral"}>
+                  {m.freeze_active ? "заморожено" : "снято"}
+                </span>
+              </span>
+              <div className="match__who">
+                <Link to={`/applications/${m.application_id}`}>{m.external_id}</Link>
+                <span className="match__name">{m.client_name ?? "—"}</span>
+              </div>
+              <div className="match__meta">
+                <span>{formatDateTime(m.decided_at)}</span>
+                <span>разбор: {complianceVerdictLabel(m.latest_review_verdict)}</span>
               </div>
               <div className="match__actions">
                 <button
                   className={
                     m.latest_review_verdict === "false_positive" ? "btn btn-small btn--chosen" : "btn btn-small"
                   }
+                  aria-label="Не он — пометить ложным"
+                  title="Не он — пометить совпадение ложным"
                   aria-pressed={m.latest_review_verdict === "false_positive"}
                   disabled={reviewMutation.isPending}
                   onClick={() =>
@@ -159,10 +177,12 @@ export function CompliancePage() {
                 >
                   {pendingFor === m.decision_id && reviewMutation.variables?.verdict === "false_positive"
                     ? "Сохраняю…"
-                    : "Не он — пометить ложным"}
+                    : "Не он"}
                 </button>
                 <button
                   className={m.latest_review_verdict === "confirmed" ? "btn btn-small btn--chosen" : "btn btn-small"}
+                  aria-label="Он — подтвердить совпадение"
+                  title="Он — подтвердить совпадение"
                   aria-pressed={m.latest_review_verdict === "confirmed"}
                   disabled={reviewMutation.isPending}
                   onClick={() =>
@@ -171,7 +191,7 @@ export function CompliancePage() {
                 >
                   {pendingFor === m.decision_id && reviewMutation.variables?.verdict === "confirmed"
                     ? "Сохраняю…"
-                    : "Он — подтвердить совпадение"}
+                    : "Он"}
                 </button>
                 {m.freeze_active && m.client_id && (
                   <button className="btn btn-small btn-primary" onClick={() => setOpenReasonFor(m.decision_id)}>
@@ -211,6 +231,11 @@ export function CompliancePage() {
             </article>
           ))}
         </div>
+      )}
+      {items.length > shown && (
+        <button type="button" className="btn match-more" onClick={() => setShown((n) => n + PAGE)}>
+          Показать ещё {Math.min(PAGE, items.length - shown)} из {items.length - shown}
+        </button>
       )}
     </section>
   );

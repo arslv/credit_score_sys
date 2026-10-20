@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
 import {
   EmptyState,
@@ -249,9 +250,24 @@ function EditEmployeeModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const { employee: me } = useAuth();
   const [role, setRole] = useState(employee.role);
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // T23: удаление — сотрудник пропадает из списка и не может войти; его
+  // действия в журнале аудита остаются (строку не стираем, см. API).
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await api.DELETE("/api/employees/{employee_id}", {
+        params: { path: { employee_id: employee.id } },
+      });
+      if (error) throw new Error(errorText(error, "не удалось удалить"));
+    },
+    onSuccess: onDone,
+    onError: (error: Error) => setFormError(error.message),
+  });
 
   const updateMutation = useMutation({
     mutationFn: async (patch: { active?: boolean; role?: string; password?: string }) => {
@@ -284,6 +300,23 @@ function EditEmployeeModal({
       open
       onClose={onClose}
       footer={
+        confirmDelete ? (
+          <>
+            <span className="modal-confirm">Удалить сотрудника? Его действия в журнале сохранятся.</span>
+            <span className="toolbar__spacer" />
+            <button type="button" className="btn" onClick={() => setConfirmDelete(false)}>
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+            >
+              Удалить
+            </button>
+          </>
+        ) : (
         <>
           <button
             type="button"
@@ -293,6 +326,11 @@ function EditEmployeeModal({
           >
             {employee.active ? "Отключить доступ" : "Включить доступ"}
           </button>
+          {me?.id !== employee.id && (
+            <button type="button" className="btn btn-danger-outline" onClick={() => setConfirmDelete(true)}>
+              Удалить
+            </button>
+          )}
           <span className="toolbar__spacer" />
           <button type="button" className="btn" onClick={onClose}>
             Отмена
@@ -301,6 +339,7 @@ function EditEmployeeModal({
             Сохранить
           </button>
         </>
+        )
       }
     >
       <form id="edit-employee" onSubmit={handleSubmit}>
