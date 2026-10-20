@@ -48,3 +48,21 @@ test("справочник полей YAML: поиск находит призн
   await expect(reference.getByText("features.bki_max_overdue_6mo / 12mo / 24mo")).toBeVisible();
   await expect(reference.getByText("limits.amount_min / amount_max")).toHaveCount(0);
 });
+
+// Клик по полю в справочнике — переход к нему в тексте YAML.
+test("справочник полей: клик по полю выделяет его строку в YAML", async ({ page }) => {
+  const seed = loadSeed();
+  await login(page, seed.admin.email, seed.admin.password);
+  await page.goto("/rulesets");
+
+  await page.getByText("Экспертный режим — YAML напрямую").click();
+  const reference = page.getByRole("complementary", { name: "Справочник полей" });
+  await reference.getByLabel("Поиск по справочнику полей").fill("cache_days");
+  await reference.getByRole("button", { name: /bki\.cache_days/ }).click();
+
+  const selected = await page.getByLabel("YAML конфига правил").evaluate((el) => {
+    const t = el as HTMLTextAreaElement;
+    return t.value.slice(t.selectionStart, t.selectionEnd);
+  });
+  expect(selected.trim()).toMatch(/^cache_days:\s*\d+/);
+});

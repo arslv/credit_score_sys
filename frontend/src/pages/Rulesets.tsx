@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import * as yaml from "js-yaml";
@@ -6,6 +6,7 @@ import { api } from "../api/client";
 import { ErrorState, LoadingState, PageHeader } from "../components/ui";
 import { RulesetReference } from "../components/RulesetReference";
 import { formatDateTime } from "../lib/format";
+import { locateInYaml } from "../lib/yamlLocate";
 import { reasonCodeLabel } from "../lib/labels";
 
 // Ответы этих эндпоинтов не типизированы в схеме (обычные dict, не Pydantic
@@ -393,6 +394,19 @@ export function RulesetsPage() {
   const [rollbackError, setRollbackError] = useState<string | null>(null);
   const [publishComment, setPublishComment] = useState("");
   const [showAllVersions, setShowAllVersions] = useState(false);
+  const yamlRef = useRef<HTMLTextAreaElement>(null);
+
+  // Справочник → место в YAML: выделяем строку и прокручиваем её в верхнюю треть.
+  function locateInEditor(path: string): boolean {
+    const textarea = yamlRef.current;
+    const spot = locateInYaml(yamlText, path);
+    if (!textarea || !spot) return false;
+    const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20;
+    textarea.focus({ preventScroll: true });
+    textarea.setSelectionRange(spot.start, spot.end);
+    textarea.scrollTop = Math.max(0, spot.line * lineHeight - textarea.clientHeight / 3);
+    return true;
+  }
 
   // Симуляция относится к конкретному тексту конфига: любая правка сбрасывает её,
   // иначе «Опубликовать» отправило бы устаревший прогон (бэкенд всё равно отклонит).
@@ -668,6 +682,7 @@ export function RulesetsPage() {
         <div className="rules-expert__body">
           <div className="rules-expert__editor">
             <textarea
+              ref={yamlRef}
               value={yamlText}
               onChange={(e) => setYamlText(e.target.value)}
               spellCheck={false}
@@ -680,7 +695,7 @@ export function RulesetsPage() {
               публикация — те же шаги справа вверху.
             </p>
           </div>
-          <RulesetReference />
+          <RulesetReference onLocate={locateInEditor} />
         </div>
       </details>
 

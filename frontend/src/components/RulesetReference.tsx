@@ -3,9 +3,11 @@ import { RULESET_DOCS } from "../lib/rulesetDocs";
 import { matches } from "./ui";
 
 // Справочник полей YAML рядом с редактором: поиск по пути и описанию,
-// разделы — свёрнутыми группами (при поиске раскрываются сами).
-export function RulesetReference() {
+// разделы — свёрнутыми группами (при поиске раскрываются сами). Клик по полю —
+// переход к нему в тексте YAML (onLocate возвращает false, если места нет).
+export function RulesetReference({ onLocate }: { onLocate: (path: string) => boolean }) {
   const [search, setSearch] = useState("");
+  const [missing, setMissing] = useState<string | null>(null);
   const query = search.trim();
   const groups = RULESET_DOCS.map((group) => ({
     ...group,
@@ -37,9 +39,22 @@ export function RulesetReference() {
               {group.entries.map((entry) => (
                 <div key={entry.path} className="yaml-ref__entry">
                   <dt>
-                    <code>{entry.path}</code>
+                    <button
+                      type="button"
+                      className="yaml-ref__jump"
+                      title="Показать в YAML"
+                      onClick={() => setMissing(onLocate(entry.path) ? null : entry.path)}
+                    >
+                      <code>{entry.path}</code>
+                      <span className="yaml-ref__jump-icon" aria-hidden="true">↵</span>
+                    </button>
                   </dt>
                   <dd>
+                    {missing === entry.path && (
+                      <span className="yaml-ref__missing" role="status">
+                        В текущем YAML этого поля нет — его можно добавить.
+                      </span>
+                    )}
                     {entry.text}
                     {entry.note && <span className="yaml-ref__note">{entry.note}</span>}
                     {entry.example && <pre className="yaml-ref__example">{entry.example}</pre>}

@@ -1688,6 +1688,7 @@ mark {
 
 .rule-row__input input {
   flex: 1;
+  color: var(--color-text);
   min-width: 0;
   height: 100%;
   padding: 0 var(--space-2) 0 var(--space-3);
@@ -1855,6 +1856,42 @@ mark {
 .yaml-ref__entry {
   padding: var(--space-2) 0;
   border-top: 1px dashed var(--color-border);
+}
+
+.yaml-ref__jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 1px 4px;
+  margin-left: -4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.yaml-ref__jump:hover {
+  background: var(--color-accent-soft);
+}
+
+.yaml-ref__jump-icon {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  opacity: 0;
+}
+
+.yaml-ref__jump:hover .yaml-ref__jump-icon,
+.yaml-ref__jump:focus-visible .yaml-ref__jump-icon {
+  opacity: 1;
+}
+
+.yaml-ref__missing {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-text-muted);
+  font-style: italic;
 }
 
 .yaml-ref__entry dt code {
