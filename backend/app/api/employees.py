@@ -63,7 +63,11 @@ async def list_employees(
 ) -> Page[EmployeeAccountOut]:
     total = (await session.execute(select(func.count()).select_from(Employee))).scalar_one()
     rows = (
-        await session.execute(select(Employee).order_by(Employee.full_name).offset(params.offset).limit(params.page_size))
+        # id вторым ключом: при одинаковых ФИО порядок иначе не определён, и
+        # соседние страницы пересекались — один сотрудник дважды, другой пропадал.
+        await session.execute(
+            select(Employee).order_by(Employee.full_name, Employee.id).offset(params.offset).limit(params.page_size)
+        )
     ).scalars().all()
     return Page(
         items=[EmployeeAccountOut(id=r.id, full_name=r.full_name, email=r.email, role=r.role, active=r.active) for r in rows],

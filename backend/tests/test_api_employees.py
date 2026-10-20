@@ -112,3 +112,21 @@ async def test_changing_role_revokes_all_sessions(admin_client, session_factory)
         assert response.status_code == 200
 
         assert (await target_client.get("/api/auth/me")).status_code == 401
+
+
+async def test_employee_pages_do_not_overlap_when_names_repeat(admin_client, session_factory):
+    """Постраничная выдача при одинаковых ФИО: каждый сотрудник ровно на одной
+    странице (сортировка по ФИО + id), иначе список в админке ломался на
+    >100 сотрудниках — дубли строк и пропавшие сотрудники."""
+    await _admin_client(admin_client, session_factory)
+    for i in range(24):
+        await create_employee(session_factory, email=f"same-name-{i}@example.com", role="viewer")
+
+    seen: list[str] = []
+    for page in (1, 2, 3):
+        response = await admin_client.get("/api/employees", params={"page": page, "page_size": 10})
+        assert response.status_code == 200
+        seen.extend(item["id"] for item in response.json()["items"])
+
+    assert len(seen) == 25
+    assert len(set(seen)) == 25
