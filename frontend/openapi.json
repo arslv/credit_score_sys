@@ -1045,6 +1045,48 @@
         }
       }
     },
+    "/api/references/blacklist/import": {
+      "post": {
+        "tags": [
+          "references"
+        ],
+        "summary": "Import Blacklist",
+        "description": "T23: загрузка чёрного списка файлом (CSV). Формат предварительный —\nуточняется с заказчиком (app/importers/blacklist.py). Ошибка в строке —\n400 с номером строки, ничего не добавляется.",
+        "operationId": "import_blacklist_api_references_blacklist_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_blacklist_api_references_blacklist_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlacklistImportOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/employees": {
       "get": {
         "tags": [
@@ -1735,6 +1777,66 @@
         }
       }
     },
+    "/api/settings/ocr": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Get Ocr Settings",
+        "operationId": "get_ocr_settings_api_settings_ocr_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrSettingsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Update Ocr Settings",
+        "operationId": "update_ocr_settings_api_settings_ocr_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OcrSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OcrSettingsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/imports/contracts": {
       "post": {
         "tags": [
@@ -2376,6 +2478,145 @@
   },
   "components": {
     "schemas": {
+      "ApplicantPassportIn": {
+        "properties": {
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Middle Name"
+          },
+          "birth_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
+          },
+          "birth_place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Place"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "passport_series": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Series"
+          },
+          "passport_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Number"
+          },
+          "issue_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Date"
+          },
+          "issued_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued By"
+          },
+          "department_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Code"
+          },
+          "registration_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration Address"
+          }
+        },
+        "type": "object",
+        "title": "ApplicantPassportIn",
+        "description": "Паспортные данные заявителя — обязательны в /review, пока заявка ждёт\nих в статусе awaiting_data (распознавание фото было выключено в админке,\nкогда она пришла): тогда их вводит оператор CRM. Ключевые — серия, номер,\nдата рождения (ФИО берём отсюда или из /applications). В остальных\nслучаях блок игнорируется — данные берутся с фото."
+      },
       "ApplicationDetail": {
         "properties": {
           "id": {
@@ -2873,6 +3114,24 @@
         ],
         "title": "BkiMonthlyItem"
       },
+      "BlacklistImportOut": {
+        "properties": {
+          "imported": {
+            "type": "integer",
+            "title": "Imported"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "imported",
+          "skipped"
+        ],
+        "title": "BlacklistImportOut"
+      },
       "BlacklistIn": {
         "properties": {
           "last_name": {
@@ -3011,6 +3270,20 @@
           "active"
         ],
         "title": "BlacklistOut"
+      },
+      "Body_import_blacklist_api_references_blacklist_import_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_blacklist_api_references_blacklist_import_post"
       },
       "Body_upload_contracts_api_imports_contracts_post": {
         "properties": {
@@ -5116,6 +5389,67 @@
         ],
         "title": "OcrResultOut"
       },
+      "OcrSettingsIn": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "OcrSettingsIn"
+      },
+      "OcrSettingsOut": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "api_key_configured": {
+            "type": "boolean",
+            "title": "Api Key Configured"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "changed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed At"
+          },
+          "changed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "api_key_configured",
+          "model",
+          "changed_at",
+          "changed_by"
+        ],
+        "title": "OcrSettingsOut"
+      },
       "OverridesSummary": {
         "properties": {
           "applications_total": {
@@ -5654,7 +5988,7 @@
             "anyOf": [
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "string"
@@ -5703,6 +6037,16 @@
           },
           "bki_consent": {
             "$ref": "#/components/schemas/BkiConsentIn"
+          },
+          "applicant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicantPassportIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "guarantor": {
             "anyOf": [

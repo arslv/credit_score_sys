@@ -87,6 +87,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/imports", label: "Импорт", roles: ["admin"] },
       { to: "/audit", label: "Аудит", roles: ["admin"] },
       { to: "/system", label: "Состояние системы", roles: ["admin"] },
+      { to: "/settings/recognition", label: "Распознавание паспорта", roles: ["admin"] },
     ],
   },
 ];

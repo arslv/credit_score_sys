@@ -313,6 +313,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/references/blacklist/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Blacklist
+         * @description T23: загрузка чёрного списка файлом (CSV). Формат предварительный —
+         *     уточняется с заказчиком (app/importers/blacklist.py). Ошибка в строке —
+         *     400 с номером строки, ничего не добавляется.
+         */
+        post: operations["import_blacklist_api_references_blacklist_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/employees": {
         parameters: {
             query?: never;
@@ -556,6 +578,24 @@ export interface paths {
         /** List Versions */
         get: operations["list_versions_api_rulesets_versions_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/ocr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ocr Settings */
+        get: operations["get_ocr_settings_api_settings_ocr_get"];
+        /** Update Ocr Settings */
+        put: operations["update_ocr_settings_api_settings_ocr_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -814,6 +854,40 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ApplicantPassportIn
+         * @description Паспортные данные заявителя — обязательны в /review, пока заявка ждёт
+         *     их в статусе awaiting_data (распознавание фото было выключено в админке,
+         *     когда она пришла): тогда их вводит оператор CRM. Ключевые — серия, номер,
+         *     дата рождения (ФИО берём отсюда или из /applications). В остальных
+         *     случаях блок игнорируется — данные берутся с фото.
+         */
+        ApplicantPassportIn: {
+            /** Last Name */
+            last_name?: string | null;
+            /** First Name */
+            first_name?: string | null;
+            /** Middle Name */
+            middle_name?: string | null;
+            /** Birth Date */
+            birth_date?: string | null;
+            /** Birth Place */
+            birth_place?: string | null;
+            /** Gender */
+            gender?: string | null;
+            /** Passport Series */
+            passport_series?: string | null;
+            /** Passport Number */
+            passport_number?: string | null;
+            /** Issue Date */
+            issue_date?: string | null;
+            /** Issued By */
+            issued_by?: string | null;
+            /** Department Code */
+            department_code?: string | null;
+            /** Registration Address */
+            registration_address?: string | null;
+        };
         /** ApplicationDetail */
         ApplicationDetail: {
             /**
@@ -963,6 +1037,13 @@ export interface components {
             /** Successful */
             successful: number;
         };
+        /** BlacklistImportOut */
+        BlacklistImportOut: {
+            /** Imported */
+            imported: number;
+            /** Skipped */
+            skipped: number;
+        };
         /** BlacklistIn */
         BlacklistIn: {
             /** Last Name */
@@ -997,6 +1078,11 @@ export interface components {
             reason: string;
             /** Active */
             active: boolean;
+        };
+        /** Body_import_blacklist_api_references_blacklist_import_post */
+        Body_import_blacklist_api_references_blacklist_import_post: {
+            /** File */
+            file: string;
         };
         /** Body_upload_contracts_api_imports_contracts_post */
         Body_upload_contracts_api_imports_contracts_post: {
@@ -1718,6 +1804,24 @@ export interface components {
              */
             created_at: string;
         };
+        /** OcrSettingsIn */
+        OcrSettingsIn: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** OcrSettingsOut */
+        OcrSettingsOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Api Key Configured */
+            api_key_configured: boolean;
+            /** Model */
+            model: string;
+            /** Changed At */
+            changed_at: string | null;
+            /** Changed By */
+            changed_by: string | null;
+        };
         /** OverridesSummary */
         OverridesSummary: {
             /** Applications Total */
@@ -1934,6 +2038,7 @@ export interface components {
                 [key: string]: unknown;
             };
             bki_consent: components["schemas"]["BkiConsentIn"];
+            applicant?: components["schemas"]["ApplicantPassportIn"] | null;
             guarantor?: components["schemas"]["GuarantorIn"] | null;
             /** Contacts */
             contacts?: components["schemas"]["ContactIn"][];
@@ -2680,6 +2785,39 @@ export interface operations {
             };
         };
     };
+    import_blacklist_api_references_blacklist_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_blacklist_api_references_blacklist_import_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlacklistImportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_employees_api_employees_get: {
         parameters: {
             query?: {
@@ -3139,6 +3277,59 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_ocr_settings_api_settings_ocr_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OcrSettingsOut"];
+                };
+            };
+        };
+    };
+    update_ocr_settings_api_settings_ocr_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OcrSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OcrSettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

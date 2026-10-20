@@ -17,6 +17,7 @@ from app.models.registry import InvalidPassport, RegistrySyncLog, SanctionsList
 from app.models.ruleset import RulesetVersion
 from app.models.ruleset_simulation import RulesetSimulation
 from app.models.stage_b_attempt import StageBSnapshotAttempt
+from app.models.system_setting import SystemSetting
 
 __all__ = [
     "Base",
@@ -58,4 +59,5 @@ __all__ = [
     "RulesetVersion",
     "RulesetSimulation",
     "StageBSnapshotAttempt",
+    "SystemSetting",
 ]

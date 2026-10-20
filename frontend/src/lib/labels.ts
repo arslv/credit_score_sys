@@ -143,6 +143,7 @@ export function actorTypeLabel(actorType: string): string {
 // в остальном интерфейсе).
 const APPLICATION_STATUS_LABELS: Record<string, string> = {
   received: "Принята",
+  awaiting_data: "Ждёт данных из CRM",
   ocr: "Распознавание паспорта",
   ocr_failed: "Паспорт не распознан",
   stage_a: "Стадия А",

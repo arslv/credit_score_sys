@@ -161,6 +161,7 @@ export function ApplicationsListPage() {
               <option value="gray_zone">{applicationStatusLabel("gray_zone")}</option>
               <option value="approved">{applicationStatusLabel("approved")}</option>
               <option value="ocr_failed">{applicationStatusLabel("ocr_failed")}</option>
+              <option value="awaiting_data">{applicationStatusLabel("awaiting_data")}</option>
             </select>
           </label>
           <label>

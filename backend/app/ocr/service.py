@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models import Application, OcrResult
-from app.ocr.base import KEY_FIELDS, OcrProvider
+from app.ocr.base import KEY_FIELDS, PASSPORT_FIELDS, OcrProvider
 from app.ocr.name_match import names_match
 from app.ocr.normalize import (
     normalize_date,
@@ -180,4 +180,44 @@ async def run_ocr(
         name_mismatch=name_mismatch,
         min_confidence=min_confidence,
         fields=normalized,
+    )
+
+
+# Паспортные поля, которые CRM прислала сама в /review, когда распознавание
+# выключено в админке (app.system_settings) — пишутся в ocr_results тем же
+# форматом, что и распознанные, с этим provider: стадии А/Б и карточка читают
+# их без отдельной ветки, а по provider видно, откуда данные.
+CRM_FORM_PROVIDER = "crm_form"
+
+
+def fields_from_crm(values: dict[str, str | None]) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Нормализует поля из CRM и возвращает их вместе со списком ключевых
+    полей (KEY_FIELDS), которых нет или которые не в том формате (например,
+    серия не из 4 цифр) — без них стадию А провести нельзя. Уверенность 1.0:
+    данные ввёл человек, порог распознавания к ним не применяется."""
+    fields: dict[str, dict[str, Any]] = {}
+    for name in PASSPORT_FIELDS:
+        value = values.get(name)
+        if isinstance(value, str):
+            value = value.strip() or None
+        normalizer = _NORMALIZERS.get(name)
+        if normalizer is not None and value is not None:
+            value = normalizer(value)
+        fields[name] = {"value": value, "confidence": 1.0}
+    missing = [name for name in KEY_FIELDS if not fields[name]["value"]]
+    return fields, missing
+
+
+def crm_form_ocr_result(application_id, *, raw: dict[str, Any], fields: dict[str, dict[str, Any]]) -> OcrResult:
+    """raw — блок applicant как пришёл (правило 3 CLAUDE.md)."""
+    return OcrResult(
+        application_id=application_id,
+        provider=CRM_FORM_PROVIDER,
+        response_raw=raw,
+        fields={
+            "fields": fields,
+            "flags": {"unreadable": False, "cropped": False, "possible_edit": False, "name_mismatch": False},
+            "below_threshold": False,
+        },
+        min_confidence=Decimal("1.000"),
     )

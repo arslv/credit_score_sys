@@ -18,6 +18,7 @@ from app.api.imports import router as imports_router
 from app.api.partner_webhooks import router as partner_webhooks_router
 from app.api.references import router as references_router
 from app.api.rulesets import router as rulesets_router
+from app.api.settings import router as settings_router
 from app.api.system import router as system_router
 from app.config import get_settings
 from app.db import get_engine, get_sessionmaker
@@ -77,6 +78,7 @@ app.include_router(system_router)
 app.include_router(compliance_router)
 app.include_router(dashboard_router)
 app.include_router(rulesets_router)
+app.include_router(settings_router)
 app.include_router(imports_router)
 app.include_router(fssp_router)
 app.include_router(fedresurs_router)

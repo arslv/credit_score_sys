@@ -41,6 +41,7 @@ from app.sources.mvd import MvdSource
 from app.sources.rosfinmon import RosfinmonSource
 from app.sources.runner import run_and_record_check
 from app.storage.base import Storage
+from app.system_settings import is_ocr_enabled
 
 logger = structlog.get_logger()
 
@@ -311,6 +312,15 @@ async def run_stage_a(
         if application is None:
             raise ValueError(f"заявка {application_id} не найдена")
 
+        # Распознавание выключено в админке (могли выключить, пока заявка
+        # ждала очереди): фото провайдеру не отправляем, заявка ждёт
+        # паспортные данные от CRM в /review (run_stage_a_from_crm_data).
+        if not await is_ocr_enabled(session):
+            transition(session, application, "awaiting_data", actor_type="system")
+            await session.commit()
+            logger.info("stage_a_awaiting_crm_data", application_id=str(application.id))
+            return application.status
+
         transition(session, application, "ocr", actor_type="system")
         await session.commit()
 
@@ -367,6 +377,68 @@ async def run_stage_a(
         transition(session, application, "stage_a", actor_type="system")
         await session.commit()
 
+    return await _run_stage_a_checks(
+        session_factory, application_id, ocr_outcome.fields, partner_client=partner_client,
+    )
+
+
+async def run_stage_a_from_crm_data(
+    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerNotifier,
+) -> str:
+    """Стадия А, когда распознавание выключено: паспортные данные прислала
+    CRM в /review (обработчик уже записал их в ocr_results с provider
+    crm_form — тем же форматом, что и распознанные, поэтому дальше всё как
+    обычно). Заявка ждёт в awaiting_data; после стадии А сразу идёт стадия Б
+    (оператор уже позвонил и нажал «Рассмотреть», app/tasks/stage_a.py).
+
+    Промежуточный исход «передать оператору» в CRM не отправляем — следом
+    придёт решение стадии Б; отказ по стадии А отправляем как обычно.
+    Идемпотентна: SELECT ... FOR UPDATE и проверка статуса — вебхук и
+    периодическая задача могут подобрать заявку одновременно."""
+    async with session_factory() as session:
+        application = (
+            await session.execute(select(Application).where(Application.id == application_id).with_for_update())
+        ).scalar_one_or_none()
+        if application is None:
+            raise ValueError(f"заявка {application_id} не найдена")
+        if application.status != "awaiting_data":
+            return application.status
+
+        ocr_result = (
+            await session.execute(
+                select(OcrResult)
+                .where(OcrResult.application_id == application_id)
+                .order_by(OcrResult.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if ocr_result is None:
+            # Данных от CRM ещё нет — ждём /review дальше, это не ошибка.
+            return application.status
+
+        transition(session, application, "stage_a", actor_type="system")
+        await session.commit()
+        fields = unwrap_ocr_fields(ocr_result.fields)
+
+    return await _run_stage_a_checks(
+        session_factory, application_id, fields, partner_client=partner_client, notify_to_operator=False,
+    )
+
+
+async def _run_stage_a_checks(
+    session_factory: async_sessionmaker,
+    application_id: UUID,
+    ocr_fields: dict,
+    *,
+    partner_client: PartnerNotifier,
+    notify_to_operator: bool = True,
+) -> str:
+    """Стадия А после того, как паспортные поля есть (распознаны или пришли
+    от CRM), заявка уже в статусе stage_a: клиент, заморозка, локальные
+    проверки, ФНС в фон, финализация."""
+    async with session_factory() as session:
+        application = await session.get(Application, application_id)
+
         ruleset_row = await get_active_ruleset_version(session)
         if ruleset_row is None:
             raise NoActiveRulesetError("нет активной версии конфига правил")
@@ -377,7 +449,7 @@ async def run_stage_a(
         # без привязки, как и при ocr_failed; привязка — позже, когда данные
         # появятся). Заморозка ниже работает по client_id, поэтому клиент
         # нужен раньше неё.
-        client_id = await _resolve_client(session, application, ocr_outcome.fields)
+        client_id = await _resolve_client(session, application, ocr_fields)
 
         # Заморозка (T09): тот же клиент уже давал санкционный хит раньше (тем
         # же паспортом или другим, см. app.engine.clients) — отказ немедленно,
@@ -389,7 +461,7 @@ async def run_stage_a(
                     session, session_factory, application, ruleset_row, freeze_reason, partner_client
                 )
 
-        features, subject = await _compute_local_features(session, config, application, ocr_outcome.fields)
+        features, subject = await _compute_local_features(session, config, application, ocr_fields)
         features["checks"] = await _build_checks_features(
             session, client_id, await _latest_checks(session, application.id)
         )
@@ -399,12 +471,17 @@ async def run_stage_a(
         # вызываются вовсе.
         local_stop_outcome = evaluate_hard_stops(config, features)
         if local_stop_outcome.matched:
-            return await finalize_stage_a(session_factory, application_id, partner_client=partner_client)
+            return await finalize_stage_a(
+                session_factory, application_id, partner_client=partner_client,
+                notify_to_operator=notify_to_operator,
+            )
 
     # T16: ФНС — фоновой задачей, не ждём (ваше явное указание). ФССП в этом
     # пути не участвует вообще — только по действию оператора позже.
     queue_fns_checks(application_id=application.id, subject_type="applicant", subject_id=None, subject=subject)
-    return await finalize_stage_a(session_factory, application_id, partner_client=partner_client)
+    return await finalize_stage_a(
+        session_factory, application_id, partner_client=partner_client, notify_to_operator=notify_to_operator,
+    )
 
 
 async def find_stuck_ocr_application_ids(session, *, cutoff: datetime) -> list[UUID]:
@@ -458,7 +535,11 @@ async def recover_stuck_ocr_applications(
 
 
 async def finalize_stage_a(
-    session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerNotifier
+    session_factory: async_sessionmaker,
+    application_id: UUID,
+    *,
+    partner_client: PartnerNotifier,
+    notify_to_operator: bool = True,
 ) -> str:
     """Хвост стадии А: признаки -> движок -> решение -> статус -> запись в
     систему заказчика. Общий для быстрого пути (локальный hard_stop, или ФССП
@@ -593,6 +674,11 @@ async def finalize_stage_a(
         )
         reason_code = stop_outcome.reason_code
         triggered_rules = _serialize_triggered_rules(stop_outcome.triggered_rules)
+
+    if new_status == "to_operator" and not notify_to_operator:
+        # Путь без распознавания (run_stage_a_from_crm_data): следом сразу
+        # стадия Б, CRM получит её решение — промежуточное не шлём.
+        return application.status
 
     await _write_back(
         session_factory, partner_client, application, new_status,
