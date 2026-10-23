@@ -61,6 +61,17 @@ function decisionEventTone(d: Decision): EventTone {
 
 const EVENT_ICON: Record<EventTone, string> = { ok: "✓", bad: "✕", warn: "!", info: "→", wait: "…" };
 
+// Последняя проверка по каждой паре «источник + субъект» (порядок — как в исходном списке).
+function latestPerSource(checks: CheckRow[]): CheckRow[] {
+  const latest = new Map<string, CheckRow>();
+  for (const c of checks) {
+    const key = `${c.source}|${c.subject_type}|${c.subject_id ?? ""}`;
+    const prev = latest.get(key);
+    if (!prev || c.started_at > prev.started_at) latest.set(key, c);
+  }
+  return checks.filter((c) => latest.get(`${c.source}|${c.subject_type}|${c.subject_id ?? ""}`) === c);
+}
+
 // Инициалы для аватара: первые буквы фамилии и имени.
 function initials(name: string | null): string {
   if (!name) return "?";
@@ -221,8 +232,12 @@ export function ApplicationDetailPage() {
   const visibleChecks = app.checks.filter((c) => c.source !== "mvd");
   // Ручные проверки (ФССП, Федресурс) и поручитель — после звонка, к стадии Б.
   const isManual = (c: CheckRow) => c.source === "fssp" || c.source === "fedresurs";
-  const checksA = visibleChecks.filter((c) => c.subject_type !== "guarantor" && !isManual(c));
-  const checksB = visibleChecks.filter((c) => c.subject_type === "guarantor" || isManual(c));
+  // В ленте — только последняя попытка по каждому источнику и субъекту:
+  // повторные проверки (ФССП с новой капчей, «Повторить») пишутся новыми
+  // строками, вся история — в «Все проверки одной таблицей».
+  const latestChecks = latestPerSource(visibleChecks);
+  const checksA = latestChecks.filter((c) => c.subject_type !== "guarantor" && !isManual(c));
+  const checksB = latestChecks.filter((c) => c.subject_type === "guarantor" || isManual(c));
 
   // T23 (по отзыву): отдельного списка дел нет. Что требует действия здесь —
   // в закреплённом блоке «Нужно ваше действие» с самими проверками; что
