@@ -167,11 +167,11 @@ class Settings(BaseSettings):
     fns_npd_min_interval_seconds: float = 30.0
     fns_npd_request_timeout_seconds: float = 20.0
 
-    # ФССП (is-go.fssp.gov.ru) — капчу вводит оператор (T16), без кук
+    # ФССП (is.fssp.gov.ru) — капчу вводит оператор (T16), без кук
     # (подтверждено дважды живым тестом). Интервал — консервативная защита от
     # собственного флуда с нашей стороны, не измеренный порог сайта.
     # Отдельный режим только для ФССП: пусто — как external_sources_mode;
-    # http — настоящая капча с is-go.fssp.gov.ru, даже когда ФНС и прочие
+    # http — настоящая капча с is.fssp.gov.ru, даже когда ФНС и прочие
     # источники в fake (капчу всё равно решает человек, автозапросов нет).
     fssp_source_mode: str = ""  # "" | fake | http
     fssp_min_request_interval_seconds: float = 5.0

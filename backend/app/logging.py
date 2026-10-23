@@ -11,6 +11,11 @@ def configure_logging() -> None:
     level = logging.getLevelName(settings.log_level.upper())
 
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level)
+    # httpx/httpcore на INFO пишут полный URL запроса, а в запросах к внешним
+    # сайтам (ФССП, ФНС) в адресе — ФИО и дата рождения клиента. Персданные в
+    # логах запрещены (CLAUDE.md, правило 7) — только предупреждения и ошибки.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(max(level, logging.WARNING))
 
     structlog.configure(
         processors=[

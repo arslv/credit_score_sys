@@ -2,7 +2,7 @@
 разведки — капча-картинка на каждый поиск, решает только человек, ваше жёсткое
 правило). Протокол полностью другой, чем в T09: официального API-ключа для
 api-ip.fssp.gov.ru не существовало и само API закрыто с 2022 — вместо него
-сайт is-go.fssp.gov.ru/ajax_search, два GET:
+сайт is.fssp.gov.ru/ajax_search (до 10.2026 — is-go.fssp.gov.ru, теперь 502), два GET:
 
 1. search() — параметры ФИО/дата рождения/регион (is[region_id][0] — код из
    config/fssp_regions.yaml, НЕ префикс серии паспорта, ваше явное указание) ->
@@ -42,10 +42,17 @@ from app.sources.throttle import throttle
 
 _THROTTLE_KEY = "throttle:fssp"
 _UA = "Mozilla/5.0 (compatible; DialogScoring/1.0)"
-_SEARCH_URL = "https://is-go.fssp.gov.ru/ajax_search"
+_SEARCH_URL = "https://is.fssp.gov.ru/ajax_search"
 
 _JSONP_RE = re.compile(r"^\((.*)\);?\s*$", re.S)
-_CAPTCHA_IMG_RE = re.compile(r"data:image/png;base64,([A-Za-z0-9+/=]+)")
+# Картинка капчи: раньше PNG, с 10.2026 — JPEG.
+_CAPTCHA_IMG_RE = re.compile(r"data:image/(?:png|jpe?g|gif);base64,([A-Za-z0-9+/=]+)")
+# С 10.2026 капча привязана не к code_id в разметке, а к сессии сайта (кука
+# connect.sid). Её значение и храним вместо code_id — с префиксом, чтобы
+# отличать от старого протокола. Это техническая ссылка на диалог с сайтом
+# (как и code_id), живёт минуты, персданных не содержит.
+_SESSION_COOKIE = "connect.sid"
+_SESSION_PREFIX = "sid:"
 _CODE_ID_RE = re.compile(r"code_id=([A-Za-z0-9_\-]+)")
 
 
@@ -101,9 +108,14 @@ class FsspCaptchaSource(Protocol):
 
 
 def _unwrap_jsonp(raw: str) -> dict[str, Any]:
-    match = _JSONP_RE.match(raw.strip())
+    """Ответ сайта: раньше (is-go) — JSONP callback({...}), сейчас (is.fssp.gov.ru,
+    с 10.2026) — обычный JSON {...}. Принимаем оба вида."""
+    text = raw.strip()
+    if text.startswith("{"):
+        return json.loads(text)
+    match = _JSONP_RE.match(text)
     if not match:
-        raise ValueError("не JSONP-обёртка callback(...)")
+        raise ValueError("ни JSON, ни JSONP-обёртка callback(...)")
     return json.loads(match.group(1))
 
 
@@ -319,13 +331,18 @@ class FsspCaptchaHttpSource:
                 response = await client.get(_SEARCH_URL, params=self._base_params(subject, region_code))
                 response.raise_for_status()
                 payload = _unwrap_jsonp(response.text)
+                site_session = client.cookies.get(_SESSION_COOKIE)
         except Exception as exc:  # noqa: BLE001 — сеть/сайт не ответили вовсе, тела нет (ваше явное указание, п.5)
             raise FsspSearchError(f"сайт недоступен: {exc}") from exc
 
         body = html_module.unescape(payload.get("data", ""))
         code_id_match = _CODE_ID_RE.search(body)
         img_match = _CAPTCHA_IMG_RE.search(body)
-        if not code_id_match or not img_match:
+        # Старый протокол — code_id в разметке; новый — сессия сайта в куке.
+        code_id = code_id_match.group(1) if code_id_match else (
+            f"{_SESSION_PREFIX}{site_session}" if site_session else None
+        )
+        if not code_id or not img_match:
             # Сайт РЕАЛЬНО ответил (payload получен), просто не капчей — это
             # сообщение показываем ТОЛЬКО здесь, не на сетевую ошибку выше
             # (п.5 ваших правок), и сохраняем сырой ответ (правило 3 CLAUDE.md).
@@ -335,15 +352,21 @@ class FsspCaptchaHttpSource:
             )
 
         captcha_png = base64.b64decode(img_match.group(1) + "===")
-        return FsspCaptchaChallenge(code_id=code_id_match.group(1), captcha_png=captcha_png)
+        return FsspCaptchaChallenge(code_id=code_id, captcha_png=captcha_png)
 
     async def submit_code(
         self, *, code_id: str, code: str, subject: Subject, region_code: str,
     ) -> FsspSubmitOutcome:
         await throttle(self._redis, _THROTTLE_KEY, self._throttle_interval)
-        params = {**self._base_params(subject, region_code), "code_id": code_id, "code": code.strip()}
+        params = {**self._base_params(subject, region_code), "code": code.strip()}
+        cookies: dict[str, str] = {}
+        if code_id.startswith(_SESSION_PREFIX):
+            # Новый протокол: тот же запрос + код, в той же сессии сайта.
+            cookies[_SESSION_COOKIE] = code_id[len(_SESSION_PREFIX):]
+        else:
+            params["code_id"] = code_id
         try:
-            async with httpx.AsyncClient(timeout=self._timeout, headers={"User-Agent": _UA}) as client:
+            async with httpx.AsyncClient(timeout=self._timeout, headers={"User-Agent": _UA}, cookies=cookies) as client:
                 response = await client.get(_SEARCH_URL, params=params)
                 response.raise_for_status()
                 payload = _unwrap_jsonp(response.text)

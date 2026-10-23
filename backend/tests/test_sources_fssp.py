@@ -36,7 +36,7 @@ def _jsonp(data_html: str) -> str:
 
 def _captcha_html(code_id: str) -> str:
     return (
-        f'<div id="captcha-popup"><form action="https://is-go.fssp.gov.ru" '
+        f'<div id="captcha-popup"><form action="https://is.fssp.gov.ru" '
         f'url="/ajax_search?code_id={code_id}">'
         f'<img src="data:image/png;base64,{_TINY_PNG_B64}"/></form></div>'
     )
@@ -137,7 +137,7 @@ def _http_source() -> FsspCaptchaHttpSource:
 
 @respx.mock
 async def test_http_search_returns_captcha():
-    respx.get("https://is-go.fssp.gov.ru/ajax_search").mock(
+    respx.get("https://is.fssp.gov.ru/ajax_search").mock(
         return_value=Response(200, text=_jsonp(_captcha_html("code-id-1")))
     )
     challenge = await _http_source().search(_SUBJECT, region_code="05")
@@ -160,7 +160,7 @@ async def test_http_search_missing_required_field_raises_without_network_call():
 
 @respx.mock
 async def test_http_search_network_error_raises():
-    respx.get("https://is-go.fssp.gov.ru/ajax_search").mock(side_effect=httpx.TimeoutException("timeout"))
+    respx.get("https://is.fssp.gov.ru/ajax_search").mock(side_effect=httpx.TimeoutException("timeout"))
     try:
         await _http_source().search(_SUBJECT, region_code="05")
         assert False, "должно было бросить FsspSearchError"
@@ -174,7 +174,7 @@ async def test_http_search_no_captcha_in_response_raises_with_raw_response():
     (200, валидный JSONP), просто без капчи. Сообщение должно отличаться от
     сетевой ошибки (п.5 ваших правок), и сырой ответ должен сохраниться
     (правило 3 CLAUDE.md), чтобы можно было разобраться, что сайт вернул."""
-    respx.get("https://is-go.fssp.gov.ru/ajax_search").mock(
+    respx.get("https://is.fssp.gov.ru/ajax_search").mock(
         return_value=Response(200, text=_jsonp("<html>неожиданная страница</html>"))
     )
     try:
@@ -189,7 +189,7 @@ async def test_http_search_no_captcha_in_response_raises_with_raw_response():
 
 @respx.mock
 async def test_http_submit_code_not_found():
-    respx.get("https://is-go.fssp.gov.ru/ajax_search").mock(
+    respx.get("https://is.fssp.gov.ru/ajax_search").mock(
         return_value=Response(200, text=_jsonp(_not_found_html()))
     )
     outcome = await _http_source().submit_code(
@@ -201,7 +201,7 @@ async def test_http_submit_code_not_found():
 
 @respx.mock
 async def test_http_submit_code_wrong_code():
-    respx.get("https://is-go.fssp.gov.ru/ajax_search").mock(
+    respx.get("https://is.fssp.gov.ru/ajax_search").mock(
         return_value=Response(200, text=_jsonp(_wrong_code_html()))
     )
     outcome = await _http_source().submit_code(
@@ -212,7 +212,7 @@ async def test_http_submit_code_wrong_code():
 
 @respx.mock
 async def test_http_submit_code_hit():
-    respx.get("https://is-go.fssp.gov.ru/ajax_search").mock(
+    respx.get("https://is.fssp.gov.ru/ajax_search").mock(
         return_value=Response(
             200, text=_jsonp(_found_html([("Взыскание по кредитному договору", "50000")]))
         )
@@ -228,7 +228,7 @@ async def test_http_submit_code_hit():
 
 @respx.mock
 async def test_http_submit_code_unparseable_is_error_not_autoreject():
-    respx.get("https://is-go.fssp.gov.ru/ajax_search").mock(
+    respx.get("https://is.fssp.gov.ru/ajax_search").mock(
         return_value=Response(200, text=_jsonp('<div class="iss">что-то неожиданное, не похоже ни на что</div>'))
     )
     outcome = await _http_source().submit_code(
@@ -241,7 +241,7 @@ async def test_http_submit_code_unparseable_is_error_not_autoreject():
 
 @respx.mock
 async def test_http_submit_code_network_error_is_source_unavailable():
-    respx.get("https://is-go.fssp.gov.ru/ajax_search").mock(side_effect=httpx.TimeoutException("timeout"))
+    respx.get("https://is.fssp.gov.ru/ajax_search").mock(side_effect=httpx.TimeoutException("timeout"))
     outcome = await _http_source().submit_code(
         code_id="code-id-1", code="12345", subject=_SUBJECT, region_code="05",
     )
@@ -278,9 +278,47 @@ def test_fssp_source_mode_overrides_external_sources_mode():
     from app.sources.factory import build_fssp_captcha_source
     from app.sources.fssp import DevFsspCaptchaSource, FsspCaptchaHttpSource
 
-    assert isinstance(build_fssp_captcha_source(Settings(external_sources_mode="fake")), DevFsspCaptchaSource)
+    assert isinstance(
+        build_fssp_captcha_source(Settings(external_sources_mode="fake", fssp_source_mode="")), DevFsspCaptchaSource
+    )
     real = build_fssp_captcha_source(Settings(external_sources_mode="fake", fssp_source_mode="http"))
     assert isinstance(real, FsspCaptchaHttpSource)
     assert isinstance(
         build_fssp_captcha_source(Settings(external_sources_mode="http", fssp_source_mode="fake")), DevFsspCaptchaSource
     )
+
+
+def test_unwrap_accepts_plain_json_and_jsonp():
+    """С 10.2026 is.fssp.gov.ru отвечает обычным JSON, раньше — JSONP."""
+    from app.sources.fssp import _unwrap_jsonp
+
+    assert _unwrap_jsonp('{"data": "x"}') == {"data": "x"}
+    assert _unwrap_jsonp('({"data": "y"});') == {"data": "y"}
+
+
+@respx.mock
+async def test_new_protocol_session_cookie_and_jpeg_captcha():
+    """С 10.2026 (is.fssp.gov.ru): ответ — обычный JSON, капча — JPEG, code_id в
+    разметке нет — капча привязана к куке connect.sid. Её и передаём с кодом."""
+    jpeg_b64 = base64.b64encode(b"\xff\xd8\xff\xe0fake-jpeg").decode()
+    captcha_html = (
+        f'<div id="captcha-popup"><form id="ncapcha"><img src="data:image/jpeg;base64,{jpeg_b64}" id="capchaVisual">'
+        '<input name="code"></form></div>'
+    )
+    route = respx.get("https://is.fssp.gov.ru/ajax_search")
+    route.side_effect = [
+        httpx.Response(200, json={"data": captcha_html}, headers={"set-cookie": "connect.sid=s%3Aabc; Path=/"}),
+        httpx.Response(200, json={"data": "<div>По вашему запросу ничего не найдено</div>"}),
+    ]
+    source = _http_source()
+    subject = _SUBJECT
+
+    challenge = await source.search(subject, region_code="05")
+    assert challenge.code_id == "sid:s%3Aabc"
+    assert challenge.captcha_png.startswith(b"\xff\xd8")
+
+    outcome = await source.submit_code(code_id=challenge.code_id, code="12345", subject=subject, region_code="05")
+    assert outcome.kind == "ok"
+    second = route.calls[1].request
+    assert "connect.sid=s%3Aabc" in second.headers.get("cookie", "")
+    assert "code=12345" in str(second.url) and "code_id" not in str(second.url)

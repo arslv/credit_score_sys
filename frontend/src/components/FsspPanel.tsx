@@ -230,7 +230,7 @@ export function FsspPanel({
         <div className="stack">
           {message && <p className="alert" role="alert">{message}</p>}
           <img
-            src={`data:image/png;base64,${captchaBase64}`}
+            src={`data:${captchaBase64.startsWith("/9j/") ? "image/jpeg" : "image/png"};base64,${captchaBase64}`}
             alt="капча ФССП"
             className="captcha-image"
           />
