@@ -1,5 +1,5 @@
-// T23: рейтинг клиента (скоркарта заказчика) в карточке заявки — сумма,
-// плитки критериев, пометка «на решение пока не влияет».
+// T23: рейтинг клиента (скоркарта заказчика) в карточке заявки — сумма и
+// плитки критериев.
 import { test, expect } from "@playwright/test";
 import { loadSeed } from "./fixtures";
 import { login } from "./login";
@@ -11,13 +11,10 @@ test("карточка: блок «Рейтинг клиента» с суммо
 
   const rating = page.getByTestId("client-rating");
   await expect(rating.getByRole("heading", { name: "Рейтинг клиента" })).toBeVisible();
-  await expect(rating.getByText("информационно — на решение пока не влияет")).toBeVisible();
-  // Плитка на каждый критерий — сразу, с правилом и баллами, без кнопок.
+  // Плитка на каждый критерий: название и баллы.
   await expect(rating.locator(".cr-item")).toHaveCount(4);
   for (const criterion of ["Возраст", "Контакты", "Работа", "Прописка"]) {
     await expect(rating.locator(".cr-item__title", { hasText: criterion })).toBeVisible();
   }
-  await expect(rating.getByText(/учтено \d из 4 критериев/)).toBeVisible();
   await expect(rating.getByText("баллов", { exact: true })).toBeVisible();
-  await expect(rating.getByText(/Пока не учитывается/)).toBeVisible();
 });

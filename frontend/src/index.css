@@ -4452,13 +4452,12 @@ mark {
   }
 }
 
-/* ===== Рейтинг клиента (T23, по отзыву): отдельным разделом во всю ширину =====
-   Слева — сумма и что на неё повлияло; справа — плитка на каждый критерий
-   (что учтено, правило, баллы), по силе влияния. Плитки текут сеткой —
-   критериев может стать сколько угодно, лишние сворачиваются кнопкой. */
+/* ===== Рейтинг клиента (T23, по отзыву): сумма и плитка на критерий =====
+   Плитка одна на любой критерий: название, баллы, что учтено. Плитки текут
+   сеткой — критериев может стать сколько угодно, лишние — по кнопке. */
 .cr {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   overflow: hidden;
   border: var(--line);
   border-radius: var(--radius-lg);
@@ -4466,6 +4465,9 @@ mark {
 }
 
 .cr__summary {
+  display: grid;
+  align-content: center;
+  gap: var(--space-2);
   padding: var(--space-4) var(--space-5);
   border-right: var(--line);
   background: color-mix(in srgb, var(--color-subtle) 60%, var(--color-surface));
@@ -4473,14 +4475,8 @@ mark {
 
 .cr__title {
   margin: 0;
-  font-size: var(--font-md);
+  font-size: var(--font-sm);
   font-weight: var(--weight-bold);
-}
-
-.cr__badge {
-  margin: 2px 0 var(--space-3);
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
 }
 
 .cr__total {
@@ -4504,70 +4500,10 @@ mark {
   color: var(--color-text-muted);
 }
 
-.cr__counted {
-  margin: 4px 0 var(--space-3);
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
-}
-
-.cr__split {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  font-size: var(--font-xs);
-}
-
-.cr__split-row {
-  display: grid;
-  grid-template-columns: 86px minmax(0, 1fr);
-  gap: var(--space-2);
-}
-
-.cr__split-row dt {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-text-muted);
-}
-
-.cr__split-row dt::before {
-  content: "";
-  flex-shrink: 0;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-border-strong);
-}
-
-.cr__split-row--up dt::before { background: var(--status-ok); }
-.cr__split-row--down dt::before { background: var(--status-bad); }
-
-.cr__split-row dd {
-  margin: 0;
-  font-weight: var(--weight-medium);
-}
-
-.cr__split-row--none dd {
-  font-weight: var(--weight-normal);
-  color: var(--color-text-muted);
-}
-
-.cr__guarantor {
-  margin: var(--space-3) 0 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius);
-  background: var(--status-bad-soft);
-  font-size: var(--font-xs);
-}
-
-.cr__guarantor--ok {
-  background: var(--status-ok-soft);
-}
-
 .cr__items {
   display: grid;
-  align-content: start;
-  gap: var(--space-3);
+  align-content: center;
+  gap: var(--space-2);
   padding: var(--space-4) var(--space-5);
 }
 
@@ -4577,8 +4513,8 @@ mark {
 
 .cr__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -4586,23 +4522,21 @@ mark {
 
 .cr-item {
   display: grid;
-  align-content: start;
-  gap: 6px;
-  padding: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border: var(--line);
+  border-left: 3px solid var(--color-border-strong);
   border-radius: var(--radius);
 }
 
-.cr-item__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
+.cr-item--up { border-left-color: var(--status-ok); }
+.cr-item--down { border-left-color: var(--status-bad); }
 
 .cr-item__title {
   font-size: var(--font-sm);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-medium);
 }
 
 .cr-item__points {
@@ -4615,59 +4549,24 @@ mark {
 .cr-item--up .cr-item__points { color: var(--status-ok); }
 .cr-item--down .cr-item__points { color: var(--status-bad); }
 
-.cr-item--none {
-  border-style: dashed;
+.cr-item__value {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.cr-item--none {
+  border-style: dashed;
+  border-left-style: solid;
+}
+
+.cr-item--none .cr-item__title,
 .cr-item--none .cr-item__points {
   font-size: var(--font-xs);
   font-weight: var(--weight-normal);
-  color: var(--color-text-muted);
-}
-
-/* Полоска от центра: вправо — плюс, влево — минус. */
-.cr-item__bar {
-  position: relative;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--color-subtle);
-}
-
-.cr-item__bar::before {
-  content: "";
-  position: absolute;
-  top: -2px;
-  bottom: -2px;
-  left: calc(50% - 1px);
-  width: 2px;
-  border-radius: 1px;
-  background: var(--color-border-strong);
-}
-
-.cr-item__bar i {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border-radius: 3px;
-}
-
-.cr-item--up .cr-item__bar i { left: 50%; background: var(--status-ok); }
-.cr-item--down .cr-item__bar i { right: 50%; background: var(--status-bad); }
-
-.cr-item__rule {
-  margin: 0;
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
-}
-
-.cr-item__rule b {
-  font-weight: var(--weight-medium);
-  color: var(--color-text);
-}
-
-.cr__later {
-  margin: 0;
-  font-size: var(--font-xs);
   color: var(--color-text-muted);
 }
 
