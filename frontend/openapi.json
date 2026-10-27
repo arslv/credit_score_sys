@@ -656,6 +656,16 @@
             }
           },
           {
+            "name": "overdue",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Overdue"
+            }
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -696,6 +706,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contracts/summary": {
+      "get": {
+        "tags": [
+          "contracts"
+        ],
+        "summary": "Contracts Summary",
+        "operationId": "contracts_summary_api_contracts_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractsSummary"
                 }
               }
             }
@@ -3863,6 +3894,10 @@
             "type": "string",
             "title": "Schedule Source"
           },
+          "paid_amount": {
+            "type": "string",
+            "title": "Paid Amount"
+          },
           "schedule": {
             "items": {
               "$ref": "#/components/schemas/ScheduleItemOut"
@@ -3904,6 +3939,7 @@
           "closure_reason",
           "closure_outcome",
           "schedule_source",
+          "paid_amount",
           "schedule",
           "payments",
           "current_delinquency"
@@ -3956,6 +3992,32 @@
             "type": "string",
             "format": "date",
             "title": "Issued At"
+          },
+          "paid_amount": {
+            "type": "string",
+            "title": "Paid Amount"
+          },
+          "days_past_due": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Past Due"
+          },
+          "overdue_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overdue Amount"
           }
         },
         "type": "object",
@@ -3966,9 +4028,34 @@
           "total_amount",
           "term_months",
           "status",
-          "issued_at"
+          "issued_at",
+          "paid_amount",
+          "days_past_due",
+          "overdue_amount"
         ],
         "title": "ContractListItem"
+      },
+      "ContractsSummary": {
+        "properties": {
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Status"
+          },
+          "overdue": {
+            "type": "integer",
+            "title": "Overdue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "by_status",
+          "overdue"
+        ],
+        "title": "ContractsSummary",
+        "description": "Сколько договоров в каждом состоянии и сколько действующих в просрочке\n— для вкладок над списком."
       },
       "CreditReportOut": {
         "properties": {

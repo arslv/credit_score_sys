@@ -11,7 +11,11 @@ function variantFor(value: string): string {
   return "badge-neutral";
 }
 
-export function Badge({ value, label }: { value: string | null | undefined; label?: string }) {
+export type BadgeTone = "success" | "danger" | "warning" | "info" | "neutral";
+
+// tone — когда цвет зависит не от общего значения, а от раздела (статусы
+// договора: «active» здесь — не то же, что у сотрудника).
+export function Badge({ value, label, tone }: { value: string | null | undefined; label?: string; tone?: BadgeTone }) {
   if (!value) return <span className="muted">—</span>;
-  return <span className={`badge ${variantFor(value)}`}>{label ?? value}</span>;
+  return <span className={`badge ${tone ? `badge-${tone}` : variantFor(value)}`}>{label ?? value}</span>;
 }

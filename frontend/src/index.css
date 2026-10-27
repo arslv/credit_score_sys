@@ -4580,3 +4580,161 @@ mark {
     border-bottom: var(--line);
   }
 }
+
+/* ===== Договоры (по отзыву): цветные состояния, оплачено и просрочка ===== */
+.badge-info::before {
+  background: var(--color-accent);
+}
+
+.contracts-table__number {
+  font-weight: var(--weight-medium);
+}
+
+.contracts-table__sub {
+  margin-top: 2px;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.late {
+  font-weight: var(--weight-medium);
+  color: var(--status-bad);
+}
+
+.paid {
+  display: grid;
+  gap: 4px;
+  min-width: 140px;
+  max-width: 220px;
+}
+
+.paid__text {
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.paid__bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--color-subtle);
+}
+
+.paid__bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--status-ok);
+}
+
+/* Карточка договора */
+.ctr {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ctr > .back-link {
+  margin: 0;
+}
+
+.ctr-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: start;
+  padding: var(--space-5) var(--space-5) 0;
+  overflow: hidden;
+  border: var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.ctr-head__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ctr-head__title h1 {
+  margin: 0;
+  font-size: var(--font-xl);
+}
+
+.ctr-head__line {
+  margin: 4px 0 0;
+  font-size: var(--font-sm);
+}
+
+.ctr-head__line--muted {
+  color: var(--color-text-muted);
+}
+
+.ctr-metrics {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 calc(-1 * var(--space-5));
+  border-top: var(--line);
+  background: color-mix(in srgb, var(--color-subtle) 60%, var(--color-surface));
+}
+
+.ctr-metric {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+  padding: var(--space-3) var(--space-5) var(--space-4);
+}
+
+.ctr-metric + .ctr-metric {
+  border-left: var(--line);
+}
+
+.ctr-metric__label {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+}
+
+.ctr-metric__value {
+  font-size: var(--font-2xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ctr-metric__value--ok { color: var(--status-ok); }
+.ctr-metric__value--bad { color: var(--status-bad); }
+
+.ctr-metric__of {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-normal);
+  color: var(--color-text-muted);
+}
+
+.ctr-metric__hint {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.ctr-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.ctr-card {
+  padding: var(--space-4) var(--space-5);
+}
+
+@media (max-width: 1000px) {
+  .ctr-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ctr-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

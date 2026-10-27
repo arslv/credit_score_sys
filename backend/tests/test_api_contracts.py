@@ -43,3 +43,49 @@ async def test_contract_detail_shows_payment_kind_and_delinquency(admin_client, 
     assert body["current_delinquency"] is not None
     assert body["current_delinquency"]["days_past_due"] == 14  # (2026-03-20 - 2026-03-01) - grace_days(5)
     assert body["current_delinquency"]["overdue_amount"] == "1000.00"
+
+
+async def test_contract_list_shows_paid_and_delinquency_and_summary(admin_client, session_factory):
+    """Список: оплачено (обычные минус сторно, без неустойки) и последняя
+    просрочка; /summary — счётчики по состояниям и в просрочке; фильтр overdue."""
+    await create_employee(session_factory, email="rm-contract-list@example.com", role="admin")
+    await login(admin_client, "rm-contract-list@example.com")
+
+    number = f"C-{uuid.uuid4().hex[:8]}"
+    async with session_factory() as session:
+        contract = Contract(
+            application_id=None, external_number=number, principal=Decimal("2000"),
+            markup=Decimal("0"), total_amount=Decimal("2000"), down_payment=Decimal("0"), term_months=2,
+            issued_at=date(2026, 1, 1), status="active",
+        )
+        session.add(contract)
+        await session.flush()
+        session.add(PaymentSchedule(contract_id=contract.id, period_no=1, due_date=date(2026, 2, 1), due_amount=Decimal("1000")))
+        session.add(PaymentSchedule(contract_id=contract.id, period_no=2, due_date=date(2026, 3, 1), due_amount=Decimal("1000")))
+        session.add(Payment(contract_id=contract.id, paid_at=date(2026, 2, 1), amount=Decimal("1000"), source="import", kind="regular"))
+        session.add(Payment(contract_id=contract.id, paid_at=date(2026, 2, 2), amount=Decimal("300"), source="import", kind="regular"))
+        session.add(Payment(contract_id=contract.id, paid_at=date(2026, 2, 3), amount=Decimal("300"), source="import", kind="reversal"))
+        session.add(Payment(contract_id=contract.id, paid_at=date(2026, 2, 5), amount=Decimal("50"), source="import", kind="penalty"))
+        await session.commit()
+        contract_id = str(contract.id)
+
+    async with session_factory() as session:
+        await recompute_all_contracts(session, upto_date=date(2026, 3, 20))
+        await session.commit()
+
+    summary_before = await admin_client.get("/api/contracts/summary")
+    assert summary_before.status_code == 200, summary_before.text
+    summary = summary_before.json()
+    assert summary["by_status"]["active"] >= 1
+    assert summary["overdue"] >= 1
+
+    response = await admin_client.get("/api/contracts", params={"page_size": 100, "overdue": True})
+    assert response.status_code == 200, response.text
+    item = next(i for i in response.json()["items"] if i["id"] == contract_id)
+    assert item["paid_amount"] == "1000.00"
+    assert item["days_past_due"] == 14
+    assert item["overdue_amount"] == "1000.00"
+
+    detail = await admin_client.get(f"/api/contracts/{contract_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["paid_amount"] == "1000.00"

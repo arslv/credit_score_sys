@@ -169,6 +169,19 @@ export function contractStatusLabel(status: string): string {
   return CONTRACT_STATUS_LABELS[status] ?? status;
 }
 
+// Цвет статуса договора: действует — синий (идёт), закрыт — зелёный,
+// дефолт — красный, товар изъят — янтарный.
+const CONTRACT_STATUS_TONES: Record<string, "info" | "success" | "danger" | "warning"> = {
+  active: "info",
+  closed: "success",
+  defaulted: "danger",
+  repossessed: "warning",
+};
+
+export function contractStatusTone(status: string): "info" | "success" | "danger" | "warning" | "neutral" {
+  return CONTRACT_STATUS_TONES[status] ?? "neutral";
+}
+
 export function applicationStatusLabel(status: string): string {
   return APPLICATION_STATUS_LABELS[status] ?? status;
 }

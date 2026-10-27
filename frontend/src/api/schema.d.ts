@@ -226,6 +226,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/contracts/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Contracts Summary */
+        get: operations["contracts_summary_api_contracts_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/contracts/{contract_id}": {
         parameters: {
             query?: never;
@@ -1284,6 +1301,8 @@ export interface components {
             closure_outcome: string | null;
             /** Schedule Source */
             schedule_source: string;
+            /** Paid Amount */
+            paid_amount: string;
             /** Schedule */
             schedule: components["schemas"]["ScheduleItemOut"][];
             /** Payments */
@@ -1312,6 +1331,25 @@ export interface components {
              * Format: date
              */
             issued_at: string;
+            /** Paid Amount */
+            paid_amount: string;
+            /** Days Past Due */
+            days_past_due: number | null;
+            /** Overdue Amount */
+            overdue_amount: string | null;
+        };
+        /**
+         * ContractsSummary
+         * @description Сколько договоров в каждом состоянии и сколько действующих в просрочке
+         *     — для вкладок над списком.
+         */
+        ContractsSummary: {
+            /** By Status */
+            by_status: {
+                [key: string]: number;
+            };
+            /** Overdue */
+            overdue: number;
         };
         /** CreditReportOut */
         CreditReportOut: {
@@ -2529,6 +2567,7 @@ export interface operations {
         parameters: {
             query?: {
                 status_filter?: string | null;
+                overdue?: boolean;
                 page?: number;
                 page_size?: number;
             };
@@ -2554,6 +2593,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    contracts_summary_api_contracts_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractsSummary"];
                 };
             };
         };
