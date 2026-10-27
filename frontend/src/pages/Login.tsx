@@ -61,7 +61,7 @@ export function LoginPage() {
                 <Icon name="UserCircleGear" weight="duotone" />
               </span>
               <span>
-                <strong>Доступ по ролям.</strong> Персональные данные видят только те, кому они нужны для работы.
+                <strong>Доступ по ролям.</strong> Каждый просмотр персональных данных записывается в журнал.
               </span>
             </li>
           </ul>
@@ -145,11 +145,6 @@ export function LoginPage() {
             {!submitting && <Icon name="ArrowRight" weight="bold" size={18} />}
           </button>
 
-          <div className="login__divider" />
-          <p className="login__hint">
-            <Icon name="ShieldCheck" weight="duotone" size={16} />
-            Нет доступа — обратитесь к администратору. Все входы записываются в журнал аудита.
-          </p>
         </form>
       </section>
     </main>

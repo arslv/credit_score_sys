@@ -7,7 +7,6 @@ import type { components } from "../api/schema";
 import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
 import { ClientRatingPanel } from "../components/ClientRating";
-import { AiAnalysisPanel } from "../components/AiAnalysisPanel";
 import { FedresursPanel } from "../components/FedresursPanel";
 import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
@@ -37,6 +36,8 @@ type Decision = components["schemas"]["DecisionOut"];
 type CheckRow = components["schemas"]["CheckOut"];
 type ManualOverride = components["schemas"]["ManualOverrideOut"];
 type EventTone = "ok" | "bad" | "warn" | "info" | "wait";
+type JourneyState = "done" | "bad" | "warn" | "current" | "pending" | "skipped";
+const JOURNEY_ICON: Partial<Record<JourneyState, string>> = { done: "✓", bad: "✕", warn: "!", skipped: "–" };
 
 // Статусы, которые просто повторяют последнее решение системы.
 const STATUS_MIRRORS_DECISION = new Set(["approved", "gray_zone", "rejected_a", "rejected_b", "to_operator"]);
@@ -445,38 +446,306 @@ export function ApplicationDetailPage() {
     </section>
   );
 
-  // T23 (выбор владельца, вариант 5 «Профиль и лента»): слева — профиль
-  // клиента (кто это, анкета, рейтинг, анализ ИИ), справа — заявка: решение,
-  // закреплённый блок «Нужно ваше действие», главные цифры и лента событий.
+  // Путь заявки целиком — что пройдено и что осталось до окончательного решения.
+  const fsspDone = applicantFssp?.status === "ok" || applicantFssp?.status === "hit";
+  const fedDone = Boolean(applicantFedresurs);
+  const manualHit = applicantFssp?.status === "hit" || applicantFedresurs?.status === "hit";
+  const lastOverride = app.manual_overrides.length > 0 ? app.manual_overrides[app.manual_overrides.length - 1]! : null;
+  const callDone = Boolean(reviewedAt) || Boolean(latestB);
+  const manualLeft = [!fsspDone && "ФССП", !fedDone && "банкротство"].filter(Boolean).join(", ");
+  const journey: { label: string; note: string; state: JourneyState }[] = [
+    { label: "Подача", note: formatDateTime(app.submitted_at), state: "done" },
+    {
+      label: "Стадия А",
+      note: latestA ? decisionOutcomeLabel("A", latestA.outcome) : callDone ? "нет записи" : "идёт",
+      state: latestA ? (latestA.outcome === "reject" ? "bad" : "done") : callDone ? "skipped" : "current",
+    },
+    {
+      label: "Звонок оператора",
+      note: reviewedAt ? formatDateTime(reviewedAt) : rejectedAtA ? "не понадобился" : latestA ? "ждём" : "впереди",
+      state: callDone ? "done" : rejectedAtA ? "skipped" : latestA ? "current" : "pending",
+    },
+    {
+      label: "Стадия Б",
+      note: latestB
+        ? decisionOutcomeLabel("B", latestB.outcome)
+        : app.status === "stage_b" ? "идёт" : rejectedAtA ? "не проводилась" : "впереди",
+      state: latestB
+        ? latestB.outcome === "approve" ? "done" : latestB.outcome === "reject" ? "bad" : "warn"
+        : app.status === "stage_b" ? "current" : rejectedAtA ? "skipped" : "pending",
+    },
+    {
+      label: "ФССП и банкротство",
+      // После отказа ручные проверки уже ничего не меняют.
+      note: manualHit ? "есть находки" : !manualLeft ? "проверены" : latestDecision?.outcome === "reject" ? "не нужны после отказа" : `осталось: ${manualLeft}`,
+      state: manualHit ? "bad" : !manualLeft ? "done" : latestDecision?.outcome === "reject" ? "skipped" : actionCount > 0 ? "warn" : "pending",
+    },
+    {
+      label: "Решение в CRM",
+      note: lastOverride
+        ? `оператор: ${overrideOutcomeLabel(lastOverride.decision_stage, lastOverride.to_outcome).toLowerCase()}`
+        : latestDecision?.outcome === "reject" ? "отказ" : latestB?.outcome === "approve" ? "одобрено" : grayStageB ? "за оператором CRM" : "впереди",
+      state: lastOverride
+        ? "done"
+        : latestDecision?.outcome === "reject" ? "bad" : latestB?.outcome === "approve" ? "done" : grayStageB ? "current" : "pending",
+    },
+  ];
+  const ratingTone =
+    app.client_rating == null ? "" : app.client_rating.total > 0 ? "ah-metric__value--ok" : app.client_rating.total < 0 ? "ah-metric__value--bad" : "";
+
+  // T23 (по отзыву): сверху — всё, по чему решают «давать или нет»: кто
+  // клиент, решение и его причина, кнопки, главные цифры (балл, ПДН, платёж,
+  // рейтинг, ИИ) и путь заявки с тем, что осталось. Ниже — что нужно сделать
+  // руками, ход заявки и ручные проверки. Анкета, сделка, проверки таблицей,
+  // документы и история — свёрнутыми разделами в самом низу.
   return (
-    <div className={latestDecision?.outcome === "manual_review" ? "pf pf--gray" : "pf"}>
-      <p className="back-link pf-back">
+    <div className={latestDecision?.outcome === "manual_review" ? "ac2 ac2--gray" : "ac2"}>
+      <p className="back-link">
         <Link to="/applications">← Заявки</Link>
       </p>
-      <div className="pf-cover" aria-hidden="true" />
 
-      <div className="pf-layout">
-        <aside className="pf-profile">
-          <section className="pf-card pf-person">
-            <div className="pf-avatar" aria-hidden="true">
+      <section className={`ah ${verdictTone(latestDecision?.outcome)}`} aria-label="Главное по заявке">
+        <div className="ah__top">
+          <div className="ah__who">
+            <div className="ah__avatar" aria-hidden="true">
               {initials(app.client_name)}
             </div>
-            <h2 className="pf-name">{app.client_name ?? "Клиент скрыт"}</h2>
-            <p className="pf-sub">
-              {[age != null ? `${age} лет` : null, app.goods_category].filter(Boolean).join(" · ") || "данные паспорта не распознаны"}
-            </p>
-            <div className="pf-tags">
-              {innFound && <span className="pill pill-ok">ИНН найден</span>}
-              {app.has_guarantor ? (
-                <span className="pill pill-mute">есть поручитель</span>
-              ) : guarantorNeeded ? (
-                <span className="pill pill-bad">нужен поручитель</span>
-              ) : null}
+            <div className="ah__who-text">
+              <h2 className="ah__name">{app.client_name ?? "Клиент скрыт"}</h2>
+              <p className="ah__line">
+                {[age != null ? `${age} лет` : null, (app.profile?.phone as string | undefined) ?? null]
+                  .filter(Boolean)
+                  .join(" · ") || "данные паспорта не распознаны"}
+              </p>
+              <p className="ah__line ah__line--muted">
+                Заявка №{app.number} · подана {formatDateTime(app.submitted_at)} · в CRM {app.external_id}
+              </p>
+              <p className="ah__line">
+                {app.goods_name && app.goods_name !== "—" ? app.goods_name : "товар уточняется"}
+                {app.term_months > 0 && ` · ${formatAmount(app.requested_amount)} ₽ на ${app.term_months} мес.`}
+              </p>
+              <div className="ah__tags">
+                {innFound && <span className="pill pill-ok">ИНН найден</span>}
+                {app.has_guarantor ? (
+                  <span className="pill pill-mute">есть поручитель</span>
+                ) : guarantorNeeded ? (
+                  <span className="pill pill-bad">нужен поручитель</span>
+                ) : null}
+              </div>
             </div>
-            {profileRows.length > 0 && <KeyValue rows={profileRows} />}
+          </div>
+
+          <div className="ah__verdict">
+            <div className="pf-kicker">
+              {latestDecision ? `Решение системы · стадия ${stageLabel(latestDecision.stage)}` : "Решения пока нет"}
+            </div>
+            <div className="pf-verdict__title">
+              <VerdictTitle
+                title={latestDecision ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome) : "В обработке"}
+                help={explanation?.help ?? null}
+              />
+              {/* Статус дублирует решение («Серая зона» дважды) — показываем,
+                  только когда он говорит что-то своё (истекла, идёт стадия Б…). */}
+              {!STATUS_MIRRORS_DECISION.has(app.status) && (
+                <Badge value={app.status} label={applicationStatusLabel(app.status)} />
+              )}
+            </div>
+            {explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>}
+            {grayInCrm && <p className="verdict-action">Решение принимает оператор в CRM.</p>}
+            {latestDecision?.freeze && (
+              <p className="verdict-action">
+                Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.
+                <Link className="btn btn-primary btn-small" to="/compliance">
+                  К проверке по перечням
+                </Link>
+              </p>
+            )}
+          </div>
+
+          {/* «Принять» / «Отказать» — будущая отправка решения в CRM по API.
+              Пока заглушки: ничего не отправляют, только объясняют. */}
+          {canOperateFssp && (
+            <div className="ah__actions decision-stub">
+              <div className="decision-stub__row">
+                <button
+                  type="button"
+                  className="btn decision-stub__btn decision-stub__btn--accept"
+                  aria-pressed={decisionStub === "accept"}
+                  aria-describedby="decision-stub-note"
+                  onClick={() => setDecisionStub((v) => (v === "accept" ? null : "accept"))}
+                >
+                  Принять
+                </button>
+                <button
+                  type="button"
+                  className="btn decision-stub__btn decision-stub__btn--reject"
+                  aria-pressed={decisionStub === "reject"}
+                  aria-describedby="decision-stub-note"
+                  onClick={() => setDecisionStub((v) => (v === "reject" ? null : "reject"))}
+                >
+                  Отказать
+                </button>
+                <span className="soon-tag">в разработке</span>
+              </div>
+              <p id="decision-stub-note" className="decision-stub__note">
+                {decisionStub === null
+                  ? "Решение по заявке уйдёт в CRM отсюда — скоро."
+                  : `«${decisionStub === "accept" ? "Принять" : "Отказать"}» пока ничего не отправляет: передача решения в CRM по API в разработке.`}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="ah__metrics">
+          <div className="ah-metric">
+            <div className="ah-metric__label">Балл БКИ</div>
+            <div className="ah-metric__value">{score != null ? wholeNumber(score) : "—"}</div>
+            {score != null &&
+            latestDecision?.score_auto_approve_above != null &&
+            latestDecision.score_auto_reject_below != null ? (
+              <>
+                <div
+                  className="score-scale"
+                  style={
+                    {
+                      "--reject-at": `${(Number(latestDecision.score_auto_reject_below) / 999) * 100}%`,
+                      "--approve-at": `${(Number(latestDecision.score_auto_approve_above) / 999) * 100}%`,
+                    } as React.CSSProperties
+                  }
+                >
+                  <div className="marker" style={{ left: `${Math.min(100, Math.max(0, (Number(score) / 999) * 100))}%` }} />
+                </div>
+                <div className="ah-metric__hint">
+                  отказ &lt; {wholeNumber(latestDecision.score_auto_reject_below)} · одобрение от{" "}
+                  {wholeNumber(latestDecision.score_auto_approve_above)}
+                </div>
+              </>
+            ) : (
+              <div className="ah-metric__hint">{score != null ? "пороги не заданы" : "после стадии Б"}</div>
+            )}
+          </div>
+          <div className="ah-metric">
+            <div className="ah-metric__label">Долговая нагрузка</div>
+            <div className="ah-metric__value">
+              {ptiPercent != null ? `${ptiPercent}%` : "—"}
+              {ptiPercent != null && ptiMaxPercent != null && <span className="ah-metric__of"> из {ptiMaxPercent}%</span>}
+            </div>
+            {ptiPercent != null && ptiMaxPercent != null ? (
+              <div className="pti-bar">
+                <i
+                  className={ptiPercent > ptiMaxPercent ? "pti-bar__fill pti-bar__fill--bad" : "pti-bar__fill"}
+                  style={{ width: `${Math.min(100, ptiPercent)}%` }}
+                />
+                <u className="pti-bar__limit" style={{ left: `${Math.min(100, ptiMaxPercent)}%` }} />
+              </div>
+            ) : (
+              <div className="ah-metric__hint">после стадии Б</div>
+            )}
+          </div>
+          <div className="ah-metric">
+            <div className="ah-metric__label">Платёж в месяц</div>
+            <div className="ah-metric__value">
+              {latestDecision?.installment_payment ? `${formatAmount(latestDecision.installment_payment)} ₽` : "—"}
+            </div>
+            <div className="ah-metric__hint">
+              {app.term_months > 0 ? `взнос ${formatAmount(app.down_payment)} ₽ · ${app.term_months} мес.` : "после «Рассмотреть»"}
+            </div>
+          </div>
+          <div className="ah-metric">
+            <div className="ah-metric__label">Рейтинг клиента</div>
+            <div className={`ah-metric__value ${ratingTone}`}>
+              {app.client_rating ? (app.client_rating.total > 0 ? `+${app.client_rating.total}` : String(app.client_rating.total)) : "—"}
+            </div>
+            <div className="ah-metric__hint">информационно, на решение не влияет</div>
+          </div>
+          <section className="ah-metric ah-metric--soon">
+            <div className="ah-metric__head">
+              <h3 className="ah-metric__label">Анализ ИИ</h3>
+              <span className="soon-tag">в разработке</span>
+            </div>
+            <div className="ah-metric__value ah-metric__value--muted">—</div>
+            <div className="ah-metric__hint">Анализ пока не проводится и на решение не влияет.</div>
+          </section>
+        </div>
+
+        <ol className="journey" aria-label="Путь заявки">
+          {journey.map((step, i) => (
+            <li key={step.label} className={`journey__step journey__step--${step.state}`}>
+              <span className="journey__dot" aria-hidden="true">
+                {JOURNEY_ICON[step.state] ?? i + 1}
+              </span>
+              <span className="journey__label">{step.label}</span>
+              <span className="journey__note">{step.note}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {actionCount > 0 && (
+        <div className="pf-card pf-action">
+          <div className="pf-action__head">
+            <span className="pf-action__icon" aria-hidden="true">
+              !
+            </span>
+            Нужно ваше действие — {actionCount === 1 ? "1 проверка" : `${actionCount} проверки`}
+          </div>
+          {fsspNeedsAction && fsspSection}
+          {fedresursNeedsAction && fedresursSection}
+        </div>
+      )}
+
+      <div className="ac2-grid">
+        <section className="pf-feed">
+          <h2 className="pf-section-title">Ход заявки</h2>
+          <ol className="feed">
+            {events.map((e) => (
+              <li key={e.key} className={`ev ev--${e.tone}`}>
+                <span className="ev__icon" aria-hidden="true">
+                  {EVENT_ICON[e.tone]}
+                </span>
+                <div className="pf-card ev__card">
+                  <div className="ev__head">
+                    <h3 className="ev__title">{e.title}</h3>
+                    {e.at && <span className="ev__time">{formatDateTime(e.at)}</span>}
+                  </div>
+                  {e.body}
+                </div>
+              </li>
+            ))}
+          </ol>
+          {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
+        </section>
+
+        <div className="ac2-side">
+          {(!fsspNeedsAction || !fedresursNeedsAction) && (
+            <div className="pf-card pf-manual">
+              <h2 className="pf-section-title">Ручные проверки</h2>
+              {!fsspNeedsAction && fsspSection}
+              {!fedresursNeedsAction && fedresursSection}
+            </div>
+          )}
+          {app.client_rating && (
+            <div className="pf-card ac2-rating">
+              <ClientRatingPanel rating={app.client_rating} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Всё вспомогательное — ниже и свёрнуто: открывают, когда нужно. */}
+      <div className="more">
+        <h2 className="more__title">Данные заявки</h2>
+
+        <details className="more__item">
+          <summary>
+            <h2 className="more__name">Анкета клиента</h2>
+            <span className="more__hint">паспорт, адрес, работа, доход{app.guarantor_profile ? ", поручитель" : ""}</span>
+          </summary>
+          <div className="more__body">
+            {profileRows.length > 0 ? <KeyValue rows={profileRows} /> : <p className="muted">Анкеты пока нет.</p>}
             {app.guarantor_profile && (
-              <details className="fold">
-                <summary>Данные поручителя</summary>
+              <>
+                <h3 className="subhead">Поручитель</h3>
                 <KeyValue
                   rows={Object.entries(app.guarantor_profile)
                     .filter(([, value]) => value != null && value !== "")
@@ -485,340 +754,162 @@ export function ApplicationDetailPage() {
                       value: field.endsWith("_date") ? formatDate(String(value)) : String(value),
                     }))}
                 />
-              </details>
+              </>
             )}
-
-            {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
-
-            <section className="pf-ai">
-              <div className="pf-ai__head">
-                <h2 className="pf-section-title">Анализ ИИ</h2>
-                <span className="soon-tag">в разработке</span>
-              </div>
-              <AiAnalysisPanel />
-            </section>
-          </section>
-        </aside>
-
-        <div className="pf-main">
-          <header className={`pf-verdict ${verdictTone(latestDecision?.outcome)}`}>
-            <div className="pf-verdict__main">
-              <div className="pf-kicker">
-                Заявка №{app.number} · подана {formatDateTime(app.submitted_at)}
-              </div>
-              <div className="pf-verdict__title">
-                <VerdictTitle
-                  title={latestDecision ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome) : "В обработке"}
-                  help={explanation?.help ?? null}
-                />
-                {/* Статус дублирует решение («Серая зона» дважды) — показываем,
-                    только когда он говорит что-то своё (истекла, идёт стадия Б…). */}
-                {!STATUS_MIRRORS_DECISION.has(app.status) && (
-                  <Badge value={app.status} label={applicationStatusLabel(app.status)} />
-                )}
-              </div>
-              {explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>}
-              {grayInCrm && <p className="verdict-action">Решение принимает оператор в CRM.</p>}
-              {latestDecision?.freeze && (
-                <p className="verdict-action">
-                  Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.
-                  <Link className="btn btn-primary btn-small" to="/compliance">
-                    К проверке по перечням
-                  </Link>
-                </p>
-              )}
-            </div>
-            <div className="pf-verdict__side">
-            <dl className="pf-verdict__deal">
-              <div>
-                <dt>Товар</dt>
-                <dd>{app.goods_name && app.goods_name !== "—" ? app.goods_name : "—"}</dd>
-              </div>
-              <div>
-                <dt>Сумма</dt>
-                <dd>{app.term_months > 0 ? `${formatAmount(app.requested_amount)} ₽ · ${app.term_months} мес.` : "после «Рассмотреть»"}</dd>
-              </div>
-              <div>
-                <dt>В CRM</dt>
-                <dd>{app.external_id}</dd>
-              </div>
-            </dl>
-            {/* «Принять» / «Отказать» — будущая отправка решения в CRM по API.
-                Пока заглушки: ничего не отправляют, только объясняют. Ширина
-                блока постоянная — пояснение не сдвигает раскладку. */}
-            {canOperateFssp && (
-              <div className="decision-stub">
-                <div className="decision-stub__row">
-                  <button
-                    type="button"
-                    className="btn decision-stub__btn decision-stub__btn--accept"
-                    aria-pressed={decisionStub === "accept"}
-                    aria-describedby="decision-stub-note"
-                    onClick={() => setDecisionStub((v) => (v === "accept" ? null : "accept"))}
-                  >
-                    Принять
-                  </button>
-                  <button
-                    type="button"
-                    className="btn decision-stub__btn decision-stub__btn--reject"
-                    aria-pressed={decisionStub === "reject"}
-                    aria-describedby="decision-stub-note"
-                    onClick={() => setDecisionStub((v) => (v === "reject" ? null : "reject"))}
-                  >
-                    Отказать
-                  </button>
-                  <span className="soon-tag">в разработке</span>
-                </div>
-                <p id="decision-stub-note" className="decision-stub__note">
-                  {decisionStub === null
-                    ? "Решение по заявке уйдёт в CRM отсюда — скоро."
-                    : `«${decisionStub === "accept" ? "Принять" : "Отказать"}» пока ничего не отправляет: передача решения в CRM по API в разработке.`}
-                </p>
-              </div>
-            )}
-            </div>
-          </header>
-
-          {actionCount > 0 && (
-            <div className="pf-card pf-action">
-              <div className="pf-action__head">
-                <span className="pf-action__icon" aria-hidden="true">
-                  !
-                </span>
-                Нужно ваше действие — {actionCount === 1 ? "1 проверка" : `${actionCount} проверки`}
-              </div>
-              {fsspNeedsAction && fsspSection}
-              {fedresursNeedsAction && fedresursSection}
-            </div>
-          )}
-
-          <div className="pf-kpis">
-            <div className="pf-card pf-kpi">
-              <div className="pf-kpi__label">Балл БКИ</div>
-              <div className="pf-kpi__value">{score != null ? wholeNumber(score) : "—"}</div>
-              {score != null &&
-              latestDecision?.score_auto_approve_above != null &&
-              latestDecision.score_auto_reject_below != null ? (
-                <>
-                  <div
-                    className="score-scale"
-                    style={
-                      {
-                        "--reject-at": `${(Number(latestDecision.score_auto_reject_below) / 999) * 100}%`,
-                        "--approve-at": `${(Number(latestDecision.score_auto_approve_above) / 999) * 100}%`,
-                      } as React.CSSProperties
-                    }
-                  >
-                    <div className="marker" style={{ left: `${Math.min(100, Math.max(0, (Number(score) / 999) * 100))}%` }} />
-                  </div>
-                  <div className="pf-kpi__hint">
-                    отказ ниже {wholeNumber(latestDecision.score_auto_reject_below)} · одобрение от{" "}
-                    {wholeNumber(latestDecision.score_auto_approve_above)}
-                  </div>
-                </>
-              ) : (
-                <div className="pf-kpi__hint">{score != null ? "пороги не заданы" : "после стадии Б"}</div>
-              )}
-            </div>
-            <div className="pf-card pf-kpi">
-              <div className="pf-kpi__label">Долговая нагрузка (ПДН)</div>
-              <div className="pf-kpi__value">
-                {ptiPercent != null ? `${ptiPercent}%` : "—"}
-                {ptiPercent != null && ptiMaxPercent != null && <span className="pf-kpi__of"> из {ptiMaxPercent}%</span>}
-              </div>
-              {ptiPercent != null && ptiMaxPercent != null ? (
-                <div className="pti-bar">
-                  <i
-                    className={ptiPercent > ptiMaxPercent ? "pti-bar__fill pti-bar__fill--bad" : "pti-bar__fill"}
-                    style={{ width: `${Math.min(100, ptiPercent)}%` }}
-                  />
-                  <u className="pti-bar__limit" style={{ left: `${Math.min(100, ptiMaxPercent)}%` }} />
-                </div>
-              ) : (
-                <div className="pf-kpi__hint">после стадии Б</div>
-              )}
-            </div>
-            <div className="pf-card pf-kpi">
-              <div className="pf-kpi__label">Платёж в месяц</div>
-              <div className="pf-kpi__value">
-                {latestDecision?.installment_payment ? `${formatAmount(latestDecision.installment_payment)} ₽` : "—"}
-              </div>
-              <div className="pf-kpi__hint">
-                {app.term_months > 0
-                  ? `взнос ${formatAmount(app.down_payment)} ₽ · ${app.term_months} мес.`
-                  : "после «Рассмотреть»"}
-              </div>
-            </div>
           </div>
+        </details>
 
-          <section className="pf-feed">
-            <h2 className="pf-section-title">Ход заявки</h2>
-            <ol className="feed">
-              {events.map((e) => (
-                <li key={e.key} className={`ev ev--${e.tone}`}>
-                  <span className="ev__icon" aria-hidden="true">
-                    {EVENT_ICON[e.tone]}
-                  </span>
-                  <div className="pf-card ev__card">
-                    <div className="ev__head">
-                      <h3 className="ev__title">{e.title}</h3>
-                      {e.at && <span className="ev__time">{formatDateTime(e.at)}</span>}
-                    </div>
-                    {e.body}
+        <details className="more__item">
+          <summary>
+            <h2 className="more__name">Условия сделки</h2>
+            <span className="more__hint">
+              {dealBlock.length > 0 ? "товар, взнос, срок и тариф, платёж" : "появятся после «Рассмотреть»"}
+            </span>
+          </summary>
+          <div className="more__body">
+            {dealBlock.length > 0 ? <KeyValue rows={dealBlock} /> : <p className="muted">Сделка ещё не оформлена в CRM.</p>}
+          </div>
+        </details>
+
+        <details className="more__item">
+          <summary>
+            <h2 className="more__name">Что проверили</h2>
+            <span className="more__hint">все проверки и повторы одной таблицей · {visibleChecks.length}</span>
+          </summary>
+          <div className="more__body">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Источник</th>
+                  <th>Кто</th>
+                  <th>Результат</th>
+                  <th>Время</th>
+                  <th>Ошибка</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* T17, шаг 3 (ваше явное указание): МВД не показываем — файл
+                    недействительных паспортов отменён в 2023. */}
+                {visibleChecks.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      <SourceBadge source={c.source} />
+                    </td>
+                    <td className="muted">{subjectTypeLabel(c.subject_type)}</td>
+                    <td>{checkResultLabel(c.source, c.status)}</td>
+                    <td className="muted">{formatDateTime(c.started_at)}</td>
+                    <td className="muted">{c.error_text ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <details className="more__item">
+          <summary>
+            <h2 className="more__name">Документы</h2>
+            <span className="more__hint">фото паспорта · {app.documents.length}</span>
+          </summary>
+          <div className="more__body">
+            {app.documents.length === 0 && <p className="muted">Документов нет.</p>}
+            <ul className="plain-list">
+              {app.documents.map((doc) => (
+                <li key={doc.id}>
+                  <div className="row">
+                    <span>{documentKindLabel(doc.kind)}</span>
+                    <span className="muted">{formatDateTime(doc.uploaded_at)}</span>
+                    <button className="btn btn-small" onClick={() => setOpenDocumentId(openDocumentId === doc.id ? null : doc.id)}>
+                      {openDocumentId === doc.id ? "Скрыть" : "Показать"}
+                    </button>
                   </div>
+                  {openDocumentId === doc.id && (
+                    <img
+                      className="document-preview"
+                      src={`/api/applications/${app.id}/documents/${doc.id}`}
+                      alt={documentKindLabel(doc.kind)}
+                    />
+                  )}
                 </li>
               ))}
-            </ol>
-            {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
-          </section>
-
-          {(!fsspNeedsAction || !fedresursNeedsAction) && (
-            <div className="pf-card pf-manual">
-              <h2 className="pf-section-title">Ручные проверки</h2>
-              {!fsspNeedsAction && fsspSection}
-              {!fedresursNeedsAction && fedresursSection}
-            </div>
-          )}
-
-          {/* Анкета сделки, проверки таблицей, документы и история — одна панель; длинное — по кнопке. */}
-          <div className="pf-card pf-data">
-            {dealBlock.length > 0 && (
-              <section className="pf-data__row">
-                <h2 className="pf-section-title">Условия сделки</h2>
-                <KeyValue rows={dealBlock} />
-              </section>
-            )}
-
-            <section className="pf-data__row">
-              <h2 className="pf-section-title">Что проверили</h2>
-              <details className="fold">
-                <summary>Все проверки одной таблицей ({visibleChecks.length})</summary>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Источник</th>
-                      <th>Кто</th>
-                      <th>Результат</th>
-                      <th>Время</th>
-                      <th>Ошибка</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* T17, шаг 3 (ваше явное указание): МВД не показываем — файл
-                        недействительных паспортов отменён в 2023. */}
-                    {visibleChecks.map((c) => (
-                      <tr key={c.id}>
-                        <td>
-                          <SourceBadge source={c.source} />
-                        </td>
-                        <td className="muted">{subjectTypeLabel(c.subject_type)}</td>
-                        <td>{checkResultLabel(c.source, c.status)}</td>
-                        <td className="muted">{formatDateTime(c.started_at)}</td>
-                        <td className="muted">{c.error_text ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </details>
-            </section>
-
-            <section className="pf-data__row">
-              <h2 className="pf-section-title">Документы</h2>
-              {app.documents.length === 0 && <p className="muted">Документов нет.</p>}
-              <ul className="plain-list">
-                {app.documents.map((doc) => (
-                  <li key={doc.id}>
-                    <div className="row">
-                      <span>{documentKindLabel(doc.kind)}</span>
-                      <span className="muted">{formatDateTime(doc.uploaded_at)}</span>
-                      <button className="btn btn-small" onClick={() => setOpenDocumentId(openDocumentId === doc.id ? null : doc.id)}>
-                        {openDocumentId === doc.id ? "Скрыть" : "Показать"}
-                      </button>
-                    </div>
-                    {openDocumentId === doc.id && (
-                      <img
-                        className="document-preview"
-                        src={`/api/applications/${app.id}/documents/${doc.id}`}
-                        alt={documentKindLabel(doc.kind)}
-                      />
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <section className="pf-data__row">
-              <h2 className="pf-section-title">История</h2>
-              <details className="fold">
-                <summary>Показать историю статусов ({app.status_history.length})</summary>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Из</th>
-                      <th>В</th>
-                      <th>Кто</th>
-                      <th>Когда</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {app.status_history.map((h, i) => (
-                      <tr key={i}>
-                        <td>
-                          <Badge value={h.from_status} label={h.from_status ? applicationStatusLabel(h.from_status) : undefined} />
-                        </td>
-                        <td>
-                          <Badge value={h.to_status} label={applicationStatusLabel(h.to_status)} />
-                        </td>
-                        <td className="muted">{actorTypeLabel(h.actor_type)}</td>
-                        <td className="muted">{formatDateTime(h.created_at)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </details>
-            </section>
-
-            {/* Сырьё — не в основном виде (T17, часть 2): распознанные поля паспорта
-                с уверенностью и полные снимки анкеты, для того, кто проверяет
-                распознавание или ищет, что именно менял оператор. */}
-            <details className="disclosure pf-data__row">
-              <summary>Подробности</summary>
-              {app.ocr_result ? (
-                <>
-                  <h3 className="subhead">
-                    Распознавание паспорта · мин. уверенность {app.ocr_result.min_confidence ?? "—"} ·{" "}
-                    {formatDateTime(app.ocr_result.created_at)}
-                  </h3>
-                  <table className="table table--compact">
-                    <thead>
-                      <tr>
-                        <th>Поле</th>
-                        <th>Значение</th>
-                        <th>Уверенность</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries((app.ocr_result.fields.fields as Record<string, unknown>) ?? {}).map(
-                        ([field, value]) => {
-                          const v = value as { value?: unknown; confidence?: number };
-                          return (
-                            <tr key={field}>
-                              <td>{humanizeFieldPath(field)}</td>
-                              <td>{String(v.value ?? "—")}</td>
-                              <td className="muted">{v.confidence ?? "—"}</td>
-                            </tr>
-                          );
-                        },
-                      )}
-                    </tbody>
-                  </table>
-                </>
-              ) : null}
-              <h3 className="subhead">Снимки анкеты</h3>
-              <SnapshotHistory snapshots={app.external_snapshots} />
-            </details>
+            </ul>
           </div>
-        </div>
+        </details>
+
+        <details className="more__item">
+          <summary>
+            <h2 className="more__name">История</h2>
+            <span className="more__hint">смена статусов · {app.status_history.length}</span>
+          </summary>
+          <div className="more__body">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Из</th>
+                  <th>В</th>
+                  <th>Кто</th>
+                  <th>Когда</th>
+                </tr>
+              </thead>
+              <tbody>
+                {app.status_history.map((h, i) => (
+                  <tr key={i}>
+                    <td>
+                      <Badge value={h.from_status} label={h.from_status ? applicationStatusLabel(h.from_status) : undefined} />
+                    </td>
+                    <td>
+                      <Badge value={h.to_status} label={applicationStatusLabel(h.to_status)} />
+                    </td>
+                    <td className="muted">{actorTypeLabel(h.actor_type)}</td>
+                    <td className="muted">{formatDateTime(h.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        {/* Сырьё (T17, часть 2): распознанные поля паспорта с уверенностью и
+            полные снимки анкеты — для того, кто проверяет распознавание. */}
+        <details className="more__item disclosure">
+          <summary>
+            <span className="more__name">Подробности</span>
+            <span className="more__hint">сырые данные распознавания и анкеты из CRM</span>
+          </summary>
+          <div className="more__body">
+            {app.ocr_result ? (
+              <>
+                <h3 className="subhead">
+                  Распознавание паспорта · мин. уверенность {app.ocr_result.min_confidence ?? "—"} ·{" "}
+                  {formatDateTime(app.ocr_result.created_at)}
+                </h3>
+                <table className="table table--compact">
+                  <thead>
+                    <tr>
+                      <th>Поле</th>
+                      <th>Значение</th>
+                      <th>Уверенность</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries((app.ocr_result.fields.fields as Record<string, unknown>) ?? {}).map(([field, value]) => {
+                      const v = value as { value?: unknown; confidence?: number };
+                      return (
+                        <tr key={field}>
+                          <td>{humanizeFieldPath(field)}</td>
+                          <td>{String(v.value ?? "—")}</td>
+                          <td className="muted">{v.confidence ?? "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </>
+            ) : null}
+            <h3 className="subhead">Снимки анкеты</h3>
+            <SnapshotHistory snapshots={app.external_snapshots} />
+          </div>
+        </details>
       </div>
     </div>
   );

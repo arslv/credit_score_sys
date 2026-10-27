@@ -1148,7 +1148,6 @@ a:hover {
   color: var(--color-text-muted);
 }
 
-
 /* --- T23: общие блоки экранов (components/ui.tsx) --- */
 
 .page-header {
@@ -2373,7 +2372,9 @@ mark {
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  /* Блок с описанием — по центру панели; логотип — в углу (ниже). */
+  justify-content: center;
+  align-items: center;
   gap: var(--space-6);
   padding: var(--space-6) var(--space-7);
   overflow: hidden;
@@ -2399,6 +2400,12 @@ mark {
 
 .login__brand > * {
   position: relative;
+}
+
+.login__brand > :first-child {
+  position: absolute;
+  top: var(--space-6);
+  left: var(--space-7);
 }
 
 .login__pitch {
@@ -2674,28 +2681,6 @@ mark {
 
 .login__submit:active {
   transform: translateY(1px);
-}
-
-.login__divider {
-  height: 1px;
-  margin: 28px 0 16px;
-  background: var(--color-border);
-}
-
-.login__hint {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0;
-  font-size: var(--font-sm);
-  line-height: 1.45;
-  color: var(--color-text-muted);
-}
-
-.login__hint svg {
-  flex-shrink: 0;
-  margin-top: 1px;
-  color: var(--color-accent);
 }
 
 @media (max-width: 960px) {
@@ -3367,10 +3352,15 @@ mark {
   margin: 0;
 }
 
+/* Строка статуса — обычный текст с точкой: в узкой колонке переносится по словам. */
 .manual-check__status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: block;
+}
+
+.manual-check__status::before {
+  display: inline-block;
+  margin-right: var(--space-2);
+  vertical-align: 1px;
 }
 
 .manual-check__status::before {
@@ -3590,7 +3580,7 @@ mark {
    ручные проверки и данные. Все блоки — белые панели с тонкой рамкой; цвет —
    только у статусов. */
 
-.app-main-v2:has(.pf) {
+.app-main-v2:has(.ac2) {
   max-width: calc(1480px + 2 * var(--page-pad-x));
 }
 
@@ -3601,7 +3591,7 @@ mark {
   min-width: 0;
 }
 
-.pf .pill {
+.ac2 .pill {
   display: inline-flex;
   align-items: center;
   padding: 2px 10px;
@@ -3611,9 +3601,9 @@ mark {
   white-space: nowrap;
 }
 
-.pf .pill-ok { background: var(--status-ok-soft); color: var(--status-ok); }
-.pf .pill-bad { background: var(--status-bad-soft); color: var(--status-bad); }
-.pf .pill-mute { border: var(--line); background: var(--color-subtle); color: var(--color-text-muted); }
+.ac2 .pill-ok { background: var(--status-ok-soft); color: var(--status-ok); }
+.ac2 .pill-bad { background: var(--status-bad-soft); color: var(--status-bad); }
+.ac2 .pill-mute { border: var(--line); background: var(--color-subtle); color: var(--color-text-muted); }
 
 .pf-section-title {
   margin: 0 0 var(--space-2);
@@ -3623,88 +3613,10 @@ mark {
 }
 
 /* Обложка */
-.pf-cover {
-  height: 96px;
-  border-radius: 16px;
-  background: linear-gradient(110deg, #1e2a5a, var(--color-accent) 55%, #5b7cfa);
-}
-
-.pf-back {
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-sm);
-}
-
-.pf-layout {
-  display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
-  gap: var(--space-5);
-  align-items: start;
-  margin-top: -48px;
-  padding: 0 var(--space-4);
-}
 
 /* Профиль клиента */
-.pf-person {
-  padding: 0 22px 22px;
-}
-
-.pf-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 84px;
-  height: 84px;
-  margin-top: -36px;
-  border: 4px solid var(--color-surface);
-  border-radius: 20px;
-  background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
-  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.12);
-  color: #3730a3;
-  font-size: 28px;
-  font-weight: var(--weight-bold);
-}
-
-.pf-name {
-  margin: var(--space-3) 0 2px;
-  font-size: var(--font-xl);
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-}
-
-.pf-sub {
-  margin: 0;
-  color: var(--color-text-muted);
-}
-
-.pf-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: var(--space-3) 0 var(--space-4);
-}
-
-.pf-tags:empty {
-  margin-bottom: var(--space-2);
-}
-
-.pf-person .kv-grid {
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: var(--space-2) var(--space-3);
-  font-size: var(--font-sm);
-}
-
-.pf-person .kv-grid dd {
-  font-weight: var(--weight-medium);
-  overflow-wrap: anywhere;
-}
 
 /* Разделы профиля — через линию во всю ширину карточки. */
-.pf-person .rating,
-.pf-ai {
-  margin: var(--space-4) -22px 0;
-  padding: var(--space-4) 22px 0;
-  border-top: var(--line);
-}
 
 /* Рейтинг клиента */
 .rating__badge {
@@ -3832,16 +3744,6 @@ mark {
 .points--down { color: var(--status-bad); }
 
 /* Анализ ИИ — заготовка, приглушена. */
-.pf-ai__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.pf-ai__head .pf-section-title {
-  margin: 0;
-}
 
 .soon-tag {
   padding: 1px 8px;
@@ -3852,54 +3754,7 @@ mark {
   font-weight: var(--weight-medium);
 }
 
-.ai-panel__note {
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
-}
-
-.ai-panel__list {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ai-panel__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
-}
-
-.ai-panel__item::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border: 1.5px dashed var(--color-border-strong);
-  border-radius: 50%;
-}
-
 /* Правая колонка — заявка */
-.pf-main {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-  padding-top: 64px;
-}
-
-.pf-verdict {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-5);
-}
-
-.pf-verdict__main {
-  min-width: 0;
-}
 
 .pf-kicker {
   font-size: var(--font-sm);
@@ -3941,10 +3796,6 @@ mark {
   font-weight: var(--weight-medium);
 }
 
-.pf-verdict .help-text {
-  margin: var(--space-1) 0;
-}
-
 .verdict-action {
   display: flex;
   flex-wrap: wrap;
@@ -3953,13 +3804,6 @@ mark {
   margin: var(--space-2) 0 0;
   font-size: var(--font-sm);
   color: var(--color-text-muted);
-}
-
-.pf-verdict__side {
-  display: grid;
-  gap: var(--space-3);
-  flex-shrink: 0;
-  width: 340px;
 }
 
 /* «Принять» / «Отказать» — заглушки: цвет действия, пометка «в разработке».
@@ -4010,30 +3854,6 @@ mark {
   font-size: var(--font-xs);
   line-height: 1.6;
   color: var(--color-text-muted);
-}
-
-.pf-verdict__deal {
-  display: grid;
-  gap: 4px;
-  flex-shrink: 0;
-  min-width: 240px;
-  margin: 0;
-  font-size: var(--font-sm);
-}
-
-.pf-verdict__deal div {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: var(--space-2);
-}
-
-.pf-verdict__deal dt {
-  color: var(--color-text-muted);
-}
-
-.pf-verdict__deal dd {
-  margin: 0;
-  font-weight: var(--weight-medium);
 }
 
 /* «Нужно ваше действие» — закреплён сверху, янтарный (уведомление, не кнопка). */
@@ -4138,40 +3958,6 @@ mark {
 }
 
 /* Три главные цифры */
-.pf-kpis {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-.pf-kpi {
-  padding: var(--space-4) 18px;
-}
-
-.pf-kpi__label {
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
-}
-
-.pf-kpi__value {
-  margin: 2px 0 var(--space-2);
-  font-size: var(--font-2xl);
-  font-weight: var(--weight-bold);
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-}
-
-.pf-kpi__of {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-normal);
-  color: var(--color-text-muted);
-}
-
-.pf-kpi__hint {
-  margin-top: var(--space-1);
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
-}
 
 .score-scale {
   position: relative;
@@ -4373,54 +4159,11 @@ mark {
   margin-top: var(--space-2);
 }
 
-.pf--gray .reason-item--cause::before {
+.ac2--gray .reason-item--cause::before {
   background: var(--status-gray);
 }
 
 /* Данные: условия сделки, проверки таблицей, документы, история. */
-.pf-data {
-  padding: 0 var(--space-5);
-}
-
-.pf-data__row {
-  padding: var(--space-4) 0;
-  border-top: var(--line);
-}
-
-.pf-data__row:first-child {
-  border-top: 0;
-}
-
-.pf-data__row > p:last-child,
-.pf-data__row > .plain-list:last-child {
-  margin-bottom: 0;
-}
-
-.pf-data .disclosure {
-  margin-top: 0;
-}
-
-.pf-data .kv-grid {
-  font-size: var(--font-sm);
-}
-
-@media (max-width: 1100px) {
-  .pf-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .pf-main {
-    padding-top: 0;
-  }
-
-  .pf-kpis {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .pf-verdict {
-    flex-direction: column;
-  }
-}
 
 /* Аналитика: четыре главные цифры в ряд; остальное — в «Ещё показатели». */
 .dash-kpis--4 {
@@ -4459,4 +4202,388 @@ mark {
   font-size: var(--font-sm);
   color: var(--status-bad);
   font-weight: var(--weight-medium);
+}
+
+/* ===== Карточка заявки (T23, по отзыву): главное — наверху и обособленно =====
+   Общий блок решения: кто клиент, решение и причина, кнопки, пять главных цифр
+   и путь заявки с тем, что осталось. Ниже — действия руками, ход заявки и
+   ручные проверки; всё вспомогательное — свёрнутыми разделами внизу. */
+
+.ac2 {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ac2 > .back-link {
+  margin: 0;
+}
+
+.ah {
+  overflow: hidden;
+  border: var(--line);
+  border-top: 4px solid var(--status-neutral);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+}
+
+.ah.pf-verdict--ok { border-top-color: var(--status-ok); }
+.ah.pf-verdict--warn { border-top-color: var(--status-gray); }
+.ah.pf-verdict--bad { border-top-color: var(--status-bad); }
+
+.ah__top {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.3fr) 330px;
+  gap: var(--space-5);
+  align-items: start;
+  padding: var(--space-5);
+}
+
+.ah__who {
+  display: flex;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ah__avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
+  color: #3730a3;
+  font-size: 22px;
+  font-weight: var(--weight-bold);
+}
+
+.ah__who-text {
+  min-width: 0;
+}
+
+.ah__name {
+  margin: 0 0 4px;
+  font-size: var(--font-xl);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.ah__line {
+  margin: 0;
+  font-size: var(--font-sm);
+}
+
+.ah__line--muted {
+  color: var(--color-text-muted);
+}
+
+.ah__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+
+.ah__tags:empty {
+  display: none;
+}
+
+.ah__verdict {
+  min-width: 0;
+  padding-left: var(--space-5);
+  border-left: var(--line);
+}
+
+.ah__verdict .verdict-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 2px 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.ah.pf-verdict--ok .verdict-title { color: var(--status-ok); }
+.ah.pf-verdict--warn .verdict-title { color: var(--status-gray); }
+.ah.pf-verdict--bad .verdict-title { color: var(--status-bad); }
+
+.ah__actions {
+  align-self: stretch;
+}
+
+/* Пять главных цифр — в одну строку, разделены линиями. */
+.ah__metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: var(--line);
+  background: color-mix(in srgb, var(--color-subtle) 60%, var(--color-surface));
+}
+
+.ah-metric {
+  min-width: 0;
+  padding: var(--space-3) var(--space-5) var(--space-4);
+}
+
+.ah-metric + .ah-metric {
+  border-left: var(--line);
+}
+
+.ah-metric__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ah-metric__label {
+  margin: 0;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+}
+
+.ah-metric__value {
+  margin: 2px 0 var(--space-2);
+  font-size: var(--font-2xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ah-metric__value--ok { color: var(--status-ok); }
+.ah-metric__value--bad { color: var(--status-bad); }
+.ah-metric__value--muted { color: var(--color-text-muted); }
+
+.ah-metric__of {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-normal);
+  color: var(--color-text-muted);
+}
+
+.ah-metric__hint {
+  margin-top: var(--space-1);
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.ah-metric--soon .ah-metric__value {
+  font-weight: var(--weight-normal);
+}
+
+/* Путь заявки: шесть шагов в ряд — пройдено, сейчас, впереди. */
+.journey {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-top: var(--line);
+  list-style: none;
+}
+
+.journey__step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  column-gap: var(--space-2);
+  padding-right: var(--space-3);
+}
+
+/* Линия к следующему шагу. */
+.journey__step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 34px;
+  right: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-border);
+}
+
+.journey__step--done:not(:last-child)::after {
+  background: var(--status-ok);
+}
+
+.journey__dot {
+  position: relative;
+  z-index: 1;
+  grid-row: span 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--color-border-strong);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: var(--weight-bold);
+}
+
+.journey__step--done .journey__dot { border-color: var(--status-ok); background: var(--status-ok); color: var(--color-surface); }
+.journey__step--bad .journey__dot { border-color: var(--status-bad); background: var(--status-bad); color: var(--color-surface); }
+.journey__step--warn .journey__dot { border-color: var(--status-gray); background: var(--status-gray); color: var(--color-surface); }
+
+.journey__step--current .journey__dot {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  box-shadow: 0 0 0 4px var(--color-accent-soft);
+}
+
+.journey__step--skipped {
+  opacity: 0.5;
+}
+
+.journey__step--skipped .journey__dot {
+  border-style: dashed;
+}
+
+.journey__label {
+  position: relative;
+  z-index: 1;
+  width: fit-content;
+  padding-right: 6px;
+  background: var(--color-surface);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+  line-height: 26px;
+}
+
+.journey__note {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.journey__step--warn .journey__note { color: var(--status-gray); font-weight: var(--weight-medium); }
+.journey__step--bad .journey__note { color: var(--status-bad); font-weight: var(--weight-medium); }
+
+/* Ниже блока решения: ход заявки и ручные проверки с рейтингом. */
+.ac2-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.ac2-side {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ac2-rating {
+  padding: var(--space-4) var(--space-5);
+}
+
+/* Данные заявки — свёрнутые строки, раскрываются по клику. */
+.more {
+  border: var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.more__title {
+  margin: 0;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: var(--line);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.more__item + .more__item {
+  border-top: var(--line);
+}
+
+.more__item.disclosure {
+  margin: 0;
+  padding: 0;
+}
+
+.more__item > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  cursor: pointer;
+  list-style: none;
+}
+
+.more__item > summary::-webkit-details-marker {
+  display: none;
+}
+
+.more__item > summary::before {
+  content: "▸";
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.more__item[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.more__item > summary:hover {
+  background: var(--color-subtle);
+}
+
+.more__name {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-bold);
+  color: var(--color-text);
+}
+
+.more__hint {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.more__body {
+  padding: 0 var(--space-5) var(--space-4) calc(var(--space-5) + 18px);
+}
+
+.more__body .kv-grid {
+  grid-template-columns: 200px minmax(0, 1fr);
+  font-size: var(--font-sm);
+}
+
+@media (max-width: 1200px) {
+  .ah__top {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .ah__actions {
+    grid-column: 1 / -1;
+  }
+
+  .ah__metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .journey {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: var(--space-3);
+  }
+
+  .ac2-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .ah__top,
+  .ah__metrics,
+  .journey {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ah__verdict {
+    padding-left: 0;
+    border-left: 0;
+  }
 }
