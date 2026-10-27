@@ -107,22 +107,9 @@ function OperatorOverride({ override: o }: { override: ManualOverride }) {
   );
 }
 
-// Проверки стадии одной строкой точек; полный список с паспортом по пунктам
-// и кнопкой «Повторить» — по кнопке «подробнее».
-function CheckSummary({
-  checks,
-  passport,
-  canRetry,
-  retry,
-  busy,
-}: {
-  checks: CheckRow[];
-  passport: PassportCheck[];
-  canRetry: boolean;
-  retry: (checkId: string) => void;
-  busy: boolean;
-}) {
-  const [open, setOpen] = useState(false);
+// Проверки стадии — точками в строке события, без пояснений: что не в
+// порядке, видно по цвету, подробности — по «подробнее» у события.
+function CheckChips({ checks, passport }: { checks: CheckRow[]; passport: PassportCheck[] }) {
   if (checks.length === 0 && passport.length === 0) return null;
   const passportTone = passport.some((i) => i.status === "fail")
     ? "bad"
@@ -131,36 +118,61 @@ function CheckSummary({
       : "ok";
   const passportOk = passport.filter((i) => i.status === "ok").length;
   return (
-    <div className="ev__checks">
-      <ul className="ev__chips">
-        {passport.length > 0 && (
-          <li className={`ev__chip ev__chip--${passportTone}`}>
-            Паспорт {passportOk}/{passport.length}
-          </li>
-        )}
-        {checks.map((c) => (
-          <li key={c.id} className={`ev__chip ev__chip--${checkTone(c.status)}`}>
-            {sourceMeta(c.source).label}
-            {c.subject_type === "guarantor" && " (поручитель)"}
-            {checkTone(c.status) !== "ok" && <span className="ev__chip-note">· {checkResultLabel(c.source, c.status)}</span>}
-          </li>
-        ))}
-        <li>
+    <ul className="ev__chips">
+      {passport.length > 0 && (
+        <li className={`ev__chip ev__chip--${passportTone}`}>
+          Паспорт {passportOk}/{passport.length}
+        </li>
+      )}
+      {checks.map((c) => (
+        <li
+          key={c.id}
+          className={`ev__chip ev__chip--${checkTone(c.status)}`}
+          title={checkResultLabel(c.source, c.status)}
+        >
+          {sourceMeta(c.source).label}
+          {c.subject_type === "guarantor" && " (поручитель)"}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+type FeedEvent = {
+  key: string;
+  at: string | null;
+  tone: EventTone;
+  title: string;
+  chips?: React.ReactNode;
+  details?: React.ReactNode;
+};
+
+// Событие хода заявки — одна строка: значок, что произошло, проверки
+// точками, время. Причины и проверки по пунктам — по «подробнее» (в DOM
+// остаются, только скрыты).
+function FeedRow({ event: e }: { event: FeedEvent }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li className={`ev ev--${e.tone}`}>
+      <span className="ev__icon" aria-hidden="true">
+        {EVENT_ICON[e.tone]}
+      </span>
+      <div className="ev__line">
+        <h3 className="ev__title">{e.title}</h3>
+        {e.chips}
+        {e.details && (
           <button type="button" className="btn-link ev__more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
             {open ? "скрыть" : "подробнее"}
           </button>
-        </li>
-      </ul>
-      {open && (
-        <CheckList
-          checks={checks}
-          canRetry={canRetry}
-          retry={retry}
-          busy={busy}
-          leading={passport.length > 0 ? <PassportRow items={passport} /> : null}
-        />
+        )}
+        {e.at && <span className="ev__time">{formatDateTime(e.at)}</span>}
+      </div>
+      {e.details && (
+        <div className="ev__details" hidden={!open}>
+          {e.details}
+        </div>
       )}
-    </div>
+    </li>
   );
 }
 
@@ -256,6 +268,11 @@ export function ApplicationDetailPage() {
   const fedresursNeedsAction =
     !applicantFedresurs && app.decisions.length > 0 && !["rejected_a", "rejected_b", "expired"].includes(app.status);
   const actionCount = Number(fsspNeedsAction) + Number(fedresursNeedsAction);
+  // После отказа или истечения ручные проверки уже ничего не меняют — блок
+  // скрыт (результаты, если были, остаются в «Что проверили»). Проверки, что
+  // ждут действия, показаны выше в «Нужно ваше действие».
+  const manualRelevant = !["rejected_a", "rejected_b", "expired"].includes(app.status);
+  const showManual = manualRelevant && (!fsspNeedsAction || !fedresursNeedsAction);
 
   const clientBlock = clientRows({
     clientName: app.client_name,
@@ -299,61 +316,59 @@ export function ApplicationDetailPage() {
   const profileRows = clientBlock.filter((row) => row.label !== "ФИО");
   const innFound = Boolean(innOf("applicant", null));
 
-  // Лента событий заявки — от новых к старым. У последнего решения каждой
-  // стадии — причины и проверки этой стадии.
-  type FeedEvent = { key: string; at: string | null; tone: EventTone; title: string; body?: React.ReactNode };
+  // Ход заявки — от новых к старым, по строке на событие. У последнего
+  // решения каждой стадии — проверки точками; причины и проверки по пунктам
+  // — по «подробнее».
   const events: FeedEvent[] = [
     {
       key: "submitted",
       at: app.submitted_at,
       tone: "ok" as const,
       title: app.ocr_result ? "Заявка подана, паспорт распознан" : "Заявка подана",
-      body:
-        app.documents.length > 0 ? (
-          <p className="ev__text">
-            Фото: {app.documents.map((d) => documentKindLabel(d.kind).toLowerCase()).join(", ")}.
-          </p>
-        ) : undefined,
     },
     ...app.decisions.map((d): FeedEvent => {
       const isLatestOfStage = d === (d.stage === "A" ? latestA : latestB);
       const outcome = decisionOutcomeLabel(d.stage, d.outcome);
+      const stageChecks = d.stage === "A" ? checksA : checksB;
+      const passport = d.stage === "A" ? app.passport_checks : [];
+      const reasons =
+        d === latestDecision && explanation ? (
+          <DecisionReasons explanation={explanation} />
+        ) : (
+          d.reason_text && <p className="ev__text">{d.reason_text}</p>
+        );
       return {
         key: `decision-${d.id}`,
         at: d.created_at,
         tone: decisionEventTone(d),
         title: `Стадия ${stageLabel(d.stage)}: ${outcome[0]!.toLowerCase()}${outcome.slice(1)}`,
-        body: isLatestOfStage ? (
+        chips: isLatestOfStage ? <CheckChips checks={stageChecks} passport={passport} /> : undefined,
+        details: isLatestOfStage ? (
           <>
-            {/* Причина последнего решения — уже под заголовком решения, здесь только детали. */}
-            {d === latestDecision && explanation ? (
-              <DecisionReasons explanation={explanation} />
-            ) : (
-              d.reason_text && <p className="ev__text">{d.reason_text}</p>
+            {reasons}
+            {(stageChecks.length > 0 || passport.length > 0) && (
+              <CheckList
+                checks={stageChecks}
+                canRetry={canRetry}
+                retry={retry}
+                busy={retryMutation.isPending}
+                leading={passport.length > 0 ? <PassportRow items={passport} /> : null}
+              />
             )}
-            <CheckSummary
-              checks={d.stage === "A" ? checksA : checksB}
-              passport={d.stage === "A" ? app.passport_checks : []}
-              canRetry={canRetry}
-              retry={retry}
-              busy={retryMutation.isPending}
-            />
           </>
         ) : (
-          d.reason_text && <p className="ev__text">{d.reason_text}</p>
+          reasons || undefined
         ),
       };
     }),
-    ...(reviewedAt
-      ? [{ key: "call", at: reviewedAt, tone: "ok" as const, title: "Оператор позвонил и нажал «Рассмотреть» в CRM" }]
-      : []),
+    ...(reviewedAt ? [{ key: "call", at: reviewedAt, tone: "ok" as const, title: "Оператор нажал «Рассмотреть» в CRM" }] : []),
     ...app.manual_overrides.map(
       (o): FeedEvent => ({
         key: `override-${o.id}`,
         at: o.created_at,
         tone: o.reason_code === "PARTNER_OPERATOR_OVERRIDE_APPROVE" ? "ok" : "bad",
-        title: "Решение оператора в CRM",
-        body: <OperatorOverride override={o} />,
+        title: `Оператор CRM: ${overrideOutcomeLabel(o.decision_stage, o.to_outcome).toLowerCase()}`,
+        details: <OperatorOverride override={o} />,
       }),
     ),
   ]
@@ -366,13 +381,7 @@ export function ApplicationDetailPage() {
   if (!latestA && !reviewedAt && !latestB) {
     events.unshift({ key: "next", at: null, tone: "wait", title: "Идут проверки стадии А" });
   } else if (latestA && !rejectedAtA && !reviewedAt && !latestB) {
-    events.unshift({
-      key: "next",
-      at: null,
-      tone: "wait",
-      title: "Ждём звонка оператора",
-      body: <p className="ev__text">Стадия Б начнётся, когда оператор позвонит клиенту и нажмёт «Рассмотреть» в CRM.</p>,
-    });
+    events.unshift({ key: "next", at: null, tone: "wait", title: "Ждём «Рассмотреть» от оператора CRM" });
   }
 
   const ptiPercent = latestB?.pti != null ? Math.round(latestB.pti * 100) : null;
@@ -462,7 +471,8 @@ export function ApplicationDetailPage() {
     },
     {
       label: "Звонок оператора",
-      note: reviewedAt ? formatDateTime(reviewedAt) : rejectedAtA ? "не понадобился" : latestA ? "ждём" : "впереди",
+      // Решение стадии Б без снимка «Рассмотреть» — звонок был, времени нет.
+      note: reviewedAt ? formatDateTime(reviewedAt) : callDone ? "был" : rejectedAtA ? "не понадобился" : latestA ? "ждём" : "впереди",
       state: callDone ? "done" : rejectedAtA ? "skipped" : latestA ? "current" : "pending",
     },
     {
@@ -656,7 +666,19 @@ export function ApplicationDetailPage() {
             <div className={`ah-metric__value ${ratingTone}`}>
               {app.client_rating ? (app.client_rating.total > 0 ? `+${app.client_rating.total}` : String(app.client_rating.total)) : "—"}
             </div>
-            <div className="ah-metric__hint">информационно, на решение не влияет</div>
+            <div className="ah-metric__hint">
+              {app.client_rating ? (
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => document.getElementById("client-rating")?.scrollIntoView({ behavior: "smooth" })}
+                >
+                  что повлияло ↓
+                </button>
+              ) : (
+                "после «Рассмотреть»"
+              )}
+            </div>
           </div>
           <section className="ah-metric ah-metric--soon">
             <div className="ah-metric__head">
@@ -694,42 +716,26 @@ export function ApplicationDetailPage() {
         </div>
       )}
 
-      <div className="ac2-grid">
-        <section className="pf-feed">
+      {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
+
+      <div className={showManual ? "ac2-grid" : "ac2-grid ac2-grid--single"}>
+        <section className="pf-card pf-feed">
           <h2 className="pf-section-title">Ход заявки</h2>
           <ol className="feed">
             {events.map((e) => (
-              <li key={e.key} className={`ev ev--${e.tone}`}>
-                <span className="ev__icon" aria-hidden="true">
-                  {EVENT_ICON[e.tone]}
-                </span>
-                <div className="pf-card ev__card">
-                  <div className="ev__head">
-                    <h3 className="ev__title">{e.title}</h3>
-                    {e.at && <span className="ev__time">{formatDateTime(e.at)}</span>}
-                  </div>
-                  {e.body}
-                </div>
-              </li>
+              <FeedRow key={e.key} event={e} />
             ))}
           </ol>
           {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
         </section>
 
-        <div className="ac2-side">
-          {(!fsspNeedsAction || !fedresursNeedsAction) && (
-            <div className="pf-card pf-manual">
-              <h2 className="pf-section-title">Ручные проверки</h2>
-              {!fsspNeedsAction && fsspSection}
-              {!fedresursNeedsAction && fedresursSection}
-            </div>
-          )}
-          {app.client_rating && (
-            <div className="pf-card ac2-rating">
-              <ClientRatingPanel rating={app.client_rating} />
-            </div>
-          )}
-        </div>
+        {showManual && (
+          <div className="pf-card pf-manual">
+            <h2 className="pf-section-title">Ручные проверки</h2>
+            {!fsspNeedsAction && fsspSection}
+            {!fedresursNeedsAction && fedresursSection}
+          </div>
+        )}
       </div>
 
       {/* Всё вспомогательное — ниже и свёрнуто: открывают, когда нужно. */}
