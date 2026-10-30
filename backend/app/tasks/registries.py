@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.db import new_sessionmaker
 from app.models import RegistrySyncLog
 from app.registries.downloader import HttpDownloader, LocalFileDownloader, RegistryDownloader
+from app.registries.fedsfm import FedsfmPageDownloader, RoutingDownloader
 from app.registries.jobs import sync_invalid_passports, sync_sanctions_list
 from app.registries.sync import RegistrySyncError
 
@@ -45,14 +46,27 @@ async def _sync_one(session_factory, downloader, registry: str) -> str:
 
 
 def _build_downloader(settings) -> RegistryDownloader:
+    default: RegistryDownloader
     if settings.registries_downloader == "http":
-        return HttpDownloader(
+        default = HttpDownloader(
             {
                 "mvd_invalid_passports": settings.mvd_registry_url,
                 "rosfinmon_sanctions": settings.rosfinmon_registry_url,
             }
         )
-    return LocalFileDownloader(settings.registries_dir)
+    else:
+        default = LocalFileDownloader(settings.registries_dir)
+    if settings.rosfinmon_source == "fedsfm_page":
+        return RoutingDownloader({"rosfinmon_sanctions": build_fedsfm_downloader(settings)}, default)
+    return default
+
+
+def build_fedsfm_downloader(settings) -> FedsfmPageDownloader:
+    return FedsfmPageDownloader(
+        settings.rosfinmon_page_url,
+        ca_bundle_path=settings.rosfinmon_ca_bundle_path,
+        min_persons=settings.rosfinmon_page_min_persons,
+    )
 
 
 async def _run() -> dict[str, str]:

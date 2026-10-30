@@ -133,6 +133,16 @@ class Settings(BaseSettings):
     registries_downloader: str = "local"
     mvd_registry_url: str = ""
     rosfinmon_registry_url: str = ""
+    # Перечень Т/Э: "" — как остальные реестры (REGISTRIES_DOWNLOADER);
+    # fedsfm_page — ежедневно с открытой страницы Росфинмониторинга
+    # (app/registries/fedsfm.py). Запрос с иностранного IP сайт отклоняет (403).
+    rosfinmon_source: str = ""
+    rosfinmon_page_url: str = "https://www.fedsfm.ru/documents/terrorists-catalog-portal-act"
+    # Корневой и промежуточный сертификаты УЦ Минцифры — ими подписан сайт.
+    rosfinmon_ca_bundle_path: str = "config/certs/russian_trusted_ca.pem"
+    # Меньше физлиц на странице — не перечень (ошибка сайта, сменилась
+    # вёрстка): таблица не заменяется.
+    rosfinmon_page_min_persons: int = 1000
 
     # Справочник кодов подразделений (T08) — hflabs/fms-unit, статичный файл,
     # не синхронизируется периодически (см. docs/registries.md).
