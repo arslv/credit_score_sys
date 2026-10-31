@@ -4034,9 +4034,13 @@ mark {
 
 /* Данные: условия сделки, проверки таблицей, документы, история. */
 
-/* Аналитика: четыре главные цифры в ряд; остальное — в «Ещё показатели». */
+/* Аналитика: главные цифры в ряд; остальное — в «Ещё показатели». */
 .dash-kpis--4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dash-kpis--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .dash-range {
@@ -4055,6 +4059,7 @@ mark {
 }
 
 @media (max-width: 900px) {
+  .dash-kpis--3,
   .dash-kpis--4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

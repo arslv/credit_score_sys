@@ -53,10 +53,9 @@ test("даты и месяцы — по-русски, не ISO; переопре
   // заявок: подпись явно говорит «из них», а не повторяет первую без объяснения.
   await expect(page.getByText(/из них разошлись с системой/)).toBeVisible();
 
-  // Пункт 5: "Винтажный анализ"/"Когорта"/"ещё не зрела" переименованы.
-  await expect(page.getByText("Винтажный анализ", { exact: false })).toHaveCount(0);
-  await expect(page.getByRole("columnheader", { name: "Когорта" })).toHaveCount(0);
-  await expect(page.getByRole("columnheader", { name: "Месяц выдачи" })).toBeVisible();
+  // Договоры ведёт CRM — просрочки портфеля и когорт выдач в аналитике нет.
+  await expect(page.getByRole("columnheader", { name: "Месяц выдачи" })).toHaveCount(0);
+  await expect(page.getByText("Просрочка портфеля")).toHaveCount(0);
 
   // Заголовок-вывод источников — либо «стабильно», либо называет худший, не
   // «есть хоть один недоступный» (порог — конфиг, не 0).

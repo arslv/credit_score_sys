@@ -192,100 +192,6 @@ function ScoreHistogram({ data }: { data: Summary }) {
   );
 }
 
-const DQ_LABELS: Record<string, string> = {
-  "0": "без просрочки",
-  "1-29": "1–29 дней",
-  "30-59": "30–59 дней",
-  "60-89": "60–89 дней",
-  "90+": "90+ дней",
-};
-const DQ_ORDER = ["0", "1-29", "30-59", "60-89", "90+"];
-
-function Delinquency({ data }: { data: Summary }) {
-  const buckets = DQ_ORDER.map((key) => ({
-    key,
-    contracts: data.delinquency_buckets.find((b) => b.bucket === key)?.contracts ?? 0,
-  }));
-  const total = buckets.reduce((s, b) => s + b.contracts, 0);
-  if (total === 0) {
-    return <EmptyState title="Нет действующих договоров" hint="Появятся после импорта договоров и платежей." />;
-  }
-  return (
-    <>
-      <div className="stackbar" role="img" aria-label="Действующие договоры по сроку просрочки">
-        {buckets
-          .filter((b) => b.contracts > 0)
-          .map((b, i) => (
-            <span
-              key={b.key}
-              className={`stackbar__seg stackbar__seg--dq${DQ_ORDER.indexOf(b.key)}`}
-              style={{ flexGrow: b.contracts }}
-              data-tip={`${DQ_LABELS[b.key]}: ${b.contracts} (${pct(b.contracts, total)})`}
-              aria-hidden={i > 0}
-            />
-          ))}
-      </div>
-      <ul className="dq-legend">
-        {buckets.map((b, i) => (
-          <li key={b.key}>
-            <span className={`dq-swatch stackbar__seg--dq${i}`} aria-hidden="true" />
-            <span className="dq-legend__label">{DQ_LABELS[b.key]}</span>
-            <strong>{b.contracts}</strong>
-            <span className="muted">{pct(b.contracts, total)}</span>
-          </li>
-        ))}
-      </ul>
-    </>
-  );
-}
-
-function Vintage({ data }: { data: Summary }) {
-  if (data.vintage.length === 0) {
-    return <EmptyState title="Договоров ещё нет" hint="Появится после первых выданных договоров." />;
-  }
-  return (
-    <table className="table table--compact">
-      <thead>
-        <tr>
-          <th>Месяц выдачи</th>
-          <th className="num">Договоров</th>
-          <th className="num">Зрелых</th>
-          <th>Доля плохих (60+ за 6 мес.)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.vintage.map((v) => {
-          const rate = v.mature_contracts ? (v.bad_contracts ?? 0) / v.mature_contracts : null;
-          return (
-            <tr key={v.cohort_month}>
-              <td>{formatMonth(v.cohort_month)}</td>
-              <td className="num">{v.total_contracts}</td>
-              <td className="num">{v.mature_contracts}</td>
-              <td>
-                {rate == null ? (
-                  <span className="muted">рано оценивать</span>
-                ) : (
-                  <span className="meter-cell">
-                    <span className="meter">
-                      <span className="meter__fill" style={{ width: `${rate * 100}%` }} />
-                    </span>
-                    {pct(v.bad_contracts ?? 0, v.mature_contracts)}{" "}
-                    <span className="muted">
-                      ({v.bad_contracts} из {v.mature_contracts})
-                    </span>
-                  </span>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
-
-// Одна подсказка на экран: читает data-tip у элемента под курсором (полоски
-// лежат в контейнерах с overflow: hidden — CSS ::after там обрезался бы).
 function ChartTooltip({ children }: { children: ReactNode }) {
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   function onMove(event: MouseEvent<HTMLDivElement>) {
@@ -406,12 +312,6 @@ function DashboardBody({ d }: { d: Summary }) {
   const weeklyDecided = d.weekly_approval.reduce((s, w) => s + w.total, 0);
   const reasons = d.rejection_reasons.slice().sort((a, b) => b.count - a.count);
   const rejectedTotal = reasons.reduce((s, r) => s + r.count, 0);
-  const activeContracts = d.delinquency_buckets.reduce((s, b) => s + b.contracts, 0);
-  const overdue = d.delinquency_buckets.filter((b) => b.bucket !== "0").reduce((s, b) => s + b.contracts, 0);
-  const severe = d.delinquency_buckets.filter((b) => b.bucket === "90+").reduce((s, b) => s + b.contracts, 0);
-  const matured = d.vintage.filter((v) => v.mature_contracts > 0);
-  const totalMature = matured.reduce((s, v) => s + v.mature_contracts, 0);
-  const totalBad = matured.reduce((s, v) => s + (v.bad_contracts ?? 0), 0);
   const attempts = d.bki_monthly.reduce((s, m) => s + m.attempts, 0);
   const successful = d.bki_monthly.reduce((s, m) => s + m.successful, 0);
   const threshold = d.source_unavailable_warn_threshold;
@@ -422,7 +322,8 @@ function DashboardBody({ d }: { d: Summary }) {
 
   return (
     <>
-      <div className="dash-kpis dash-kpis--4">
+      {/* Договоры ведёт CRM — просрочки портфеля и когорт выдач здесь нет. */}
+      <div className="dash-kpis dash-kpis--3">
         <Kpi label="Заявок" value={String(submitted)} hint={`до решения стадии Б: ${weeklyDecided}`} />
         <Kpi
           label="Одобрено"
@@ -431,12 +332,6 @@ function DashboardBody({ d }: { d: Summary }) {
           tone="ok"
         />
         <Kpi label="Отказов" value={String(rejectedTotal)} hint={reasons[0] ? reasonCodeLabel(reasons[0].reason_code) : "нет"} />
-        <Kpi
-          label="Просрочка портфеля"
-          value={pct(overdue, activeContracts)}
-          hint={`${overdue} из ${activeContracts} договоров · 90+: ${severe}`}
-          tone={overdue > 0 ? "bad" : undefined}
-        />
       </div>
 
       <div className="dash-grid">
@@ -451,27 +346,13 @@ function DashboardBody({ d }: { d: Summary }) {
         <Panel title={reasons[0] ? `Главная причина отказа — «${reasonCodeLabel(reasons[0].reason_code)}»` : "Причины отказов"}>
           <RejectionReasons data={d} />
         </Panel>
-        <Panel title={activeContracts === 0 ? "Просрочка портфеля" : `С просрочкой ${pct(overdue, activeContracts)} договоров`}>
-          <Delinquency data={d} />
+        <Panel title="Балл БКИ по решениям стадии Б">
+          <ScoreHistogram data={d} />
         </Panel>
       </div>
 
       <details className="dash-more">
-        <summary>Ещё показатели — балл БКИ, когорты выдач, работа операторов и источников</summary>
-      <div className="dash-grid">
-        <Panel title="Балл БКИ по решениям стадии Б">
-          <ScoreHistogram data={d} />
-        </Panel>
-        <Panel
-          title={
-            totalMature === 0
-              ? "Просрочка 60+ по месяцу выдачи"
-              : `Просрочку 60+ за 6 мес. допускают ${pct(totalBad, totalMature)} зрелых договоров`
-          }
-        >
-          <Vintage data={d} />
-        </Panel>
-      </div>
+        <summary>Ещё показатели — работа операторов и источников</summary>
       <div className="dash-grid dash-grid--3">
         <Panel
           title={

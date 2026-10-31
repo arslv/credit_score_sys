@@ -324,7 +324,7 @@ export function ApplicationDetailPage() {
       key: "submitted",
       at: app.submitted_at,
       tone: "ok" as const,
-      title: app.ocr_result ? "Заявка подана, паспорт распознан" : "Заявка подана",
+      title: "Заявка подана",
     },
     ...app.decisions.map((d): FeedEvent => {
       const isLatestOfStage = d === (d.stage === "A" ? latestA : latestB);
@@ -525,7 +525,7 @@ export function ApplicationDetailPage() {
               <p className="ah__line">
                 {[age != null ? `${age} лет` : null, (app.profile?.phone as string | undefined) ?? null]
                   .filter(Boolean)
-                  .join(" · ") || "данные паспорта не распознаны"}
+                  .join(" · ") || "паспортных данных нет"}
               </p>
               <p className="ah__line ah__line--muted">
                 Заявка №{app.number} · подана {formatDateTime(app.submitted_at)} · в CRM {app.external_id}
@@ -875,18 +875,17 @@ export function ApplicationDetailPage() {
           </div>
         </details>
 
-        {/* Сырьё (T17, часть 2): распознанные поля паспорта с уверенностью и
-            полные снимки анкеты — для того, кто проверяет распознавание. */}
+        {/* Сырьё (T17, часть 2): паспортные поля и полные снимки анкеты. */}
         <details className="more__item disclosure">
           <summary>
             <span className="more__name">Подробности</span>
-            <span className="more__hint">сырые данные распознавания и анкеты из CRM</span>
+            <span className="more__hint">паспортные данные и анкеты из CRM как есть</span>
           </summary>
           <div className="more__body">
             {app.ocr_result ? (
               <>
                 <h3 className="subhead">
-                  Распознавание паспорта · мин. уверенность {app.ocr_result.min_confidence ?? "—"} ·{" "}
+                  Паспортные данные · мин. уверенность {app.ocr_result.min_confidence ?? "—"} ·{" "}
                   {formatDateTime(app.ocr_result.created_at)}
                 </h3>
                 <table className="table table--compact">

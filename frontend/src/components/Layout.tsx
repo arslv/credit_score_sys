@@ -61,7 +61,6 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Портфель",
     icon: Briefcase,
     items: [
-      { to: "/contracts", label: "Договоры", roles: ["admin", "operator", "viewer"] },
       { to: "/clients", label: "Клиенты", roles: ["admin", "operator", "viewer"] },
     ],
   },
@@ -83,11 +82,12 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/employees", label: "Сотрудники", roles: ["admin"] },
       { to: "/references", label: "Справочники", roles: ["admin"] },
-      // T23: «Импорт» — в Настройках (было — вкладкой Портфеля).
-      { to: "/imports", label: "Импорт", roles: ["admin"] },
+      // Договоры, их импорт и распознавание паспорта скрыты из меню (по
+      // решению владельца: договоры ведёт CRM, распознавания пока нет) —
+      // страницы /contracts, /imports, /settings/recognition открываются
+      // только по прямому адресу.
       { to: "/audit", label: "Аудит", roles: ["admin"] },
       { to: "/system", label: "Состояние системы", roles: ["admin"] },
-      { to: "/settings/recognition", label: "Распознавание паспорта", roles: ["admin"] },
     ],
   },
 ];

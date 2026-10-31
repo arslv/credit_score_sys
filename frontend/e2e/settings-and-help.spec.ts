@@ -9,7 +9,7 @@ test("подменю Настроек показывает только разд
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/employees");
   const nav = page.getByRole("navigation", { name: "Настройки" });
-  for (const item of ["Сотрудники", "Справочники", "Импорт", "Аудит", "Состояние системы"]) {
+  for (const item of ["Сотрудники", "Справочники", "Аудит", "Состояние системы"]) {
     await expect(nav.getByRole("link", { name: item })).toBeVisible();
   }
   // T23: «Проверка по перечням» — отдельный раздел меню, не настройка.
