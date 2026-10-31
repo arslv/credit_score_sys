@@ -27,6 +27,9 @@ class RatingItem:
     value: str | None  # что именно учтено (возраст, место работы, район) — ПД, отдаётся не всем ролям
     label: str  # по какому правилу
     points: int | None  # None — нет данных, в сумму не входит
+    # Границы критерия по конфигу — сколько он может дать в лучшем и худшем случае.
+    min_points: int = 0
+    max_points: int = 0
 
 
 @dataclass
@@ -43,6 +46,25 @@ class ClientRating:
     guarantor_present: bool = False
     not_yet_counted: list[str] = field(default_factory=list)
     affects_decision: bool = False
+    # Границы суммы: сумма по критериям лучших и худших баллов конфига.
+    min_total: int = 0
+    max_total: int = 0
+
+
+def criterion_bounds(config: ClientRatingConfig) -> dict[str, tuple[int, int]]:
+    """T23: (минимум, максимум) баллов по каждому критерию — из конфига, без
+    данных клиента. «Без баллов» (правило не подошло / нет в списке) — это 0,
+    он тоже входит в границы."""
+    age = [b.points for b in config.age_bands] + [
+        b.points_with_guarantor for b in config.age_bands if b.points_with_guarantor is not None
+    ]
+    contacts = [r.points for r in config.contact_rules] + [0]
+    work = [c.points for c in config.work_categories] + [0]
+    registration = [g.points for g in config.registration_groups if g.points is not None] + [0]
+    return {
+        criterion: (min(values), max(values))
+        for criterion, values in (("age", age), ("contacts", contacts), ("work", work), ("registration", registration))
+    }
 
 
 def _words(text: str) -> list[str]:
@@ -190,8 +212,12 @@ def compute_client_rating(
             ):
                 reasons.append(GuarantorReason(rule.label, guarantor_present))
 
+    bounds = criterion_bounds(config)
+    for item in items:
+        item.min_points, item.max_points = bounds[item.criterion]
     total = sum(i.points for i in items if i.points is not None)
     return ClientRating(
         total=total, items=items, guarantor_reasons=reasons, guarantor_present=guarantor_present,
         not_yet_counted=list(config.not_yet_counted), affects_decision=config.affects_decision,
+        min_total=sum(low for low, _ in bounds.values()), max_total=sum(high for _, high in bounds.values()),
     )

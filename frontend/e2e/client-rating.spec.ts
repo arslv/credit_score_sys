@@ -16,5 +16,7 @@ test("карточка: блок «Рейтинг клиента» с суммо
   for (const criterion of ["Возраст", "Контакты", "Работа", "Прописка"]) {
     await expect(rating.locator(".cr-item__title", { hasText: criterion })).toBeVisible();
   }
-  await expect(rating.getByText("баллов", { exact: true })).toBeVisible();
+  // T23: границы рейтинга по правилам — максимум у суммы и шкала под ней.
+  await expect(rating.locator(".cr__unit")).toHaveText(/^из \d+$/);
+  await expect(rating.locator(".cr__range")).toHaveText(/^шкала от −\d+ до \+\d+$/);
 });

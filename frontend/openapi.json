@@ -3839,6 +3839,14 @@
               }
             ],
             "title": "Points"
+          },
+          "min_points": {
+            "type": "integer",
+            "title": "Min Points"
+          },
+          "max_points": {
+            "type": "integer",
+            "title": "Max Points"
           }
         },
         "type": "object",
@@ -3847,7 +3855,9 @@
           "title",
           "value",
           "label",
-          "points"
+          "points",
+          "min_points",
+          "max_points"
         ],
         "title": "ClientRatingItemOut"
       },
@@ -3856,6 +3866,14 @@
           "total": {
             "type": "integer",
             "title": "Total"
+          },
+          "min_total": {
+            "type": "integer",
+            "title": "Min Total"
+          },
+          "max_total": {
+            "type": "integer",
+            "title": "Max Total"
           },
           "items": {
             "items": {
@@ -3894,6 +3912,8 @@
         "type": "object",
         "required": [
           "total",
+          "min_total",
+          "max_total",
           "items",
           "guarantor_reasons",
           "guarantor_present",

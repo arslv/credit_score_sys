@@ -37,7 +37,11 @@ export function ClientRatingPanel({ rating }: { rating: Rating }) {
         </h2>
         <div className="cr__total">
           <span className={`cr__number cr__number--${tone(rating.total)}`}>{signed(rating.total)}</span>
-          <span className="cr__unit">баллов</span>
+          <span className="cr__unit">из {rating.max_total}</span>
+        </div>
+        {/* T23: границы рейтинга по правилам — от худшего до лучшего клиента. */}
+        <div className="cr__range">
+          шкала от {signed(rating.min_total)} до {signed(rating.max_total)}
         </div>
       </div>
 
@@ -46,7 +50,15 @@ export function ClientRatingPanel({ rating }: { rating: Rating }) {
           {visible.map((item) => (
             <li key={item.criterion} className={`cr-item cr-item--${tone(item.points)}`} title={item.label}>
               <span className="cr-item__title">{item.title}</span>
-              <span className="cr-item__points">{item.points == null ? "нет данных" : signed(item.points)}</span>
+              <span className="cr-item__points">
+                {item.points == null ? (
+                  "нет данных"
+                ) : (
+                  <>
+                    {signed(item.points)} <span className="cr-item__max">из {item.max_points}</span>
+                  </>
+                )}
+              </span>
               {item.points != null && item.value != null && <span className="cr-item__value">{item.value}</span>}
             </li>
           ))}

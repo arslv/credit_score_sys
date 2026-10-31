@@ -87,18 +87,23 @@ class _FakeStorage:
 
 
 @pytest.fixture(autouse=True)
-def _install_fake_storage(monkeypatch):
+def _install_fake_storage():
     # Найденный баг (T16): app.state — общий на весь процесс pytest (один
     # app.main.app на все тесты, см. фикстуру client/admin_client), а здесь
     # monkeypatch принимался, но не использовался — storage заменялась
     # напрямую и НИКОГДА не восстанавливалась. Любой тест, запущенный позже в
     # том же процессе (например, test_demo_import_fixtures_match_expected_md,
     # которому нужен настоящий Storage.read() для разбора загруженного CSV),
-    # получал эту фейковую реализацию вместо настоящей. monkeypatch.setattr
-    # сам откатывает изменение после теста — тем и чинится.
+    # получал эту фейковую реализацию вместо настоящей. Возвращаем прежнее
+    # хранилище после теста. Не через monkeypatch.setattr: со Starlette 1.10
+    # его откат стирал атрибут из app.state, и все следующие тесты файла
+    # падали с «State has no attribute 'storage'».
     from app.main import app
 
-    monkeypatch.setattr(app.state, "storage", _FakeStorage())
+    previous = app.state.storage
+    app.state.storage = _FakeStorage()
+    yield
+    app.state.storage = previous
 
 
 async def _client_for_role(admin_client, session_factory, role: str, email: str | None = None):

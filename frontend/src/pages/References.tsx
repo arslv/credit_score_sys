@@ -13,20 +13,20 @@ import {
   Toolbar,
   matches,
 } from "../components/ui";
-import { liquidityLabel, reasonCodeKindLabel } from "../lib/labels";
+import { liquidityLabel } from "../lib/labels";
 
-type Tab = "goods" | "blacklist" | "reasons";
+type Tab = "goods" | "blacklist";
 
-// T23: три справочника — вкладками на одной странице, у каждого поиск,
-// фильтр и добавление/правка в модальном окне (раньше — формы-строки под
-// таблицами и все три таблицы подряд).
+// T23: справочники вкладками, у каждого поиск, фильтр и добавление/правка в
+// модальном окне. Коды причин решений в интерфейсе не показываем: это
+// внутренний список (заполняется миграцией, менять нечего).
 export function ReferencesPage() {
   const [tab, setTab] = useState<Tab>("goods");
   return (
     <section>
       <PageHeader
         title="Справочники"
-        description="Данные, на которые опираются проверки: категории товаров (шариат и ликвидность), чёрный список и коды причин решений."
+        description="Данные, на которые опираются проверки: категории товаров и чёрный список."
       />
       <Segmented
         label="Справочник"
@@ -35,12 +35,10 @@ export function ReferencesPage() {
         options={[
           { value: "goods", label: "Категории товаров" },
           { value: "blacklist", label: "Чёрный список" },
-          { value: "reasons", label: "Причины" },
         ]}
       />
       {tab === "goods" && <GoodsCategories />}
       {tab === "blacklist" && <BlacklistSection />}
-      {tab === "reasons" && <ReasonCodes />}
     </section>
   );
 }
@@ -81,6 +79,23 @@ function GoodsCategories() {
 
   return (
     <>
+      <div className="page-explain">
+        <div className="page-explain__title">Зачем категории</div>
+        <ul>
+          <li>
+            <b>Шариат.</b> Товар из запрещённой категории (алкоголь, табак и т. п.) — отказ на стадии Б, запрос в
+            БКИ не делается.
+          </li>
+          <li>
+            <b>Ликвидность.</b> Для товаров с низкой ликвидностью условия строже: выше порог одобрения и больше
+            первый взнос (значения — в разделе «Скоринг»).
+          </li>
+          <li>
+            <b>Рейтинг клиента.</b> По категории определяется, нужен ли поручитель (например, дорогой телефон у
+            молодого клиента).
+          </li>
+        </ul>
+      </div>
       <Toolbar>
         <SearchInput value={search} onChange={setSearch} placeholder="Код или название" />
         <select className="select" aria-label="Шариат" value={sharia} onChange={(e) => setSharia(e.target.value)}>
@@ -241,57 +256,6 @@ function CategoryModal({
         )}
       </form>
     </Modal>
-  );
-}
-
-function ReasonCodes() {
-  const [search, setSearch] = useState("");
-  const query = useQuery({
-    queryKey: ["reason-codes"],
-    queryFn: async () => {
-      const { data, error } = await api.GET("/api/references/reason-codes", {
-        params: { query: { page: 1, page_size: 100 } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-  const rows = (query.data?.items ?? []).filter((r) => matches(search, r.code, r.title));
-
-  return (
-    <>
-      <Toolbar>
-        <SearchInput value={search} onChange={setSearch} placeholder="Код или название" />
-        <span className="toolbar__spacer toolbar__count">Только просмотр — коды заполняются миграцией.</span>
-      </Toolbar>
-      {query.isLoading && <LoadingState />}
-      {query.isError && <ErrorState message="Не удалось загрузить причины." onRetry={() => void query.refetch()} />}
-      {query.data && rows.length === 0 && <EmptyState title="Ничего не нашлось" />}
-      {rows.length > 0 && (
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Название</th>
-              <th>Вид</th>
-              <th>Код</th>
-              <th>Статус</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.code}>
-                <td>{r.title}</td>
-                <td>{reasonCodeKindLabel(r.kind)}</td>
-                <td className="muted">{r.code}</td>
-                <td>
-                  <Badge value={r.active ? "employee_active" : "employee_inactive"} label={r.active ? "активен" : "выключен"} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </>
   );
 }
 

@@ -59,8 +59,9 @@ test("справочники: вкладки и поиск", async ({ page }) =>
   await expect(page.getByRole("cell", { name: "Мебель", exact: true })).toBeVisible();
   await expect(page.getByRole("cell", { name: "Электроника", exact: true })).toHaveCount(0);
 
-  await page.getByRole("tab", { name: "Причины" }).click();
-  await expect(page.getByText("Только просмотр — коды заполняются миграцией.")).toBeVisible();
+  // T23: вкладки «Причины» нет — коды причин внутренние; у категорий — зачем они.
+  await expect(page.getByRole("tab", { name: "Причины" })).toHaveCount(0);
+  await expect(page.getByText("Зачем категории")).toBeVisible();
 });
 
 test("справка: поиск по терминам и оглавление", async ({ page }) => {

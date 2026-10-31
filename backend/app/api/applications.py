@@ -675,6 +675,9 @@ class ClientRatingItemOut(BaseModel):
     value: str | None
     label: str
     points: int | None
+    # T23: границы критерия по правилам — «+100 из 100».
+    min_points: int
+    max_points: int
 
 
 class GuarantorReasonOut(BaseModel):
@@ -687,6 +690,9 @@ class ClientRatingOut(BaseModel):
     не влияет (affects_decision=false), см. app/engine/client_rating.py."""
 
     total: int
+    # T23: границы суммы по правилам — от худшего до лучшего клиента.
+    min_total: int
+    max_total: int
     items: list[ClientRatingItemOut]
     guarantor_reasons: list[GuarantorReasonOut]
     guarantor_present: bool
@@ -850,11 +856,11 @@ async def _client_rating(session: AsyncSession, application: Application, *, ful
         financed_amount=application.requested_amount if stage_b else None,
     )
     return ClientRatingOut(
-        total=rating.total,
+        total=rating.total, min_total=rating.min_total, max_total=rating.max_total,
         items=[
             ClientRatingItemOut(
                 criterion=i.criterion, title=i.title, value=i.value if full_pii else None,
-                label=i.label, points=i.points,
+                label=i.label, points=i.points, min_points=i.min_points, max_points=i.max_points,
             )
             for i in rating.items
         ],

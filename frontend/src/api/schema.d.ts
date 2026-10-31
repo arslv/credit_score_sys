@@ -1275,6 +1275,10 @@ export interface components {
             label: string;
             /** Points */
             points: number | null;
+            /** Min Points */
+            min_points: number;
+            /** Max Points */
+            max_points: number;
         };
         /**
          * ClientRatingOut
@@ -1284,6 +1288,10 @@ export interface components {
         ClientRatingOut: {
             /** Total */
             total: number;
+            /** Min Total */
+            min_total: number;
+            /** Max Total */
+            max_total: number;
             /** Items */
             items: components["schemas"]["ClientRatingItemOut"][];
             /** Guarantor Reasons */

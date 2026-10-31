@@ -4761,3 +4761,15 @@ mark {
   margin: var(--space-2) 0 0;
   font-size: var(--font-sm);
 }
+
+/* T23: границы рейтинга — «из N» у суммы и у плитки, шкала под суммой. */
+.cr__range {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.cr-item__max {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-normal);
+  color: var(--color-text-muted);
+}

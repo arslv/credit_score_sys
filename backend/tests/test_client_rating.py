@@ -256,3 +256,24 @@ async def test_card_shows_rating_with_values_to_every_role(admin_client, session
     assert rating["total"] == 600
     # T23: персданные не скрываются ни у одной роли — значения видны и наблюдателю.
     assert {i["criterion"]: i["value"] for i in rating["items"]}["registration"] == "Махачкала"
+
+
+def test_rating_bounds_come_from_config(config):
+    """T23: границы рейтинга — из правил: у суммы и у каждого критерия
+    (лучший и худший возможный балл, «без баллов» = 0 тоже входит)."""
+    from app.engine.client_rating import criterion_bounds
+
+    bounds = criterion_bounds(config)
+    assert bounds["age"] == (-500, 100)
+    assert bounds["contacts"] == (-150, 100)
+    assert bounds["work"] == (0, 300)
+    assert bounds["registration"][1] == 100
+    rating = compute_client_rating(
+        config, birth_date=date(1985, 1, 1), as_of=date(2026, 10, 12),
+        registration_address="г. Махачкала", stage_b=None, financed_amount=None,
+    )
+    assert rating.max_total == sum(high for _, high in bounds.values()) == 600
+    assert rating.min_total == sum(low for low, _ in bounds.values())
+    age_item = next(i for i in rating.items if i.criterion == "age")
+    assert (age_item.min_points, age_item.max_points) == (-500, 100)
+
