@@ -2445,6 +2445,59 @@
         }
       }
     },
+    "/api/applications/{application_id}/bki-request": {
+      "post": {
+        "tags": [
+          "bki"
+        ],
+        "summary": "Request Bki Report",
+        "operationId": "request_bki_report_api_applications__application_id__bki_request_post",
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BkiRequestIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BkiRequestOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/crm/new-order": {
       "post": {
         "tags": [
@@ -2880,6 +2933,24 @@
             "type": "array",
             "title": "Passport Checks",
             "default": []
+          },
+          "bki_report_types": {
+            "items": {
+              "$ref": "#/components/schemas/BkiReportTypeOut"
+            },
+            "type": "array",
+            "title": "Bki Report Types",
+            "default": []
+          },
+          "bki_order": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BkiOrderOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -3165,6 +3236,101 @@
           "successful"
         ],
         "title": "BkiMonthlyItem"
+      },
+      "BkiOrderOut": {
+        "properties": {
+          "report_type": {
+            "type": "string",
+            "title": "Report Type"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "employee_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "pending": {
+            "type": "boolean",
+            "title": "Pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_type",
+          "label",
+          "employee_name",
+          "created_at",
+          "pending"
+        ],
+        "title": "BkiOrderOut"
+      },
+      "BkiReportTypeOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "allows_approval": {
+            "type": "boolean",
+            "title": "Allows Approval"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "label",
+          "allows_approval"
+        ],
+        "title": "BkiReportTypeOut"
+      },
+      "BkiRequestIn": {
+        "properties": {
+          "report_type": {
+            "type": "string",
+            "title": "Report Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_type"
+        ],
+        "title": "BkiRequestIn"
+      },
+      "BkiRequestOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "report_type": {
+            "type": "string",
+            "title": "Report Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "report_type"
+        ],
+        "title": "BkiRequestOut"
       },
       "BlacklistImportOut": {
         "properties": {

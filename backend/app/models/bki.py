@@ -37,10 +37,33 @@ class BkiReport(Base):
     features: Mapped[dict | None] = mapped_column(JSONB)
     score: Mapped[sa.Numeric | None] = mapped_column(sa.Numeric(6, 2))
     error_text: Mapped[str | None] = mapped_column(sa.Text)
+    # Вид отчёта (bki.report_types в правилах: basic | detailed); NULL —
+    # строки до ручного запроса, вид тогда не выбирался.
+    report_type: Mapped[str | None] = mapped_column(sa.Text)
     requested_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
     completed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+
+
+class BkiRequestOrder(Base):
+    """Заказ отчёта БКИ сотрудником — кто и какой вид отчёта выбрал
+    (append-only, правило 1 CLAUDE.md). Стадия Б в ручном режиме ждёт
+    заказа, сделанного после перехода заявки в awaiting_bki."""
+
+    __tablename__ = "bki_request_orders"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("applications.id"), nullable=False
+    )
+    report_type: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    employee_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), sa.ForeignKey("employees.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
 
 
 class BkiRequestInFlight(Base):

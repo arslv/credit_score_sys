@@ -808,6 +808,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/bki-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Bki Report */
+        post: operations["request_bki_report_api_applications__application_id__bki_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/crm/new-order": {
         parameters: {
             query?: never;
@@ -970,6 +987,12 @@ export interface components {
              * @default []
              */
             passport_checks: components["schemas"]["PassportCheckOut"][];
+            /**
+             * Bki Report Types
+             * @default []
+             */
+            bki_report_types: components["schemas"]["BkiReportTypeOut"][];
+            bki_order?: components["schemas"]["BkiOrderOut"] | null;
         };
         /** ApplicationListItem */
         ApplicationListItem: {
@@ -1044,6 +1067,43 @@ export interface components {
             attempts: number;
             /** Successful */
             successful: number;
+        };
+        /** BkiOrderOut */
+        BkiOrderOut: {
+            /** Report Type */
+            report_type: string;
+            /** Label */
+            label: string;
+            /** Employee Name */
+            employee_name: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Pending */
+            pending: boolean;
+        };
+        /** BkiReportTypeOut */
+        BkiReportTypeOut: {
+            /** Code */
+            code: string;
+            /** Label */
+            label: string;
+            /** Allows Approval */
+            allows_approval: boolean;
+        };
+        /** BkiRequestIn */
+        BkiRequestIn: {
+            /** Report Type */
+            report_type: string;
+        };
+        /** BkiRequestOut */
+        BkiRequestOut: {
+            /** Status */
+            status: string;
+            /** Report Type */
+            report_type: string;
         };
         /** BlacklistImportOut */
         BlacklistImportOut: {
@@ -3767,6 +3827,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FedresursManualCheckResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_bki_report_api_applications__application_id__bki_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BkiRequestIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BkiRequestOut"];
                 };
             };
             /** @description Validation Error */

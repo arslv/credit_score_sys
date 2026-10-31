@@ -45,7 +45,9 @@ docker compose stop worker beat && docker compose exec api python -m app.cli.see
   (`app/tasks/stage_a.py::process_crm_data_task`). API-ключ распознавания — только в
   `.env` (`ANTHROPIC_API_KEY`), админка показывает лишь «задан / не задан».
 - **Стадия Б** — оператор после звонка жмёт «Рассмотреть» в их системе. Дешёвые проверки
-  (полнота, шариат, лимиты) → запрос в БКИ → финансовые правила и скор.
+  (полнота, шариат, лимиты) → ожидание `awaiting_bki`: сотрудник админки кнопкой заказывает
+  «обычный» или «подробный» отчёт (запрос платный, `BKI_REQUEST_MODE=manual`, docs/bki_cbch.md)
+  → запрос в БКИ → финансовые правила и скор.
   Исходы: `rejected_b`, `gray_zone`, `approved`. Без КИ одобрить нельзя — только серая зона;
   без пройденной проверки ФССП (заявитель и поручитель, если есть) — тоже только серая зона
   (`fssp_required_for_approval` в конфиге правил, T16).
@@ -54,7 +56,7 @@ docker compose stop worker beat && docker compose exec api python -m app.cli.see
 
 1. **Ничего не перезаписываем.** Таблицы `decisions`, `feature_snapshots`, `checks`,
    `status_history`, `external_snapshots`, `ocr_results`, `integration_events`,
-   `ruleset_versions`, `audit_log`, `bki_reports`, `system_settings` — только INSERT. Никаких UPDATE/DELETE
+   `ruleset_versions`, `audit_log`, `bki_reports`, `bki_request_orders`, `system_settings` — только INSERT. Никаких UPDATE/DELETE
    по ним. `applications.status` — единственный изменяемый указатель; каждое его
    изменение сопровождается записью в `status_history` в той же транзакции.
    (`bki_requests_in_flight` — исключение: техническое состояние

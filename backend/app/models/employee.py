@@ -30,6 +30,7 @@ AUDIT_LOG_ACTIONS = (
     "fedresurs_manual_check",
     # Изменение настройки сервиса в админке (system_settings), app/api/settings.py.
     "change_setting",
+    "request_bki_report",
 )
 STATUS_HISTORY_ACTOR_TYPES = ("system", "employee", "client")
 

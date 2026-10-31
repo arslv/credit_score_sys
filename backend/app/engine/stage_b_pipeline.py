@@ -45,6 +45,7 @@ from app.integrations.partner_notifier import PartnerNotifier
 from app.integrations.status_mapping import build_operator_comment, get_status_mapping, render_comment
 from app.models import (
     Application,
+    BkiRequestOrder,
     Check,
     Client,
     Decision,
@@ -52,6 +53,7 @@ from app.models import (
     FeatureSnapshot,
     Guarantor,
     StageBSnapshotAttempt,
+    StatusHistory,
 )
 from app.sources.base import CheckStatus, Subject
 from app.sources.bki import BkiProvider, BkiProviderResult, deserialize_report, serialize_report
@@ -319,7 +321,7 @@ async def _run_guarantor_local_checks(session, config, guarantor: Guarantor, gua
 
 async def run_stage_b(
     session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerNotifier,
-    bki_provider: BkiProvider | None = None,
+    bki_provider: BkiProvider | None = None, bki_request_mode: str | None = None,
 ) -> str:
     settings = get_settings()
     bki_provider = bki_provider or build_bki_provider(settings)
@@ -352,7 +354,7 @@ async def run_stage_b(
         # (например, БКИ было недоступно или согласие истекло, оператор
         # поправил данные и снова нажал «Рассмотреть») — снимок анкеты уже
         # обновлён sync_applications, здесь просто заново прогоняем конвейер.
-        if application.status in ("to_operator", "gray_zone"):
+        if application.status in ("to_operator", "gray_zone", "awaiting_bki"):
             transition(session, application, "stage_b", actor_type="system")
             await session.commit()
 
@@ -448,13 +450,14 @@ async def run_stage_b(
         await session.commit()
 
     return await finalize_stage_b(
-        session_factory, application_id, partner_client=partner_client, bki_provider=bki_provider
+        session_factory, application_id, partner_client=partner_client, bki_provider=bki_provider,
+        bki_request_mode=bki_request_mode,
     )
 
 
 async def finalize_stage_b(
     session_factory: async_sessionmaker, application_id: UUID, *, partner_client: PartnerNotifier,
-    bki_provider: BkiProvider | None = None,
+    bki_provider: BkiProvider | None = None, bki_request_mode: str | None = None,
 ) -> str:
     """Хвост стадии Б: пересобирает поручителя (если был) с уже готовыми
     внешними проверками, запрашивает БКИ (кэш/защита от двойной оплаты —
@@ -471,8 +474,28 @@ async def finalize_stage_b(
             await session.execute(select(Application).where(Application.id == application_id).with_for_update())
         ).scalar_one()
 
-        if application.status != "stage_b":
+        if application.status not in ("stage_b", "awaiting_bki"):
             return application.status
+
+        # Запрос в БКИ платный — по кнопке сотрудника (BKI_REQUEST_MODE=manual):
+        # без заказа отчёта после перехода в awaiting_bki дальше не идём, CRM
+        # ничего не шлём (решение владельца). Заказ — вид отчёта и кто нажал.
+        report_type: str | None = None
+        # Всё, кроме явного "auto", — ручной режим: платный запрос сам не уходит.
+        if (bki_request_mode or settings.bki_request_mode) != "auto":
+            order = await _pending_bki_order(session, application_id)
+            if order is None:
+                if application.status == "stage_b":
+                    transition(session, application, "awaiting_bki", actor_type="system")
+                    await session.commit()
+                    logger.info("stage_b_awaiting_bki_request", application_id=str(application_id))
+                return application.status
+            report_type = order.report_type
+            if application.status == "awaiting_bki":
+                transition(session, application, "stage_b", actor_type="employee", employee_id=order.employee_id)
+        elif application.status == "awaiting_bki":
+            # Режим переключили на автоматический, пока заявка ждала.
+            transition(session, application, "stage_b", actor_type="system")
 
         ruleset_row = await get_active_ruleset_version(session)
         config = load_config(ruleset_row)
@@ -580,7 +603,10 @@ async def finalize_stage_b(
                 tariff_offer_comment=tariff_offer_comment,
             )
 
-        cached_row = await get_cached_report_row(session, client_id, config.bki.cache_days)
+        cached_row = await get_cached_report_row(
+            session, client_id, config.bki.cache_days,
+            accepted_types=_cached_types_for(config, report_type),
+        )
         if cached_row is not None:
             report = deserialize_report(cached_row.report_raw)
             bki_result_features = compute_bki_features(
@@ -591,6 +617,7 @@ async def finalize_stage_b(
             return await _write_financial_decision(
                 session, session_factory, application, ruleset_row, config, base_features, carried_features,
                 bki_result_features, score, tariff_offer_comment, partner_client,
+                report_type=cached_row.report_type or report_type,
             )
 
         client = await session.get(Client, client_id)
@@ -609,14 +636,52 @@ async def finalize_stage_b(
             config=config, base_features=base_features, carried_features=carried_features,
             declared_income=declared_income, declared_obligations=declared_obligations, installment=installment,
             tariff_offer_comment=tariff_offer_comment, partner_client=partner_client, bki_provider=bki_provider,
+            report_type=report_type,
         )
+
+
+async def _pending_bki_order(session, application_id: UUID) -> BkiRequestOrder | None:
+    """Последний заказ отчёта, сделанный после последнего перехода заявки в
+    awaiting_bki (старые заказы прежних кругов стадии Б не в счёт)."""
+    waiting_since = (
+        await session.execute(
+            select(StatusHistory.created_at)
+            .where(StatusHistory.application_id == application_id, StatusHistory.to_status == "awaiting_bki")
+            .order_by(StatusHistory.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if waiting_since is None:
+        return None
+    return (
+        await session.execute(
+            select(BkiRequestOrder)
+            .where(BkiRequestOrder.application_id == application_id, BkiRequestOrder.created_at >= waiting_since)
+            .order_by(BkiRequestOrder.created_at.desc())
+            .limit(1)
+        )
+    ).scalars().first()
+
+
+def _report_type_allows_approval(config, report_type: str | None) -> bool:
+    entry = config.bki.report_types.get(report_type) if report_type else None
+    return entry.allows_approval if entry is not None else True
+
+
+def _cached_types_for(config, report_type: str | None) -> set[str | None] | None:
+    """Какие сохранённые отчёты подходят вместо нового запроса: тот же вид
+    или прежний (до выбора вида — полный). Для отчёта, по которому одобрять
+    нельзя (без кредитов), подходит любой — полный его покрывает."""
+    if report_type is None or not _report_type_allows_approval(config, report_type):
+        return None
+    return {report_type, None}
 
 
 async def _finalize_after_bki_call(
     session_factory: async_sessionmaker, application_id: UUID, *, client_id: UUID, subject: Subject,
     ruleset_row, config, base_features: dict, carried_features: dict, declared_income: Decimal,
     declared_obligations: Decimal, installment: Decimal | None, tariff_offer_comment: str | None,
-    partner_client: PartnerNotifier, bki_provider: BkiProvider,
+    partner_client: PartnerNotifier, bki_provider: BkiProvider, report_type: str | None = None,
 ) -> str:
     """Вне какой-либо транзакции: клейм in-flight (защита от двойной оплаты,
     уровень БД) -> платный вызов бюро -> журнал попытки (append-only) ->
@@ -633,7 +698,8 @@ async def _finalize_after_bki_call(
         return "stage_b"
 
     try:
-        result = await bki_provider.request_report(subject)
+        entry = config.bki.report_types.get(report_type) if report_type else None
+        result = await bki_provider.request_report(subject, report_code=entry.provider_code if entry else None)
     except Exception:  # провайдер обязан не бросать (см. app/sources/bki.py) — защита
         logger.exception("bki_provider_raised", application_id=str(application_id))
         result = BkiProviderResult(status=CheckStatus.ERROR, error_text="провайдер БКИ выбросил исключение")
@@ -655,7 +721,7 @@ async def _finalize_after_bki_call(
         session_factory, client_id=client_id, application_id=application_id, status=result.status.value,
         report_raw=report_raw, features=bki_result_features.get("features"),
         score=Decimal(str(score)) if score is not None else None,  # правило 5 CLAUDE.md — Decimal, не float
-        error_text=result.error_text,
+        error_text=result.error_text, report_type=report_type,
     )
     await release_in_flight(session_factory, in_flight_id, failed=not report_ok)
 
@@ -676,13 +742,14 @@ async def _finalize_after_bki_call(
 
         return await _write_financial_decision(
             session, session_factory, application, ruleset_row, config, base_features, carried_features,
-            bki_result_features, score, tariff_offer_comment, partner_client,
+            bki_result_features, score, tariff_offer_comment, partner_client, report_type=report_type,
         )
 
 
 async def _write_financial_decision(
     session, session_factory, application, ruleset_row, config, base_features: dict, carried_features: dict,
     bki_result_features: dict, score, tariff_offer_comment: str | None, partner_client,
+    *, report_type: str | None = None,
 ) -> str:
     """Финансовые правила (T11, app.engine.rules.evaluate_financial) и точное
     условие альтернативного тарифа по риску: предложение (а не отказ)
@@ -708,6 +775,13 @@ async def _write_financial_decision(
                 outcome = "manual_review"
                 reason_code = "RISK_TARIFF_DOWN_PAYMENT_REQUIRED"
                 required_down_pay = required
+
+    if outcome == "approve" and not _report_type_allows_approval(config, report_type):
+        # Отчёт без сведений о кредитах (например, «обычный» — информационная
+        # часть КИ): долговую нагрузку по нему не посчитать, одобрение — только
+        # человеком или по подробному отчёту (bki.report_types в правилах).
+        outcome = "manual_review"
+        reason_code = "BKI_REPORT_TYPE_NO_APPROVAL"
 
     if outcome == "approve" and config.fssp_required_for_approval:
         if not await _fssp_checked_for_decision(session, application):

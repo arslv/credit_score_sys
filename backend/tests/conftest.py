@@ -41,6 +41,9 @@ os.environ.setdefault("APP_ENV", "test")
 # тесты запускаются в том же контейнере, им нужно явно перебить это
 # значение на "fake", а не просто подставить, если переменной нет вовсе.
 os.environ["EXTERNAL_SOURCES_MODE"] = "fake"
+# Запрос в БКИ: тесты стадии Б — про решение после БКИ, сразу (auto);
+# ручной запрос по кнопке проверяют отдельные тесты (test_bki_manual_request.py).
+os.environ["BKI_REQUEST_MODE"] = "auto"
 
 import asyncpg
 import pytest

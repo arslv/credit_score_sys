@@ -162,6 +162,7 @@ export function ApplicationsListPage() {
               <option value="approved">{applicationStatusLabel("approved")}</option>
               <option value="ocr_failed">{applicationStatusLabel("ocr_failed")}</option>
               <option value="awaiting_data">{applicationStatusLabel("awaiting_data")}</option>
+              <option value="awaiting_bki">{applicationStatusLabel("awaiting_bki")}</option>
             </select>
           </label>
           <label>

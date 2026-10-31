@@ -17,7 +17,10 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "stage_a": {"rejected_a", "to_operator"},
     "rejected_a": set(),
     "to_operator": {"stage_b"},
-    "stage_b": {"rejected_b", "gray_zone", "approved", "to_operator"},
+    "stage_b": {"rejected_b", "gray_zone", "approved", "to_operator", "awaiting_bki"},
+    # Ждёт заказа отчёта БКИ сотрудником; заказ (или новая анкета от CRM) —
+    # снова stage_b.
+    "awaiting_bki": {"stage_b"},
     "rejected_b": set(),
     "gray_zone": {"stage_b"},
     "approved": {"contracted", "expired"},

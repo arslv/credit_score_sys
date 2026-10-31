@@ -25,6 +25,7 @@ from app.integrations.status_mapping import _render_rule_text, build_operator_co
 from app.models import (
     Application,
     BkiReport,
+    BkiRequestOrder,
     Check,
     Client,
     Decision,
@@ -694,6 +695,22 @@ class ClientRatingOut(BaseModel):
     ruleset_version: int
 
 
+class BkiReportTypeOut(BaseModel):
+    code: str
+    label: str
+    allows_approval: bool
+
+
+class BkiOrderOut(BaseModel):
+    report_type: str
+    label: str
+    employee_name: str | None
+    created_at: datetime
+    # Заказ сделан в текущем ожидании (после последнего перехода в
+    # awaiting_bki) — ответа бюро ещё нет; False — заказ прошлого круга.
+    pending: bool
+
+
 class ApplicationDetail(BaseModel):
     id: UUID
     number: int
@@ -742,6 +759,53 @@ class ApplicationDetail(BaseModel):
     # T23: проверки паспорта последнего решения стадии А; пусто — стадии А
     # ещё не было или снимок признаков старый.
     passport_checks: list[PassportCheckOut] = []
+    # Ручной запрос в БКИ: виды отчёта для кнопок (bki.report_types в
+    # действующих правилах) и последний заказ по заявке.
+    bki_report_types: list[BkiReportTypeOut] = []
+    bki_order: BkiOrderOut | None = None
+
+
+async def _bki_request_info(
+    session: AsyncSession, application: Application,
+) -> tuple[list[BkiReportTypeOut], BkiOrderOut | None]:
+    types: list[BkiReportTypeOut] = []
+    ruleset_row = await get_active_ruleset_version(session)
+    if ruleset_row is not None:
+        try:
+            report_types = load_config(ruleset_row).bki.report_types
+        except ValidationError:
+            report_types = {}
+        types = [
+            BkiReportTypeOut(code=code, label=t.label, allows_approval=t.allows_approval)
+            for code, t in report_types.items()
+        ]
+    row = (
+        await session.execute(
+            select(BkiRequestOrder, Employee.full_name)
+            .join(Employee, Employee.id == BkiRequestOrder.employee_id)
+            .where(BkiRequestOrder.application_id == application.id)
+            .order_by(BkiRequestOrder.created_at.desc())
+            .limit(1)
+        )
+    ).first()
+    order = None
+    if row is not None:
+        labels = {t.code: t.label for t in types}
+        waiting_since = (
+            await session.execute(
+                select(StatusHistory.created_at)
+                .where(StatusHistory.application_id == application.id, StatusHistory.to_status == "awaiting_bki")
+                .order_by(StatusHistory.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        order = BkiOrderOut(
+            report_type=row[0].report_type, label=labels.get(row[0].report_type, row[0].report_type),
+            employee_name=row[1], created_at=row[0].created_at,
+            pending=application.status == "awaiting_bki" and waiting_since is not None
+            and row[0].created_at >= waiting_since,
+        )
+    return types, order
 
 
 async def _client_rating(session: AsyncSession, application: Application, *, full_pii: bool) -> ClientRatingOut | None:
@@ -1016,6 +1080,7 @@ async def get_application(
             )
         )
 
+    bki_types, bki_order = await _bki_request_info(session, application)
     return ApplicationDetail(
         id=application.id, number=application.number, external_id=application.external_id,
         status=application.status, client_name=client_name, goods_name=application.goods_name,
@@ -1063,6 +1128,8 @@ async def get_application(
         external_snapshots=external_snapshots,
         client_rating=await _client_rating(session, application, full_pii=full_pii),
         passport_checks=passport_checks,
+        bki_report_types=bki_types,
+        bki_order=bki_order,
     )
 
 

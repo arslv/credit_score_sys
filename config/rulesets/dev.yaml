@@ -155,6 +155,20 @@ bki:
   on_unavailable: manual_review
   consent_max_age_days: 30 # ТЗ, «Согласия»: согласие на КИ ограничено по сроку
   in_flight_timeout_minutes: 10 # T11: зависший запрос (воркер упал) считается сбойным после этого срока
+  # Виды отчёта для ручного запроса — две кнопки в карточке заявки (запрос
+  # платный, только по кнопке сотрудника, BKI_REQUEST_MODE=manual).
+  # provider_code — код у бюро (Спектрум Бюро, cbch.ru: reportCode 1 — полный
+  # кредитный отчёт, 2 — информационная часть КИ). allows_approval: false —
+  # в отчёте нет кредитов, долговую нагрузку не посчитать: одобряет человек.
+  report_types:
+    basic:
+      label: Обычный
+      provider_code: "2"
+      allows_approval: false
+    detailed:
+      label: Подробный
+      provider_code: "1"
+      allows_approval: true
 
 score_thresholds:
   enabled: true

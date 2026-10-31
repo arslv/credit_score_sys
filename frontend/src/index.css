@@ -4743,3 +4743,21 @@ mark {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Запрос в БКИ по кнопке: два вида отчёта, подробный — основной. */
+.bki-request__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.bki-request__hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-xs);
+}
+
+.bki-request__status {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-sm);
+}

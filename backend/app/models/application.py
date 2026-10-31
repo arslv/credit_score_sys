@@ -19,6 +19,9 @@ APPLICATION_STATUSES = (
     "rejected_a",
     "to_operator",
     "stage_b",
+    # Стадия Б прошла дешёвые проверки и ждёт, пока сотрудник выберет вид
+    # отчёта БКИ («обычный» / «подробный») — запрос платный, только по кнопке.
+    "awaiting_bki",
     "rejected_b",
     "gray_zone",
     "approved",

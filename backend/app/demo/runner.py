@@ -399,8 +399,10 @@ class DemoSeeder:
                 "mode": "conflict", "conflict_current_status": override, "conflict_reason": reason,
             }), "fake_partner conflict")
         try:
+            # Демо показывает решения стадии Б — отчёт БКИ «заказан» сразу
+            # (в работе — по кнопке сотрудника, BKI_REQUEST_MODE=manual).
             await run_stage_b(self._session_factory, UUID(application_id), partner_client=self._notifier,
-                              bki_provider=bki_provider)
+                              bki_provider=bki_provider, bki_request_mode="auto")
         finally:
             if override:
                 _check(await self._fake_partner.post("/_test/configure", json={"mode": "ok"}), "fake_partner ok")

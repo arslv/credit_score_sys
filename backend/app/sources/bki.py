@@ -49,9 +49,11 @@ class BkiProviderResult:
 class BkiProvider(Protocol):
     is_configured: bool
 
-    async def request_report(self, subject: Subject) -> BkiProviderResult:
+    async def request_report(self, subject: Subject, *, report_code: str | None = None) -> BkiProviderResult:
         """Никогда не бросает исключение наружу (правило 4 CLAUDE.md, тот же
-        принцип, что у SourceBase, хоть БКИ и не application-scoped источник)."""
+        принцип, что у SourceBase, хоть БКИ и не application-scoped источник).
+        report_code — код вида отчёта у бюро (bki.report_types.*.provider_code
+        в правилах); None — вид по умолчанию."""
         ...
 
 
@@ -62,7 +64,7 @@ class NotConfiguredBkiProvider:
 
     is_configured = False
 
-    async def request_report(self, subject: Subject) -> BkiProviderResult:
+    async def request_report(self, subject: Subject, *, report_code: str | None = None) -> BkiProviderResult:
         return BkiProviderResult(
             status=CheckStatus.SOURCE_UNAVAILABLE, error_text="БКИ не подключено — нет договора с бюро"
         )
@@ -85,9 +87,11 @@ class FakeBkiProvider:
         self._raise_unavailable = raise_unavailable
         self._raise_error = raise_error
         self.requested_subjects: list[Subject] = []
+        self.requested_codes: list[str | None] = []
 
-    async def request_report(self, subject: Subject) -> BkiProviderResult:
+    async def request_report(self, subject: Subject, *, report_code: str | None = None) -> BkiProviderResult:
         self.requested_subjects.append(subject)
+        self.requested_codes.append(report_code)
         if self._raise_unavailable:
             return BkiProviderResult(status=CheckStatus.SOURCE_UNAVAILABLE, error_text="fake bki timeout")
         if self._raise_error:

@@ -8,6 +8,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
 import { ClientRatingPanel } from "../components/ClientRating";
 import { FedresursPanel } from "../components/FedresursPanel";
+import { BkiRequestPanel } from "../components/BkiRequestPanel";
 import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
@@ -193,6 +194,8 @@ export function ApplicationDetailPage() {
       return data;
     },
     enabled: Boolean(id),
+    // Отчёт БКИ заказан — решение придёт фоновой задачей, обновляем карточку.
+    refetchInterval: (q) => (q.state.data?.status === "awaiting_bki" && q.state.data?.bki_order?.pending ? 5000 : false),
   });
 
   const retryMutation = useMutation({
@@ -267,7 +270,10 @@ export function ApplicationDetailPage() {
   // ещё в работе (после отказа или истечения — незачем).
   const fedresursNeedsAction =
     !applicantFedresurs && app.decisions.length > 0 && !["rejected_a", "rejected_b", "expired"].includes(app.status);
-  const actionCount = Number(fsspNeedsAction) + Number(fedresursNeedsAction);
+  // Стадия Б ждёт, пока сотрудник закажет отчёт БКИ (запрос платный).
+  const bkiWaiting = app.status === "awaiting_bki";
+  const bkiNeedsAction = bkiWaiting && !app.bki_order?.pending;
+  const actionCount = Number(fsspNeedsAction) + Number(fedresursNeedsAction) + Number(bkiNeedsAction);
   // После отказа или истечения ручные проверки уже ничего не меняют — блок
   // скрыт (результаты, если были, остаются в «Что проверили»). Проверки, что
   // ждут действия, показаны выше в «Нужно ваше действие».
@@ -477,10 +483,14 @@ export function ApplicationDetailPage() {
     },
     {
       label: "Стадия Б",
-      note: latestB
+      note: bkiWaiting
+        ? app.bki_order?.pending ? "ждём ответа БКИ" : "ждёт запроса КИ"
+        : latestB
         ? decisionOutcomeLabel("B", latestB.outcome)
         : app.status === "stage_b" ? "идёт" : rejectedAtA ? "не проводилась" : "впереди",
-      state: latestB
+      state: bkiWaiting
+        ? app.bki_order?.pending ? "current" : "warn"
+        : latestB
         ? latestB.outcome === "approve" ? "done" : latestB.outcome === "reject" ? "bad" : "warn"
         : app.status === "stage_b" ? "current" : rejectedAtA ? "skipped" : "pending",
     },
@@ -703,14 +713,24 @@ export function ApplicationDetailPage() {
         </ol>
       </section>
 
-      {actionCount > 0 && (
+      {(actionCount > 0 || bkiWaiting) && (
         <div className="pf-card pf-action">
           <div className="pf-action__head">
             <span className="pf-action__icon" aria-hidden="true">
               !
             </span>
-            Нужно ваше действие — {actionCount === 1 ? "1 проверка" : `${actionCount} проверки`}
+            {actionCount === 0
+              ? "Ждём ответа бюро кредитных историй"
+              : `Нужно ваше действие — ${actionCount === 1 ? "1 шаг" : `${actionCount} шага`}`}
           </div>
+          {bkiWaiting && (
+            <BkiRequestPanel
+              applicationId={app.id}
+              types={app.bki_report_types ?? []}
+              order={app.bki_order}
+              canOperate={canOperateFssp}
+            />
+          )}
           {fsspNeedsAction && fsspSection}
           {fedresursNeedsAction && fedresursSection}
         </div>

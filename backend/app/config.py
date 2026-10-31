@@ -131,6 +131,10 @@ class Settings(BaseSettings):
     # http — качает по URL из *_registry_url. Рабочие URL не подтверждены (см.
     # app/registries/downloader.py) — просто так переключать в http нельзя.
     registries_downloader: str = "local"
+    # manual — запрос в БКИ только по кнопке сотрудника в карточке (вид отчёта
+    # — bki.report_types в правилах); auto — сразу после дешёвых проверок
+    # стадии Б (так работают тесты и демо-сид).
+    bki_request_mode: str = "manual"
     mvd_registry_url: str = ""
     rosfinmon_registry_url: str = ""
     # Перечень Т/Э: "" — как остальные реестры (REGISTRIES_DOWNLOADER);

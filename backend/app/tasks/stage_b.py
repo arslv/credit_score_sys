@@ -23,7 +23,7 @@ from app.models import Application, ExternalSnapshot
 
 logger = structlog.get_logger()
 
-_PICKUP_STATUSES = ("to_operator", "gray_zone", "stage_b")
+_PICKUP_STATUSES = ("to_operator", "gray_zone", "stage_b", "awaiting_bki")
 
 
 async def _run() -> dict[str, int]:
@@ -48,7 +48,13 @@ async def _run() -> dict[str, int]:
 
         for application_id, status in rows:
             try:
-                if status == "stage_b":
+                if status == "awaiting_bki":
+                    # Новая анкета от CRM — заново (клейм снимка не даст
+                    # повторить старую); иначе — довершить, если сотрудник уже
+                    # заказал отчёт (кнопка в карточке), или ждать дальше.
+                    if await run_stage_b(session_factory, application_id, partner_client=partner_client) == "awaiting_bki":
+                        await finalize_stage_b(session_factory, application_id, partner_client=partner_client)
+                elif status == "stage_b":
                     # Уже прошла полнoту/шариат/лимиты/поручителя — довершаем
                     # только БКИ, не пересоздаём поручителя заново.
                     await finalize_stage_b(session_factory, application_id, partner_client=partner_client)
@@ -82,6 +88,27 @@ async def _run_one(application_id: str) -> None:
     finally:
         await partner_client.aclose()
         await engine.dispose()
+
+
+async def _finalize_one(application_id: str) -> None:
+    settings = get_settings()
+    engine, session_factory = new_sessionmaker()
+    partner_client = PartnerNotifier(
+        settings.partner_outbound_url, settings.partner_outbound_token,
+        timeout_seconds=settings.partner_outbound_timeout_seconds,
+    )
+    try:
+        await finalize_stage_b(session_factory, application_id, partner_client=partner_client)
+    finally:
+        await partner_client.aclose()
+        await engine.dispose()
+
+
+@celery_app.task(name="stage_b.request_bki_report")
+def request_bki_report_task(application_id: str) -> None:
+    """Сотрудник заказал отчёт БКИ (POST /api/applications/{id}/bki-request) —
+    довершаем стадию Б, не дожидаясь тика process_reviewed_applications."""
+    asyncio.run(_finalize_one(application_id))
 
 
 @celery_app.task(name="stage_b.process_single_application")

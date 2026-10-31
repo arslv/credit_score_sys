@@ -90,6 +90,20 @@ class LimitsConfig(BaseModel):
         return self
 
 
+class BkiReportTypeConfig(BaseModel):
+    """Вид отчёта БКИ, который сотрудник выбирает кнопкой (ручной запрос)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    # Код вида отчёта у бюро (Спектрум Бюро, cbch.ru: reportCode 1 — полный
+    # кредитный отчёт, 2 — информационная часть КИ).
+    provider_code: str
+    # False — в отчёте нет сведений о кредитах (информационная часть):
+    # одобрить по нему нельзя, только «решение за оператором».
+    allows_approval: bool = True
+
+
 class BkiConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -102,6 +116,9 @@ class BkiConfig(BaseModel):
     # упал после записи, не успев ни завершить, ни пометить сбой) — не блокирует
     # новые запросы по этому клиенту навсегда.
     in_flight_timeout_minutes: int = Field(ge=1)
+    # Виды отчёта для ручного запроса (кнопки в карточке). Пусто — кнопки без
+    # выбора вида не показываются (старые версии правил).
+    report_types: dict[str, BkiReportTypeConfig] = Field(default_factory=dict)
 
 
 class TariffConfig(BaseModel):

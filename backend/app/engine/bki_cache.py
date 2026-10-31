@@ -19,24 +19,31 @@ from app.models import BkiRequestInFlight
 logger = structlog.get_logger()
 
 
-async def get_cached_report_row(session, client_id: UUID, cache_days: int) -> BkiReportRow | None:
+async def get_cached_report_row(
+    session, client_id: UUID, cache_days: int, *, accepted_types: set[str | None] | None = None,
+) -> BkiReportRow | None:
     """Последний успешный (status='ok') отчёт по клиенту младше cache_days.
     Вызывающий код (stage_b_pipeline) обязан сначала проверить согласие на
     КИ у ТЕКУЩЕЙ заявки — кэш сам по согласию не судит (оно привязано к
-    заявке, не к клиенту)."""
+    заявке, не к клиенту). accepted_types — какие виды отчёта подходят
+    (None в наборе — строки до выбора вида); None — любой."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=cache_days)
+    stmt = select(BkiReportRow).where(
+        BkiReportRow.client_id == client_id,
+        BkiReportRow.status == "ok",
+        BkiReportRow.requested_at >= cutoff,
+    )
+    if accepted_types is not None:
+        named = [t for t in accepted_types if t is not None]
+        condition = BkiReportRow.report_type.in_(named) if named else None
+        if None in accepted_types:
+            null_condition = BkiReportRow.report_type.is_(None)
+            condition = null_condition if condition is None else (condition | null_condition)
+        if condition is not None:
+            stmt = stmt.where(condition)
     return (
-        await session.execute(
-            select(BkiReportRow)
-            .where(
-                BkiReportRow.client_id == client_id,
-                BkiReportRow.status == "ok",
-                BkiReportRow.requested_at >= cutoff,
-            )
-            .order_by(BkiReportRow.requested_at.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+        await session.execute(stmt.order_by(BkiReportRow.requested_at.desc()).limit(1))
+    ).scalars().first()
 
 
 async def _expire_stale_in_flight(session, client_id: UUID, timeout_minutes: int) -> None:
@@ -99,6 +106,7 @@ async def record_attempt(
     features: dict | None,
     score,
     error_text: str | None,
+    report_type: str | None = None,
 ) -> None:
     """Журнал ПЛАТНЫХ попыток (T11) — append-only (правило 1 CLAUDE.md),
     каждая реальная попытка вызова бюро независимо от исхода. "Не настроено"
@@ -114,6 +122,7 @@ async def record_attempt(
                 features=features,
                 score=score,
                 error_text=error_text,
+                report_type=report_type,
                 completed_at=datetime.now(timezone.utc),
             )
         )
