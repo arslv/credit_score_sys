@@ -3,14 +3,14 @@
 заказчика (fake_partner) — не вызовами app.engine.* функций напрямую.
 
 T18: интеграция по новой схеме (push) — fake_partner теперь САМА шлёт нам
-вебхуки (.../api/v1/partner/applications, .../review), имитируя заказчика, и
+вебхуки (.../api/v1/crm/new-order, .../scoring), имитируя заказчика, и
 принимает наши исходящие уведомления на /partner/webhook. Опроса их API
 (polling) больше нет — скрипт просит fake_partner запустить вебхук
 (/_test/trigger-*) и смотрит, что мы ей потом отправили (/_test/received).
 
 Как это работает:
 - Заявки создаются через fake_partner (порт 8100, host) — скрипт просит её
-  POST .../api/v1/partner/applications нам, как сделал бы их сайт/CRM, затем
+  POST .../api/v1/crm/new-order нам, как сделал бы их сайт/CRM, затем
   только НАБЛЮДАЕТ (/_test/received) и дожидается, пока обработку сделают
   фоновые задачи.
 - "Фоновые задачи" — это те же самые функции, что зарегистрированы через
@@ -149,7 +149,7 @@ def _partner_request(method: str, path: str, body: dict | None = None) -> tuple[
 
 
 def partner_create_application(**overrides) -> str:
-    """T18: просит fake_partner отправить нам POST .../api/v1/partner/applications
+    """T18: просит fake_partner отправить нам POST .../api/v1/crm/new-order
     (имитирует заказчика) — возвращает external_id, под которым заявка у нас
     появится."""
     status, body = _partner_request("POST", "/_test/trigger-new-application", overrides)
@@ -173,7 +173,7 @@ def partner_status(external_id: str) -> str | None:
 
 
 def partner_trigger_review(external_id: str, **overrides) -> None:
-    """T18: просит fake_partner отправить нам POST .../api/v1/partner/review
+    """T18: просит fake_partner отправить нам POST .../api/v1/crm/scoring
     (имитирует «Принять на рассмотрение») — разумные дефолты уже заданы в
     fake_partner (TriggerReviewRequest: товар, доход, занятость, согласие на
     БКИ), overrides нужны только сценариям с особыми условиями."""
