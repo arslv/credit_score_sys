@@ -9,7 +9,7 @@ test("подменю Настроек показывает только разд
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/employees");
   const nav = page.getByRole("navigation", { name: "Настройки" });
-  for (const item of ["Сотрудники", "Справочники", "Аудит", "Состояние системы"]) {
+  for (const item of ["Сотрудники", "Чёрный список", "Аудит", "Состояние системы"]) {
     await expect(nav.getByRole("link", { name: item })).toBeVisible();
   }
   // T23: «Проверка по перечням» — отдельный раздел меню, не настройка.
@@ -51,17 +51,15 @@ test("новый сотрудник создаётся в модальном о�
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("справочники: вкладки и поиск", async ({ page }) => {
+test("чёрный список: только он, без категорий товаров и кодов причин", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/references");
-  await page.getByRole("searchbox", { name: "Код или название" }).fill("мебель");
-  await expect(page.getByRole("cell", { name: "Мебель", exact: true })).toBeVisible();
-  await expect(page.getByRole("cell", { name: "Электроника", exact: true })).toHaveCount(0);
-
-  // T23: вкладки «Причины» нет — коды причин внутренние; у категорий — зачем они.
-  await expect(page.getByRole("tab", { name: "Причины" })).toHaveCount(0);
-  await expect(page.getByText("Зачем категории")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Чёрный список", level: 1 })).toBeVisible();
+  // T23: категории товаров и коды причин в админке не показываются.
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(page.getByText("Категории товаров")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Загрузить из файла" })).toBeVisible();
 });
 
 test("справка: поиск по терминам и оглавление", async ({ page }) => {

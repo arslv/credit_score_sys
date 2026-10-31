@@ -8,7 +8,6 @@ test("чёрный список: загрузка CSV, повторная заг
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/references");
-  await page.getByRole("tab", { name: "Чёрный список" }).click();
 
   // Только фамилия и причина: без паспорта и телефона строка ни с кем не совпадёт
   // (совпадение — по паспорту или телефону), dev-база от теста не страдает.
