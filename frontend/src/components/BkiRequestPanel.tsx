@@ -47,6 +47,11 @@ export function BkiRequestPanel({
           {pending.employee_name ? ` · ${pending.employee_name}` : ""} · {formatDateTime(pending.created_at)}. Ждём
           ответа бюро — решение придёт само.
         </p>
+      ) : types.length === 0 ? (
+        <p className="alert" role="alert">
+          В действующих правилах нет видов отчёта БКИ (bki.report_types) — администратору: «Скоринг» → принять
+          версию из файла.
+        </p>
       ) : canOperate ? (
         <>
           <div className="bki-request__buttons">
