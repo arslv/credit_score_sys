@@ -13,11 +13,11 @@ test("подменю Настроек показывает только разд
     await expect(nav.getByRole("link", { name: item })).toBeVisible();
   }
   // T23: «Проверка по перечням» — отдельный раздел меню, не настройка.
-  await expect(nav.getByRole("link", { name: "Проверка по перечням" })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: "Перечни", exact: true })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Выйти" }).click();
   await login(page, seed.operator.email, seed.operator.password);
-  await expect(page.getByRole("link", { name: "Проверка по перечням" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Перечни", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Настройки" })).toHaveCount(0);
 });
 

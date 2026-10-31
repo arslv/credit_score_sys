@@ -437,6 +437,8 @@ class DemoSeeder:
             ("payments", "demo_payments.csv", self._portfolio.payments_csv, {"data_as_of": today}),
         )
         for path, filename, content, form in uploads:
+            if len(content.decode("utf-8").strip().splitlines()) <= 1:
+                continue  # только заголовок — нечего загружать (витрина без истории)
             result = _check(await admin.post(
                 f"/api/imports/{path}", files={"file": (filename, content, "text/csv")}, data=form,
             ), f"импорт {path}")

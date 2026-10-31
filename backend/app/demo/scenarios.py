@@ -55,6 +55,10 @@ KIND_COUNTS: dict[str, int] = {
     WAITING: 7, OCR_FAILED: 3,
 }
 
+# Витрина для показа (seed_demo --showcase): по одной заявке на сценарий,
+# одобренных — две; без массовки, только разные исходы.
+SHOWCASE_COUNTS: dict[str, int] = {kind: 1 for kind in KIND_COUNTS} | {APPROVED: 2}
+
 EXPECTED_STATUS: dict[str, str] = {
     APPROVED: "approved", APPROVED_ALT_TARIFF: "approved", APPROVED_GUARANTOR: "approved",
     APPROVED_FSSP_LATER: "approved",
@@ -347,14 +351,16 @@ def _slot_times(rng: random.Random, now: datetime, n: int) -> list[datetime]:
     return sorted(moments)
 
 
-def _place_kinds(rng: random.Random, slots: list[datetime], now: datetime) -> list[str]:
+def _place_kinds(
+    rng: random.Random, slots: list[datetime], now: datetime, counts: dict[str, int] = KIND_COUNTS,
+) -> list[str]:
     """Вид на каждый слот. Ограничения по времени:
     - WAITING — последние 4 дня (звонка ещё не было), OCR_FAILED — последние 7;
     - REJ_B_PTI — после включения отказа по ПДН из КИ (последние 13 дней,
       демо-версия правил v4, см. runner.RULESET_HISTORY), раньше это была бы
       серая зона;
     - действия «через пару дней после решения» — у заявок старше 6 дней."""
-    kinds = [k for k, c in KIND_COUNTS.items() for _ in range(c)]
+    kinds = [k for k, c in counts.items() for _ in range(c)]
     if len(kinds) != len(slots):
         raise ValueError(f"план на {len(kinds)} заявок, слотов {len(slots)}")
     age_days = [(now - s).total_seconds() / 86400 for s in slots]
@@ -362,7 +368,7 @@ def _place_kinds(rng: random.Random, slots: list[datetime], now: datetime) -> li
 
     def take(kind: str, eligible) -> None:
         candidates = [i for i in range(len(slots)) if assigned[i] is None and eligible(age_days[i])]
-        count = KIND_COUNTS[kind]
+        count = counts[kind]
         if len(candidates) < count:
             raise ValueError(f"не хватает слотов для {kind}")
         for i in rng.sample(candidates, count):
@@ -384,14 +390,17 @@ def _place_kinds(rng: random.Random, slots: list[datetime], now: datetime) -> li
     return [k for k in assigned if k is not None]
 
 
-def build_plan(*, now: datetime, seed: int = 2026) -> DemoPlan:
+def build_plan(*, now: datetime, seed: int = 2026, counts: dict[str, int] | None = None) -> DemoPlan:
+    """counts — сколько заявок каждого сценария (по умолчанию KIND_COUNTS,
+    ~150 заявок; SHOWCASE_COUNTS — витрина по одной на сценарий)."""
+    counts = counts or KIND_COUNTS
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
     rng = random.Random(seed)
     people = PeopleFactory(rng, today=now.date())
 
-    slots = _slot_times(rng, now, sum(KIND_COUNTS.values()))
-    kinds = _place_kinds(rng, slots, now)
+    slots = _slot_times(rng, now, sum(counts.values()))
+    kinds = _place_kinds(rng, slots, now, counts)
 
     applications: list[DemoApplication] = []
     sanctions_rows: list[dict] = []

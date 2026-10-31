@@ -8,7 +8,7 @@ test("проверка по перечням: снятие заморозки т
   const seed = loadSeed();
   await login(page, seed.operator.email, seed.operator.password);
 
-  await page.getByRole("link", { name: "Проверка по перечням" }).click();
+  await page.getByRole("link", { name: "Перечни", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Проверка по перечням" })).toBeVisible();
   await expect(page.getByText("Как разобрать совпадение")).toBeVisible();
   // Дев-БД накапливает совпадения от прошлых прогонов (список — по всей
@@ -40,11 +40,11 @@ test("проверка по перечням: снятие заморозки т
 test("администратор видит «Проверку по перечням», наблюдатель — нет", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
-  await expect(page.getByRole("link", { name: "Проверка по перечням" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Перечни", exact: true })).toBeVisible();
   await expect(page.getByText("Комплаенс")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Выйти" }).click();
   await login(page, seed.viewer.email, seed.viewer.password);
   await expect(page.getByRole("link", { name: "Заявки" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Проверка по перечням" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Перечни", exact: true })).toHaveCount(0);
 });

@@ -177,13 +177,18 @@ def _money(value: Decimal) -> str:
     return f"{value:.2f}"
 
 
-def build_portfolio(plan: DemoPlan, *, today: date, seed: int = 2026) -> DemoPortfolio:
+def build_portfolio(
+    plan: DemoPlan, *, today: date, seed: int = 2026, include_historical: bool = True,
+) -> DemoPortfolio:
+    """include_historical=False — витрина (seed_demo --showcase): без
+    исторических заявок прошлых месяцев, только договоры по одобренным
+    заявкам плана."""
     rng = random.Random(seed + 7)
 
     # --- исторические заявки (только одобренные с договором) -----------------
     historical_rows = []
     historical_meta = []
-    for i, (ref, months_ago, term, profile) in enumerate(_HISTORICAL):
+    for i, (ref, months_ago, term, profile) in enumerate(_HISTORICAL if include_historical else ()):
         submitted = _add_months(today, -months_ago) - timedelta(days=rng.randint(0, 20))
         goods, price = _HISTORICAL_GOODS[i]
         last, first, middle = _HISTORICAL_NAMES[i]

@@ -53,8 +53,27 @@ export default async function globalSetup(): Promise<void> {
     path.resolve(__dirname, ".active-ruleset.json"), runInContainer("api", "active_ruleset.py"), "utf-8",
   );
 
+  // Сид — только в отдельную базу dialog_e2e: dev-база — витрина для показа,
+  // тестовые заявки и сотрудники в неё не попадают.
   const run = randomBytes(4).toString("hex");
-  const seed = JSON.parse(runInContainer("worker", "seed.py", { SEED_RUN: run }));
-  runInContainer("api_e2e", "seed.py", { SEED_RUN: run });
+  const seed = JSON.parse(runInContainer("api_e2e", "seed.py", { SEED_RUN: run }));
   writeFileSync(path.resolve(__dirname, ".seed.json"), JSON.stringify(seed, null, 2), "utf-8");
+  await acceptRulesetFromFile(seed.admin.email, seed.admin.password);
+}
+
+// Активные правила отдельной базы — из файла config/rulesets/dev.yaml: тест
+// публикации и отката (*.isolated.spec.ts) копирует действующую версию, и без
+// этого шага там годами тянулась бы старая (например, без client_rating).
+// Совпадает с файлом — ничего не создаётся.
+async function acceptRulesetFromFile(email: string, password: string): Promise<void> {
+  const headers = { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" };
+  const login = await fetch(`${E2E_ISOLATED_BASE_URL}/api/auth/login`, {
+    method: "POST", headers, body: JSON.stringify({ email, password }),
+  });
+  if (!login.ok) throw new Error(`вход админа e2e: HTTP ${login.status}`);
+  const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0];
+  const accept = await fetch(`${E2E_ISOLATED_BASE_URL}/api/rulesets/accept-file`, {
+    method: "POST", headers: { ...headers, cookie },
+  });
+  if (!accept.ok) throw new Error(`правила из файла в dialog_e2e: HTTP ${accept.status} ${await accept.text()}`);
 }

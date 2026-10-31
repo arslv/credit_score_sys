@@ -40,9 +40,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     key: "watchlist",
-    label: "Проверка по перечням",
+    // Коротко — в одну строку меню; полное название — заголовок страницы.
+    label: "Перечни",
     icon: ShieldAlert,
-    items: [{ to: "/compliance", label: "Проверка по перечням", roles: ["admin", "operator"] }],
+    items: [{ to: "/compliance", label: "Перечни", roles: ["admin", "operator"] }],
   },
   {
     key: "scoring",

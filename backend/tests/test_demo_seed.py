@@ -21,7 +21,9 @@ from app.demo.clock import install_timestamp_listener, uninstall_timestamp_liste
 from app.demo.people import SANCTIONS_ONLY_NAMES, PeopleFactory
 from app.demo.portfolio import CLOSED_REPOSSESSED, LATE_30_60, LATE_90, build_portfolio
 from app.demo.scenarios import (
+    EXPECTED_STATUS,
     GRAY_PTI,
+    SHOWCASE_COUNTS,
     KIND_COUNTS,
     REJ_A_SANCTIONS,
     REJ_B_DECLARED_PTI,
@@ -53,6 +55,18 @@ def test_plan_is_150_applications_over_60_days_with_realistic_outcome_shares(pla
     assert 0.36 <= shares["approved"] <= 0.44
     assert 0.2 <= shares["gray_zone"] <= 0.3
     assert shares["rejected_a"] > 0.05 and shares["rejected_b"] > 0.1 and shares["to_operator"] > 0.03
+
+
+def test_showcase_plan_has_every_scenario_once():
+    """Витрина для показа: каждый сценарий есть, массовки нет."""
+    showcase = build_plan(now=NOW, seed=2026, counts=SHOWCASE_COUNTS)
+    kinds = Counter(a.kind for a in showcase.applications)
+    assert set(kinds) == set(KIND_COUNTS)
+    assert len(showcase.applications) == sum(SHOWCASE_COUNTS.values()) == len(KIND_COUNTS) + 1
+    assert {a.expected_status for a in showcase.applications} == set(EXPECTED_STATUS.values())
+    portfolio = build_portfolio(showcase, today=NOW.date(), include_historical=False)
+    assert all(c.application_ref.startswith(DEMO_EXTERNAL_ID_PREFIX) for c in portfolio.contracts)
+    assert len(portfolio.historical_csv.decode("utf-8").strip().splitlines()) == 1  # только заголовок
 
 
 def test_plan_is_deterministic_by_seed(plan):

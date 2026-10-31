@@ -13,11 +13,11 @@ export default defineConfig({
   workers: 1, // сиды общие для всех тестов — параллельность дала бы гонки
   projects: [
     {
-      // Обычные тесты — на dev-стеке с накопленными данными (аналитика,
-      // списки и т.п. на пустой базе проверять нечего).
+      // Обычные тесты — тоже на отдельной базе dialog_e2e (api_e2e/frontend_e2e):
+      // dev-база — витрина для показа, прогон тестов её не трогает.
       name: "dev",
       testIgnore: /\.isolated\.spec\.ts$/,
-      use: { baseURL: process.env.E2E_BASE_URL ?? "http://localhost:5173" },
+      use: { baseURL: process.env.E2E_BASE_URL ?? "http://localhost:5174" },
     },
     {
       // T22: тесты, которые меняют append-only данные с глобальным эффектом

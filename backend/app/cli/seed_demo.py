@@ -91,15 +91,15 @@ def default_fake_partner_url(settings: Settings) -> str:
 
 async def run_seed(
     *, password: str, seed: int, fake_partner_url: str, session_factory, settings: Settings,
-    now: datetime | None = None, log=print,
+    now: datetime | None = None, log=print, showcase: bool = False,
 ):
     from app.demo.portfolio import build_portfolio
     from app.demo.runner import DemoSeeder
-    from app.demo.scenarios import build_plan
+    from app.demo.scenarios import SHOWCASE_COUNTS, build_plan
 
     now = now or datetime.now(timezone.utc)
-    plan = build_plan(now=now, seed=seed)
-    portfolio = build_portfolio(plan, today=now.date(), seed=seed)
+    plan = build_plan(now=now, seed=seed, counts=SHOWCASE_COUNTS if showcase else None)
+    portfolio = build_portfolio(plan, today=now.date(), seed=seed, include_historical=not showcase)
     seeder = DemoSeeder(
         plan=plan, portfolio=portfolio, password=password, settings=settings, session_factory=session_factory,
         fake_partner_url=fake_partner_url, fake_partner_token=settings.fake_partner_test_token, log=log,
@@ -131,11 +131,14 @@ async def _main(args: argparse.Namespace) -> int:
             await check_database_empty(session_factory)
             check_no_running_workers()
             _quiet_logs()
-            print("Демо-сид: ~150 заявок за 60 дней через конвейер, это займёт пару минут…")
+            print(
+                "Демо-сид (витрина): по заявке на каждый сценарий через конвейер…" if args.showcase
+                else "Демо-сид: ~150 заявок за 60 дней через конвейер, это займёт пару минут…"
+            )
             plan, portfolio, report = await run_seed(
                 password=args.password, seed=args.seed,
                 fake_partner_url=args.fake_partner_url or default_fake_partner_url(settings),
-                session_factory=session_factory, settings=settings,
+                session_factory=session_factory, settings=settings, showcase=args.showcase,
             )
         finally:
             await engine.dispose()
@@ -165,6 +168,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Демо-данные DIALOG Scoring (T23)")
     parser.add_argument("--password", required=True, help="пароль всех демо-аккаунтов (не короче 12 символов)")
     parser.add_argument("--seed", type=int, default=2026, help="seed генератора (тот же seed — те же данные)")
+    parser.add_argument(
+        "--showcase", action="store_true",
+        help="витрина для показа: по одной заявке на каждый сценарий вместо ~150",
+    )
     parser.add_argument("--fake-partner-url", default=None,
                         help="адрес fake_partner (по умолчанию — из PARTNER_OUTBOUND_URL)")
     args = parser.parse_args()

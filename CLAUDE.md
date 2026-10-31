@@ -21,8 +21,10 @@ httpx, Pydantic v2, pytest + respx, structlog. Админка: React + Vite (`fr
 docker compose up -d                          # поднять всё
 docker compose exec api alembic upgrade head  # миграции
 scripts/run_tests.sh                          # тесты: backend + fake_partner (T22)
+cd frontend && npx playwright test             # e2e — на отдельной базе dialog_e2e (порт 5174), dev-базу не трогают
 docker compose exec api alembic revision --autogenerate -m "..."  # новая миграция
 docker compose stop worker beat && docker compose exec api python -m app.cli.seed_demo --password '...' && docker compose start worker beat  # демо-данные (T23), только на пустой базе
+# витрина для показа: тот же сид с --showcase — по одной заявке на сценарий (~21), без истории
 ```
 
 ## Как устроен поток
