@@ -24,10 +24,7 @@ export function ReferencesPage() {
   const [tab, setTab] = useState<Tab>("goods");
   return (
     <section>
-      <PageHeader
-        title="Справочники"
-        description="Данные, на которые опираются проверки: категории товаров и чёрный список."
-      />
+      <PageHeader title="Справочники" />
       <Segmented
         label="Справочник"
         value={tab}
