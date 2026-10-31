@@ -14,6 +14,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import delete, func, select
 
+from app.demo.scenarios import DEMO_EXTERNAL_ID_PREFIX
 from app.cli import seed_demo
 from app.config import get_settings
 from app.demo.clock import install_timestamp_listener, uninstall_timestamp_listener, virtual_time
@@ -130,7 +131,7 @@ def test_portfolio_has_every_delinquency_profile_and_links_to_applications(plan)
     profiles = Counter(c.profile for c in portfolio.contracts)
     assert 50 <= len(portfolio.contracts) <= 75
     assert profiles[LATE_90] and profiles[LATE_30_60] and profiles[CLOSED_REPOSSESSED]
-    demo_refs = {c.application_ref for c in portfolio.contracts if c.application_ref.startswith("DEMO-")}
+    demo_refs = {c.application_ref for c in portfolio.contracts if c.application_ref.startswith(DEMO_EXTERNAL_ID_PREFIX)}
     approved = {a.external_id for a in plan.applications if a.expected_status == "approved"}
     assert demo_refs <= approved
     for contract in portfolio.contracts:
@@ -219,7 +220,7 @@ async def test_full_seed_through_real_pipeline(session_factory, tmp_path, partne
             first, last, days = (await session.execute(
                 select(func.min(Application.created_at), func.max(Application.created_at),
                        func.count(func.distinct(func.date(Application.created_at))))
-                .where(Application.external_id.like("DEMO-%"))
+                .where(Application.external_id.like(f"{DEMO_EXTERNAL_ID_PREFIX}%"))
             )).one()
             assert (now - first).days >= 58 and days == 60
             decisions_first = (await session.execute(select(func.min(Decision.created_at)))).scalar_one()

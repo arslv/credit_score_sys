@@ -272,7 +272,7 @@ async def partner_admin():
 @pytest_asyncio.fixture
 async def partner_client():
     """T18: исходящий уведомитель (app/integrations/partner_notifier.py) —
-    шлёт на fake_partner's /partner/webhook, та же роль, что раньше была у
+    шлёт на входы CRM в fake_partner (result, passport-result), та же роль, что раньше была у
     опроса их API, но теперь это чистый POST-клиент без состояния их заявок."""
     from app.config import get_settings
     from app.integrations.partner_notifier import PartnerNotifier
@@ -290,7 +290,7 @@ async def partner_client():
 
 @pytest_asyncio.fixture
 async def partner_webhook_client():
-    """T18: ASGI-клиент на НАШ собственный app — для POST .../api/v1/partner/*
+    """T18: ASGI-клиент на НАШ собственный app — для POST .../api/v1/crm/*
     в тестах (та же идея, что admin_client, но для входящих вебхуков, не для
     сессии сотрудника)."""
     from app.main import app

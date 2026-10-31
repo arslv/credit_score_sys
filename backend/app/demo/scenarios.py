@@ -19,7 +19,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from app.demo.people import SANCTIONS_FILLER_NAMES, SANCTIONS_ONLY_NAMES, PeopleFactory, Person
 from app.sources.bki import BkiContract, BkiInquiry, BkiReport
 
-DEMO_EXTERNAL_ID_PREFIX = "DEMO-"
+# orderId у CRM — число: демо-заявки — 9000000001, 9000000002, …
+DEMO_EXTERNAL_ID_PREFIX = "900000"
 DAYS = 60
 
 # --- виды сценариев и сколько их на 150 заявок ------------------------------------

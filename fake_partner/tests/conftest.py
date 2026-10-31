@@ -28,5 +28,5 @@ def auth_headers():
 
 @pytest.fixture
 def our_headers():
-    # Токен, которым dialog-scoring представляется на /partner/webhook.
+    # Токен, которым dialog-scoring представляется на входах CRM.
     return {"Authorization": f"Bearer {get_settings().expected_inbound_token}"}

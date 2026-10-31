@@ -40,7 +40,7 @@ from app.engine.rules import (
 )
 from app.engine.state_machine import transition
 from app.engine.versions import get_active_ruleset_version, load_config
-from app.integrations.adapter import write_comment, write_decision_status
+from app.integrations.adapter import write_decision_status
 from app.integrations.partner_notifier import PartnerNotifier
 from app.integrations.status_mapping import build_operator_comment, get_status_mapping, render_comment
 from app.models import (
@@ -205,13 +205,17 @@ async def _write_back(
     session_factory: async_sessionmaker, partner_client: PartnerNotifier, application: Application,
     our_status: str, *, reason_code: str | None = None, summary: str | None = None,
     triggered_rules: list[dict[str, Any]] | None = None, comment_context: dict[str, Any] | None = None,
-    **extra_context: Any,
+    extra_note: str | None = None, **extra_context: Any,
 ) -> None:
     mapping = get_status_mapping(our_status)
     reason_text = build_operator_comment(
         reason_code=reason_code, triggered_rules=triggered_rules, context=comment_context,
     )
     comment = render_comment(mapping, reason_text=reason_text, summary=summary or "", **extra_context)
+    # Отдельного входа для комментариев у CRM нет — дополнительный текст
+    # (предложение другого тарифа) идёт в той же причине решения.
+    if extra_note:
+        comment = f"{comment}\n{extra_note}" if comment else extra_note
     await write_decision_status(
         session_factory, partner_client, application_id=application.id, external_id=application.external_id,
         # T18: prev_status — их статус, каким они его сообщили вебхуком
@@ -746,7 +750,6 @@ async def _write_financial_decision(
     our_status = {"approve": "approved", "reject": "rejected_b", "manual_review": "gray_zone"}[outcome]
     transition(session, application, our_status, actor_type="system")
     await session.commit()
-    external_id = application.external_id
 
     write_back_extra: dict[str, Any] = {}
     if outcome == "approve":
@@ -766,14 +769,8 @@ async def _write_financial_decision(
     await _write_back(
         session_factory, partner_client, application, our_status, reason_code=reason_code,
         triggered_rules=_serialize_triggered_rules(financial.triggered_rules), comment_context=comment_context,
-        **write_back_extra,
+        extra_note=tariff_offer_comment, **write_back_extra,
     )
-
-    if tariff_offer_comment:
-        await write_comment(
-            session_factory, partner_client, application_id=application.id, external_id=external_id,
-            text=tariff_offer_comment,
-        )
 
     return application.status
 
@@ -823,16 +820,11 @@ async def _gray_zone_stage_b(
 
     transition(session, application, "gray_zone", actor_type="system")
     await session.commit()
-    external_id = application.external_id
 
     await _write_back(
         session_factory, partner_client, application, "gray_zone", reason_code=reason_code,
+        extra_note=tariff_offer_comment,
     )
-    if tariff_offer_comment:
-        await write_comment(
-            session_factory, partner_client, application_id=application.id, external_id=external_id,
-            text=tariff_offer_comment,
-        )
     return application.status
 
 

@@ -14,6 +14,7 @@ from app.models import Application, Decision, FeatureSnapshot, InvalidPassport, 
 from app.ocr.fake_provider import FakeOcrProvider, build_ocr_result
 from app.registries.sync import is_registry_stale
 from app.sources.name_normalize import full_name, normalize_name
+from tests._crm import NEW_ORDER_PATH, crm_headers, new_order_body, new_order_id
 from tests.conftest import unique_valid_passport_series
 
 
@@ -24,8 +25,7 @@ def _unique_name() -> str:
 async def _ingest(
     partner_admin, partner_client, storage, session_factory, partner_webhook_client=None, **overrides,
 ) -> tuple[str, "uuid.UUID"]:
-    """T18: имитирует POST .../api/v1/partner/applications (новая схема —
-    заказчик сам шлёт нам заявку). partner_webhook_client — ASGI-клиент на
+    """Имитирует POST /new-order от CRM (их API). partner_webhook_client — ASGI-клиент на
     наш app; если не передан, строится здесь же (большинство вызывающих
     тестов его не просят явно, им важен только результат)."""
     from app.config import get_settings
@@ -45,25 +45,17 @@ async def _ingest(
                 partner_admin, partner_client, storage, session_factory, partner_webhook_client=client, **overrides,
             )
 
-    external_id = overrides.pop("external_id", f"EXT-{uuid.uuid4().hex[:10]}")
-    payload = {
-        "external_id": external_id,
-        "event_id": str(uuid.uuid4()),
-        "last_name": overrides.pop("last_name", _unique_name()),
-        "first_name": overrides.pop("first_name", "Клиент"),
-        "middle_name": overrides.pop("middle_name", "Клиентович"),
-        "phone": overrides.pop("phone", "+70000000000"),
-        "photos": {
-            "passport_main": {"base64": "iVBORw0KGgpmYWtlLXBhc3Nwb3J0LW1haW4="},  # PNG-сигнатура (T21: только JPEG/PNG)
-            "passport_reg": {"base64": "iVBORw0KGgpmYWtlLXBhc3Nwb3J0LXJlZw=="},
-        },
-        **overrides,
-    }
-    response = await partner_webhook_client.post(
-        "/api/v1/partner/applications", json=payload,
-        headers={"Authorization": f"Bearer {get_settings().partner_inbound_token}"},
+    external_id = overrides.pop("external_id", None) or new_order_id()
+    payload = new_order_body(
+        external_id,
+        last_name=overrides.pop("last_name", _unique_name()),
+        first_name=overrides.pop("first_name", "Клиент"),
+        middle_name=overrides.pop("middle_name", "Клиентович"),
+        phone=overrides.pop("phone", "+70000000000"),
     )
-    assert response.status_code == 202, response.text  # правило 14 CLAUDE.md
+    assert not overrides, f"неизвестные поля: {overrides}"
+    response = await partner_webhook_client.post(NEW_ORDER_PATH, json=payload, headers=crm_headers())
+    assert response.status_code == 200, response.text  # правило 14 CLAUDE.md
 
     async with session_factory() as session:
         application = (
@@ -73,15 +65,15 @@ async def _ingest(
 
 
 async def _all_received(partner_admin, external_id: str) -> list[dict]:
-    """T18: вообще всё, что мы отправили по этой заявке на /partner/webhook —
-    решения, распознанные поля, отдельные комментарии (tariff_offer и т.п.)."""
+    """Всё, что мы отправили в CRM по этой заявке — решения (result) и
+    распознанный паспорт (passport-result)."""
     response = await partner_admin.get(f"/_test/received/{external_id}")
     response.raise_for_status()
     return response.json()["items"]
 
 
 async def _all_decisions(partner_admin, external_id: str) -> list[dict]:
-    """T18: все решения, отправленные по этой заявке на /partner/webhook, по
+    """Все решения, отправленные по этой заявке в CRM (result), по
     порядку (замена счётчику len(detail.raw["comments"]) из polling-эры)."""
     return [item for item in await _all_received(partner_admin, external_id) if item["type"] == "decision"]
 
@@ -97,7 +89,7 @@ async def _all_sent_texts(partner_admin, external_id: str) -> str:
 async def _last_decision(partner_admin, external_id: str) -> dict:
     """T18: что мы последним отправили на их эндпоинт по этой заявке (замена
     partner_client.get_application(...).status/comments из polling-эры) —
-    fake_partner отдаёт всё, что получила на /partner/webhook."""
+    fake_partner отдаёт всё, что получила."""
     items = await _all_decisions(partner_admin, external_id)
     assert items, f"не было ни одного решения, отправленного по {external_id}"
     return items[-1]

@@ -1,15 +1,38 @@
-"""T18: исходящая доставка на ИХ эндпоинт (URL и токен из env — docs/integration_contract.md
-задаёт форму тела и ответов). Раньше называлось FakePartnerClient и опрашивало
-их API по расписанию — опроса больше нет, заявки приходят вебхуками
-(app/api/partner_webhooks.py), а этот класс делает только исходящий POST."""
+"""Исходящая доставка в CRM — по их API (api.yml от CRM, «Входящие запросы» с
+их стороны). Базовый адрес и токен — из env (PARTNER_OUTBOUND_URL,
+PARTNER_OUTBOUND_TOKEN), см. docs/integration_contract.md.
 
-import uuid
+- POST {base}/v1/integration/scoring/passport-result — распознанный паспорт,
+  сразу после OCR.
+- POST {base}/v1/integration/scoring/result — решение стадии А или Б:
+  статус, балл, причина текстом.
+
+Отдельного эндпоинта для комментариев у CRM нет — дополнительный текст
+(предложение другого тарифа) уходит в причине того же решения."""
+
 from decimal import Decimal
 from typing import Any
 
 import httpx
 
 from app.integrations.base import PartnerBadRequestError, PartnerConflictError, PartnerUnavailableError
+
+PASSPORT_RESULT_PATH = "/v1/integration/scoring/passport-result"
+RESULT_PATH = "/v1/integration/scoring/result"
+
+# Наши паспортные поля (app/ocr) → поля PassportRecognitionResult.
+_PASSPORT_FIELD_NAMES = {
+    "last_name": "lastName",
+    "first_name": "firstName",
+    "middle_name": "fatherName",
+    "birth_date": "birthDate",
+    "passport_series": "passportSeries",
+    "passport_number": "passportNumber",
+    "issued_by": "issuedBy",
+    "issue_date": "issuedDate",
+    "department_code": "divisionCode",
+    "registration_address": "registrationAddress",
+}
 
 
 def _safe_json(response: httpx.Response) -> dict[str, Any]:
@@ -19,29 +42,60 @@ def _safe_json(response: httpx.Response) -> dict[str, Any]:
         return {}
 
 
+def order_id(external_id: str) -> int | str:
+    """orderId в их API — число; external_id у нас — строка из их же orderId.
+    Нечисловой (заявки, созданные не через /new-order, — тесты, старые
+    данные) отдаём как есть."""
+    return int(external_id) if external_id.isdigit() else external_id
+
+
+def _field_value(value: Any) -> Any:
+    # Распознанное поле — {"value": ..., "confidence": ...} или уже значение.
+    if isinstance(value, dict):
+        return value.get("value")
+    return value
+
+
+def passport_result_body(external_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    body: dict[str, Any] = {"orderId": order_id(external_id)}
+    for ours, theirs in _PASSPORT_FIELD_NAMES.items():
+        body[theirs] = _field_value(fields.get(ours))
+    return body
+
+
+def result_body(external_id: str, status: str, score: Decimal | int | float | None, reason: str | None) -> dict[str, Any]:
+    return {
+        "orderId": order_id(external_id),
+        "status": status,
+        "score": int(score) if score is not None else None,
+        "reason": reason,
+    }
+
+
 class PartnerNotifier:
-    """Один HTTP-клиент на одно уведомление их эндпоинта (ТЗ T18: «их эндпоинт»,
-    единственное число) — три вида события различаются полем "type" в теле,
-    не разными URL. Конструктор принимает URL/токен явно (не читает
-    get_settings() сам) — тесты указывают на fake_partner, прод — на
-    настоящий адрес заказчика, подмена на уровне вызывающего кода."""
+    """Конструктор принимает базовый адрес/токен явно (не читает
+    get_settings() сам) — тесты указывают на fake_partner, прод — на адрес
+    CRM, подмена на уровне вызывающего кода."""
 
     def __init__(self, outbound_url: str, outbound_token: str, *, timeout_seconds: float = 10.0) -> None:
-        self._url = outbound_url
+        self._base_url = outbound_url.rstrip("/")
         self._token = outbound_token
         self._client = httpx.AsyncClient(timeout=timeout_seconds)
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def _post(self, body: dict[str, Any]) -> None:
+    async def _post(self, path: str, body: dict[str, Any]) -> None:
         try:
             response = await self._client.post(
-                self._url, json=body, headers={"Authorization": f"Bearer {self._token}"},
+                f"{self._base_url}{path}", json=body, headers={"Authorization": f"Bearer {self._token}"},
             )
         except httpx.HTTPError as exc:
             raise PartnerUnavailableError(str(exc)) from exc
 
+        # В их API ответ только 200. 409 с {current_status, reason} — на
+        # случай, если CRM начнёт сообщать, что оператор уже сменил статус
+        # вручную (правило 12 CLAUDE.md); пока не придёт — не срабатывает.
         if response.status_code == 409:
             payload = _safe_json(response)
             raise PartnerConflictError(
@@ -60,54 +114,24 @@ class PartnerNotifier:
         comment: str | None = None,
         *,
         score: Decimal | int | float | None = None,
-        event_id: str | None = None,
     ) -> None:
-        """type="decision" — после стадии А и Б (ТЗ T18: статус, балл, причина
-        текстом, prev_status). score — только когда есть (стадия А его не знает)."""
-        await self._post(
-            {
-                "type": "decision",
-                "external_id": external_id,
-                "event_id": event_id or str(uuid.uuid4()),
-                "prev_status": expected_current_status,
-                "status": new_status,
-                "score": int(score) if score is not None else None,
-                "reason": comment,
-            }
-        )
+        """Решение стадии А или Б. expected_current_status в их API не
+        передаётся — оставлен в сигнатуре для журнала/конфликта."""
+        await self._post(RESULT_PATH, result_body(external_id, new_status, score, comment))
 
-    async def add_comment(self, external_id: str, text: str, *, event_id: str | None = None) -> None:
-        """type="comment" — дополнительные замечания (например, предложение
-        альтернативного тарифа), отдельно от смены статуса."""
-        await self._post(
-            {
-                "type": "comment",
-                "external_id": external_id,
-                "event_id": event_id or str(uuid.uuid4()),
-                "text": text,
-            }
-        )
+    async def send_ocr_result(self, external_id: str, fields: dict[str, Any]) -> None:
+        """Распознанный паспорт — сразу после OCR, не дожидаясь решения."""
+        await self._post(PASSPORT_RESULT_PATH, passport_result_body(external_id, fields))
 
-    async def resend(
-        self, event_type: str, external_id: str, payload: dict[str, Any], event_id: str,
-    ) -> None:
-        """Повтор из outbox (app/tasks/partner_outbox.py) — тело уже собрано
-        при первой (неудачной) попытке, здесь только оборачиваем type/external_id/
-        event_id. event_id стабильный (id строки outbox) — их же идемпотентность
-        по event_id защищает от двойной обработки, если наш POST дошёл, а наш
-        процесс не успел увидеть ответ (упал между отправкой и обновлением строки)."""
-        await self._post({"type": event_type, "external_id": external_id, "event_id": event_id, **payload})
-
-    async def send_ocr_result(
-        self, external_id: str, fields: dict[str, Any], *, event_id: str | None = None
-    ) -> None:
-        """type="ocr_result" — распознанные паспортные поля, сразу после OCR
-        (ТЗ T18, не дожидаясь решения стадии А)."""
-        await self._post(
-            {
-                "type": "ocr_result",
-                "external_id": external_id,
-                "event_id": event_id or str(uuid.uuid4()),
-                "fields": fields,
-            }
-        )
+    async def resend(self, event_type: str, external_id: str, payload: dict[str, Any], event_id: str) -> None:
+        """Повтор из outbox (app/tasks/partner_outbox.py) — payload сохранён
+        при первой неудачной попытке."""
+        if event_type == "decision":
+            await self._post(
+                RESULT_PATH, result_body(external_id, payload["status"], payload.get("score"), payload.get("reason"))
+            )
+        elif event_type == "ocr_result":
+            await self._post(PASSPORT_RESULT_PATH, passport_result_body(external_id, payload["fields"]))
+        else:
+            # «comment» — из прежнего формата; у CRM такого входа нет.
+            raise PartnerBadRequestError(f"событие {event_type!r} в API CRM не поддерживается")

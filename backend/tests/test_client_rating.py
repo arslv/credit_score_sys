@@ -18,6 +18,7 @@ from app.engine.client_rating import compute_client_rating
 from app.engine.schema import load_ruleset_from_yaml, parse_ruleset
 from app.engine.versions import save_ruleset_version
 from app.models import Application, ExternalSnapshot, OcrResult
+from tests._crm import SCORING_PATH, crm_headers, new_order_id, scoring_body
 
 AS_OF = date(2026, 10, 1)
 MAKHACHKALA = "Республика Дагестан, г. Махачкала, ул. Учебная, д. 1, кв. 2"
@@ -212,20 +213,15 @@ async def test_review_webhook_keeps_contacts_and_employer(partner_webhook_client
     import app.tasks.stage_b as stage_b_tasks
 
     monkeypatch.setattr(stage_b_tasks.process_single_application_task, "delay", lambda *a: None)
-    await _application(session_factory, external_id="RATING-1", stage_b=None)
-    body = {
-        "external_id": "RATING-1", "event_id": str(uuid.uuid4()), "status": "on_review",
-        "deal": {"goods_price": 60000, "down_payment": 0, "term_months": 12, "tariff": "standard"},
-        "employment": {"type": "employed", "employer": "Школа № 12", "position": "учитель"},
-        "income": {"declared_monthly": 80000}, "obligations": {},
-        "bki_consent": {"given": True},
-        "contacts": [{"name": "Мама", "phone": "+79990001122", "relation": "parent"}],
-    }
-    response = await partner_webhook_client.post(
-        "/api/v1/partner/review", json=body,
-        headers={"Authorization": f"Bearer {get_settings().partner_inbound_token}"},
+    external_id = new_order_id()
+    await _application(session_factory, external_id=external_id, stage_b=None)
+    body = scoring_body(
+        external_id, price=60000, down=0, term=12, income=80000, tariff="standard",
+        employment={"type": "employed", "employer": "Школа № 12", "position": "учитель"},
+        contacts=[{"name": "Мама", "phone": "+79990001122", "relation": "parent"}],
     )
-    assert response.status_code == 202, response.text
+    response = await partner_webhook_client.post(SCORING_PATH, json=body, headers=crm_headers())
+    assert response.status_code == 200, response.text
 
     async with session_factory() as session:
         snapshot = (await session.execute(

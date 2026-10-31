@@ -1,8 +1,7 @@
-"""T22: тесты заглушки заказчика под схему T18 (push): она шлёт нам вебхуки
-(/_test/trigger-*) и принимает наши ответы (/partner/webhook). Старые тесты
-API опроса (GET /applications, фото по ID, смена статуса, «Рассмотреть»)
-удалены вместе с этим API в T18. Вызовы нашего API мокаются через respx
-(правило 10 CLAUDE.md), ответ каждого вызова проверяется (правило 14)."""
+"""Тесты заглушки CRM по её API (api.yml): она шлёт нам /new-order и /scoring
+(/_test/trigger-*) и принимает наши passport-result и result. Вызовы нашего
+API мокаются через respx (правило 10 CLAUDE.md), ответ каждого вызова
+проверяется (правило 14)."""
 
 import base64
 import json
@@ -12,13 +11,13 @@ import respx
 from httpx import Response
 
 from app.config import get_settings
+from app.main import OUR_NEW_ORDER_PATH, OUR_SCORING_PATH, PASSPORT_RESULT_PATH, RESULT_PATH
 
 _PNG = b"\x89PNG\r\n\x1a\n"
 
 
-def _decision(external_id: str, status: str = "approved", event_id: str = "ev-1") -> dict:
-    return {"type": "decision", "external_id": external_id, "event_id": event_id, "status": status,
-            "prev_status": "on_review", "comment": "Одобрено"}
+def _result(order_id: int, status: str = "approved") -> dict:
+    return {"orderId": order_id, "status": status, "score": 720, "reason": "Одобрено"}
 
 
 def test_health_requires_no_auth(client):
@@ -49,71 +48,75 @@ def test_service_endpoints_require_service_token(client, method, path):
 # --- их вход для наших уведомлений ----------------------------------------------------
 
 
-def test_webhook_requires_our_token(client):
-    response = client.post("/partner/webhook", json=_decision("APP-1"), headers={"Authorization": "Bearer wrong"})
+@pytest.mark.parametrize("path", [RESULT_PATH, PASSPORT_RESULT_PATH])
+def test_inbound_requires_our_token(client, path):
+    response = client.post(path, json=_result(1), headers={"Authorization": "Bearer wrong"})
     assert response.status_code == 401
 
 
-def test_webhook_accepts_and_records_decision(client, our_headers, auth_headers):
-    response = client.post("/partner/webhook", json=_decision("APP-1"), headers=our_headers)
+def test_result_is_recorded_and_changes_their_status(client, our_headers, auth_headers):
+    response = client.post(RESULT_PATH, json=_result(101), headers=our_headers)
     assert response.status_code == 200
 
-    received = client.get("/_test/received/APP-1", headers=auth_headers)
+    received = client.get("/_test/received/101", headers=auth_headers)
     assert received.status_code == 200
     body = received.json()
     assert [item["type"] for item in body["items"]] == ["decision"]
-    assert body["current_status"] == "approved"  # решение обновило «их» статус
+    assert body["items"][0]["orderId"] == 101
+    assert body["current_status"] == "approved"
 
 
-def test_ocr_result_does_not_change_their_status(client, our_headers, auth_headers):
+def test_passport_result_does_not_change_their_status(client, our_headers, auth_headers):
     response = client.post(
-        "/partner/webhook", headers=our_headers,
-        json={"type": "ocr_result", "external_id": "APP-2", "event_id": "ev-2", "fields": {}},
+        PASSPORT_RESULT_PATH, headers=our_headers, json={"orderId": 102, "lastName": "Тестов", "passportSeries": "0000"},
     )
     assert response.status_code == 200
-    body = client.get("/_test/received/APP-2", headers=auth_headers).json()
+    body = client.get("/_test/received/102", headers=auth_headers).json()
     assert body["current_status"] == "new"
     assert body["items"][0]["type"] == "ocr_result"
+    assert body["items"][0]["lastName"] == "Тестов"
 
 
-def test_conflict_mode_answers_409_with_current_status_for_decisions_only(client, our_headers, auth_headers):
+def test_body_without_order_id_is_rejected(client, our_headers):
+    response = client.post(RESULT_PATH, json={"status": "approved"}, headers=our_headers)
+    assert response.status_code == 422
+
+
+def test_conflict_mode_answers_409_for_results_only(client, our_headers, auth_headers):
     configured = client.post(
         "/_test/configure", headers=auth_headers,
         json={"mode": "conflict", "conflict_current_status": "rejected", "conflict_reason": "оператор отказал"},
     )
     assert configured.status_code == 204
 
-    response = client.post("/partner/webhook", json=_decision("APP-3"), headers=our_headers)
+    response = client.post(RESULT_PATH, json=_result(103), headers=our_headers)
     assert response.status_code == 409
     assert response.json() == {"current_status": "rejected", "reason": "оператор отказал"}
 
-    ocr = client.post(
-        "/partner/webhook", headers=our_headers,
-        json={"type": "ocr_result", "external_id": "APP-3", "event_id": "ev-3", "fields": {}},
-    )
+    ocr = client.post(PASSPORT_RESULT_PATH, headers=our_headers, json={"orderId": 103})
     assert ocr.status_code == 200
-    items = client.get("/_test/received/APP-3", headers=auth_headers).json()["items"]
+    items = client.get("/_test/received/103", headers=auth_headers).json()["items"]
     assert [item["type"] for item in items] == ["ocr_result"]  # отклонённое решение не записано
 
 
 def test_unavailable_mode_answers_503_and_records_nothing(client, our_headers, auth_headers):
     assert client.post("/_test/configure", json={"mode": "unavailable"}, headers=auth_headers).status_code == 204
-    response = client.post("/partner/webhook", json=_decision("APP-4"), headers=our_headers)
+    response = client.post(RESULT_PATH, json=_result(104), headers=our_headers)
     assert response.status_code == 503
-    assert client.get("/_test/received/APP-4", headers=auth_headers).json()["items"] == []
+    assert client.get("/_test/received/104", headers=auth_headers).json()["items"] == []
 
 
 def test_reset_clears_received_and_mode(client, our_headers, auth_headers):
     assert client.post("/_test/configure", json={"mode": "unavailable"}, headers=auth_headers).status_code == 204
     assert client.post("/_test/reset", headers=auth_headers).status_code == 204
-    response = client.post("/partner/webhook", json=_decision("APP-5"), headers=our_headers)
+    response = client.post(RESULT_PATH, json=_result(105), headers=our_headers)
     assert response.status_code == 200  # режим снова ok
 
 
 def test_manual_status_changes_their_status(client, auth_headers):
-    response = client.post("/_test/manual-status/APP-6", json={"status": "approved"}, headers=auth_headers)
+    response = client.post("/_test/manual-status/106", json={"status": "approved"}, headers=auth_headers)
     assert response.status_code == 204
-    assert client.get("/_test/received/APP-6", headers=auth_headers).json()["current_status"] == "approved"
+    assert client.get("/_test/received/106", headers=auth_headers).json()["current_status"] == "approved"
 
 
 # --- они шлют нам ------------------------------------------------------------------
@@ -123,34 +126,31 @@ def _our_api(path: str) -> str:
     return f"{get_settings().dialog_api_base_url}{path}"
 
 
-def test_trigger_new_application_sends_two_png_photos_in_base64(client, auth_headers):
+def test_trigger_new_application_sends_new_order_with_two_png_photos(client, auth_headers):
     with respx.mock:
-        route = respx.post(_our_api("/api/v1/partner/applications")).mock(return_value=Response(202, json={}))
-        response = client.post(
-            "/_test/trigger-new-application", json={"last_name": "Тестов"}, headers=auth_headers,
-        )
+        route = respx.post(_our_api(OUR_NEW_ORDER_PATH)).mock(return_value=Response(200, json={}))
+        response = client.post("/_test/trigger-new-application", json={"last_name": "Тестов"}, headers=auth_headers)
     assert response.status_code == 200
     external_id = response.json()["external_id"]
 
     sent = route.calls.last.request
     assert sent.headers["authorization"] == f"Bearer {get_settings().dialog_api_token}"
     body = json.loads(sent.content)
-    assert body["external_id"] == external_id
-    assert body["last_name"] == "Тестов"
-    assert set(body["photos"]) == {"passport_main", "passport_reg"}  # без селфи
-    for photo in body["photos"].values():
-        assert base64.b64decode(photo["base64"]).startswith(_PNG)
+    assert str(body["orderId"]) == external_id
+    assert isinstance(body["orderId"], int)
+    assert body["lastName"] == "Тестов"
+    assert body["fatherName"] == "Тестович"
+    assert len(body["passportPhotos"]) == 2  # разворот и прописка, без селфи
+    for photo in body["passportPhotos"]:
+        assert base64.b64decode(photo).startswith(_PNG)
 
 
 def test_trigger_new_application_url_mode_serves_photo(client, auth_headers):
     with respx.mock:
-        route = respx.post(_our_api("/api/v1/partner/applications")).mock(return_value=Response(202, json={}))
-        response = client.post(
-            "/_test/trigger-new-application", json={"photo_mode": "url"}, headers=auth_headers,
-        )
+        route = respx.post(_our_api(OUR_NEW_ORDER_PATH)).mock(return_value=Response(200, json={}))
+        response = client.post("/_test/trigger-new-application", json={"photo_mode": "url"}, headers=auth_headers)
     assert response.status_code == 200
-    body = json.loads(route.calls.last.request.content)
-    url = body["photos"]["passport_main"]["url"]
+    url = json.loads(route.calls.last.request.content)["passportPhotos"][0]
     token = url.rsplit("/", 1)[-1]
 
     photo = client.get(f"/_test/photos/{token}")  # временная ссылка — без авторизации
@@ -162,43 +162,55 @@ def test_trigger_new_application_url_mode_serves_photo(client, auth_headers):
 
 def test_trigger_new_application_reports_our_rejection_as_502(client, auth_headers):
     with respx.mock:
-        respx.post(_our_api("/api/v1/partner/applications")).mock(return_value=Response(422, json={"detail": "x"}))
+        respx.post(_our_api(OUR_NEW_ORDER_PATH)).mock(return_value=Response(422, json={"detail": "x"}))
         response = client.post("/_test/trigger-new-application", json={}, headers=auth_headers)
     assert response.status_code == 502
 
 
-def _review_body(client, auth_headers, payload: dict) -> dict:
+def _scoring_body(client, auth_headers, payload: dict, external_id: str = "107") -> dict:
     with respx.mock:
-        route = respx.post(_our_api("/api/v1/partner/review")).mock(return_value=Response(202, json={}))
-        response = client.post("/_test/trigger-review/APP-7", json=payload, headers=auth_headers)
+        route = respx.post(_our_api(OUR_SCORING_PATH)).mock(return_value=Response(200, json={}))
+        response = client.post(f"/_test/trigger-review/{external_id}", json=payload, headers=auth_headers)
     assert response.status_code == 200
     return json.loads(route.calls.last.request.content)
 
 
-def test_trigger_review_sends_deal_income_obligations_and_monthly_payment(client, auth_headers):
-    body = _review_body(client, auth_headers, {})
-    assert body["external_id"] == "APP-7"
-    assert body["status"] == "on_review"
-    # T21: платёж по рассрочке «по их графику» — без наценки (60000 − 6000) / 12.
-    assert body["deal"]["monthly_payment"] == 4500.0
-    assert body["income"] == {"declared_monthly": 90000.0}
-    assert body["obligations"] == {"monthly_payment_total": 0.0}
-    assert body["bki_consent"]["given"] is True
+def test_trigger_review_sends_scoring_request(client, auth_headers):
+    body = _scoring_body(client, auth_headers, {})
+    assert body["orderId"] == 107
+    assert body["productCategory"] == "household_appliances"
+    assert body["price"] == 60000.0
+    assert body["firstPayment"] == 6000.0
+    assert body["period"] == 12
+    assert body["clientIncome"] == 90000.0
+    assert body["otherCreditPayments"] == 0.0
+    assert body["bkiConsent"] is True
+    assert body["guarantors"] == []
+    # Наше расширение: платёж «по их графику» без наценки (60000 − 6000) / 12.
+    assert body["monthlyPayment"] == 4500.0
+
+
+def test_trigger_review_strict_format_has_no_extensions(client, auth_headers):
+    body = _scoring_body(client, auth_headers, {"send_extensions": False})
+    assert set(body) == {
+        "orderId", "productCategory", "price", "firstPayment", "period", "clientIncome",
+        "otherCreditPayments", "bkiConsent", "guarantors",
+    }
 
 
 def test_trigger_review_monthly_payment_explicit_or_absent(client, auth_headers):
-    assert _review_body(client, auth_headers, {"monthly_payment": 6500})["deal"]["monthly_payment"] == 6500
-    assert "monthly_payment" not in _review_body(client, auth_headers, {"send_monthly_payment": False})["deal"]
+    assert _scoring_body(client, auth_headers, {"monthly_payment": 6500})["monthlyPayment"] == 6500
+    assert "monthlyPayment" not in _scoring_body(client, auth_headers, {"send_monthly_payment": False})
 
 
 def test_trigger_review_reports_our_rejection_as_502(client, auth_headers):
     with respx.mock:
-        respx.post(_our_api("/api/v1/partner/review")).mock(return_value=Response(404, json={"detail": "x"}))
-        response = client.post("/_test/trigger-review/APP-8", json={}, headers=auth_headers)
+        respx.post(_our_api(OUR_SCORING_PATH)).mock(return_value=Response(404, json={"detail": "x"}))
+        response = client.post("/_test/trigger-review/108", json={}, headers=auth_headers)
     assert response.status_code == 502
 
 
-# --- T23: собрать тело без отправки (демо-сид доставляет его сам) -----------------
+# --- собрать тело без отправки (демо-сид доставляет его сам) ----------------------
 
 
 def test_compose_new_application_returns_body_without_sending(client, auth_headers):
@@ -206,42 +218,36 @@ def test_compose_new_application_returns_body_without_sending(client, auth_heade
     with respx.mock:  # любой исходящий вызов здесь — ошибка: respx не замокал ни одного маршрута
         response = client.post(
             "/_test/compose-new-application",
-            json={"external_id": "DEMO-1", "last_name": "Демов", "passport": passport},
+            json={"order_id": 555001, "last_name": "Демов", "passport": passport},
             headers=auth_headers,
         )
     assert response.status_code == 200
     body = response.json()["body"]
-    assert body["external_id"] == "DEMO-1"
-    assert body["last_name"] == "Демов"
-    assert body["event_id"]
-    assert set(body["photos"]) == {"passport_main", "passport_reg"}
-    for photo in body["photos"].values():
-        assert base64.b64decode(photo["base64"]).startswith(_PNG)
+    assert body["orderId"] == 555001
+    assert response.json()["external_id"] == "555001"
+    assert body["lastName"] == "Демов"
+    assert len(body["passportPhotos"]) == 2
 
 
 def test_compose_review_returns_same_body_as_trigger_without_sending(client, auth_headers):
     payload = {"goods_price": 50000, "down_payment": 5000, "term_months": 9, "declared_monthly_income": 70000}
     with respx.mock:
-        response = client.post("/_test/compose-review/DEMO-2", json=payload, headers=auth_headers)
+        response = client.post("/_test/compose-review/555002", json=payload, headers=auth_headers)
     assert response.status_code == 200
     composed = response.json()["body"]
-    sent = _review_body(client, auth_headers, payload)
-    for key in ("deal", "employment", "income", "obligations", "guarantor"):
-        assert composed[key] == sent[key]
-    assert composed["external_id"] == "DEMO-2"
-    assert composed["deal"]["monthly_payment"] == 5000.0
+    sent = _scoring_body(client, auth_headers, payload, external_id="555002")
+    assert composed == sent
+    assert composed["monthlyPayment"] == 5000.0
 
 
-def test_review_body_carries_employer_position_and_contacts(client, auth_headers):
-    """T23: рейтинг клиента — место работы, должность и контакты в анкете."""
+def test_review_body_carries_employment_and_contacts_extensions(client, auth_headers):
     payload = {
         "employer": "Школа № 12", "position": "учитель",
         "contacts": [{"name": "Мама", "phone": "+79990001122", "relation": "parent"}],
     }
     with respx.mock:
-        response = client.post("/_test/compose-review/DEMO-3", json=payload, headers=auth_headers)
+        response = client.post("/_test/compose-review/555003", json=payload, headers=auth_headers)
     assert response.status_code == 200
     body = response.json()["body"]
     assert body["employment"] == {"type": "employed", "employer": "Школа № 12", "position": "учитель"}
     assert body["contacts"] == payload["contacts"]
-    assert _review_body(client, auth_headers, {})["contacts"] == []

@@ -86,7 +86,7 @@ async def _run_one(application_id: str) -> None:
 
 @celery_app.task(name="stage_b.process_single_application")
 def process_single_application_task(application_id: str) -> None:
-    """T18: диспетчер вебхука POST /api/v1/partner/review ставит эту задачу
+    """T18: диспетчер вебхука POST /api/v1/crm/scoring ставит эту задачу
     сразу после сохранения снимка анкеты (.delay()) — не ждём следующего
     тика process_reviewed_applications. Всегда run_stage_b (не
     finalize_stage_b) — свежий снимок, тот же путь, что и в sweep выше для

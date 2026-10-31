@@ -25,6 +25,7 @@ from app.models import (
 from app.ocr.service import CRM_FORM_PROVIDER
 from app.system_settings import is_ocr_enabled, set_ocr_enabled
 from app.tasks.stage_a import _stage_a_then_b_from_crm_data
+from tests._crm import SCORING_PATH, crm_headers, scoring_body_from_internal
 from tests._admin_helpers import create_employee, login
 from tests.conftest import unique_valid_passport_series
 from tests.test_engine_pipeline import _all_decisions, _ingest, active_ruleset  # noqa: F401
@@ -54,22 +55,9 @@ def _applicant(age: int = 30) -> dict:
 async def _post_review(external_id: str, *, applicant: dict | None):
     from app.main import app as fastapi_app
 
-    body = {
-        "external_id": external_id,
-        "event_id": str(uuid.uuid4()),
-        "status": "on_review",
-        "deal": _DEFAULT_STAGE_B_PAYLOAD["deal"],
-        "employment": _DEFAULT_STAGE_B_PAYLOAD["employment"],
-        "income": _DEFAULT_STAGE_B_PAYLOAD["income"],
-        "bki_consent": {"given": True, "at": datetime.now(timezone.utc).isoformat()},
-    }
-    if applicant is not None:
-        body["applicant"] = applicant
+    body = scoring_body_from_internal(external_id, _DEFAULT_STAGE_B_PAYLOAD, applicant=applicant)
     async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="https://test") as client:
-        return await client.post(
-            "/api/v1/partner/review", json=body,
-            headers={"Authorization": f"Bearer {get_settings().partner_inbound_token}"},
-        )
+        return await client.post(SCORING_PATH, json=body, headers=crm_headers())
 
 
 class _MustNotBeCalledOcr:
@@ -204,7 +192,7 @@ async def test_review_with_passport_data_runs_stage_a_then_stage_b(
     external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
 
     response = await _post_review(external_id, applicant=_applicant(age=30))
-    assert response.status_code == 202, response.text
+    assert response.status_code == 200, response.text
 
     async with session_factory() as session:
         ocr_result = (
@@ -256,7 +244,7 @@ async def test_review_with_passport_data_stage_a_reject_skips_stage_b(
     external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
 
     response = await _post_review(external_id, applicant=_applicant(age=19))  # младше минимального возраста
-    assert response.status_code == 202, response.text
+    assert response.status_code == 200, response.text
 
     await _stage_a_then_b_from_crm_data(session_factory, application_id, partner_client)
 

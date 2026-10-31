@@ -29,11 +29,11 @@ class CsrfHeaderMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # T18: вебхуки заказчика (.../api/v1/partner/*) — сервер-сервер по
+        # Вход от CRM (.../api/v1/crm/*) — сервер-сервер по
         # статичному токену, без куки и без браузера; CSRF (защита конкретно
         # от куки чужого сайта) к ним не относится, а требовать от заказчика
         # наш внутренний служебный заголовок — лишнее условие в контракте.
-        if scope["path"].startswith("/api/v1/partner/"):
+        if scope["path"].startswith("/api/v1/crm/"):
             await self.app(scope, receive, send)
             return
 

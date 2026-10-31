@@ -64,7 +64,7 @@ async def _call_with_retry(
     партнёр отвечает сразу, как и раньше). Каждая попытка — своя строка в
     integration_events. PartnerConflictError не перехватывается — это не
     временный сбой. Если и последняя попытка — PartnerUnavailableError,
-    исключение уходит вызывающему коду (write_decision_status/write_comment
+    исключение уходит вызывающему коду (write_decision_status/send_ocr_result
     ниже), который кладёт событие в outbox вместо того, чтобы его потерять
     (T18, ваше явное указание «ничего не теряем»)."""
     settings = get_settings()
@@ -221,29 +221,6 @@ async def _record_manual_override(
         "manual_override_recorded", application_id=str(application_id),
         from_outcome=our_status, to_outcome=actual_status,
     )
-
-
-async def write_comment(
-    session_factory: async_sessionmaker,
-    notifier: PartnerNotifier,
-    *,
-    application_id,
-    external_id: str,
-    text: str,
-) -> None:
-    try:
-        await _call_with_retry(
-            session_factory,
-            application_id=application_id,
-            direction="outbound",
-            operation="add_comment",
-            func=lambda: notifier.add_comment(external_id, text),
-        )
-    except PartnerUnavailableError:
-        await _fallback_to_outbox(
-            session_factory, application_id=application_id, external_id=external_id,
-            event_type="comment", payload={"text": text},
-        )
 
 
 async def send_ocr_result(

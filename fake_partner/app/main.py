@@ -1,7 +1,7 @@
 import base64
-import uuid
+import random
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone
+from datetime import date
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -19,7 +19,13 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="fake_partner — заглушка системы заказчика (T18: push-схема)", lifespan=lifespan)
+app = FastAPI(title="fake_partner — заглушка CRM по её API (api.yml)", lifespan=lifespan)
+
+# Пути их API (api.yml, «Входящие запросы» с их стороны) и нашего входа для них.
+PASSPORT_RESULT_PATH = "/v1/integration/scoring/passport-result"
+RESULT_PATH = "/v1/integration/scoring/result"
+OUR_NEW_ORDER_PATH = "/api/v1/crm/new-order"
+OUR_SCORING_PATH = "/api/v1/crm/scoring"
 
 
 @app.get("/health")
@@ -27,7 +33,7 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-# --- то, что принимает НАСТОЯЩИЙ эндпоинт заказчика (их вход для наших POST) ---
+# --- то, что принимает НАСТОЯЩАЯ CRM (их вход для наших POST) -------------------
 
 
 def _verify_inbound(request: Request) -> None:
@@ -37,26 +43,36 @@ def _verify_inbound(request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid or missing token")
 
 
-@app.post("/partner/webhook")
-async def receive_webhook(request: Request):
-    """Единственный эндпоинт на их стороне (docs/integration_contract.md) —
-    тело различается полем "type" (ocr_result | decision | comment).
-    store.mode — для тестов повторов/конфликта: "unavailable" -> 503 без
-    сохранения, "conflict" (только для type="decision") -> 409 с телом
-    {current_status, reason} — ровно так, как задаёт наш же контракт."""
+async def _receive(request: Request, kind: str):
+    """store.mode — для тестов повторов/конфликта: "unavailable" -> 503 без
+    сохранения; "conflict" (только для решений) -> 409 {current_status,
+    reason}. В API CRM 409 нет — режим проверяет нашу обработку на случай,
+    если CRM начнёт так отвечать."""
     _verify_inbound(request)
     body = await request.json()
 
     if store.mode == "unavailable":
         return JSONResponse(status_code=503, content={"detail": "simulated unavailable"})
-    if store.mode == "conflict" and body.get("type") == "decision":
+    if store.mode == "conflict" and kind == "decision":
         return JSONResponse(
             status_code=409,
             content={"current_status": store.conflict_current_status, "reason": store.conflict_reason},
         )
+    if "orderId" not in body:
+        return JSONResponse(status_code=422, content={"detail": "нет orderId"})
 
-    store.receive(body)
+    store.receive(kind, body)
     return {"ok": True}
+
+
+@app.post(PASSPORT_RESULT_PATH)
+async def receive_passport_result(request: Request):
+    return await _receive(request, "ocr_result")
+
+
+@app.post(RESULT_PATH)
+async def receive_result(request: Request):
+    return await _receive(request, "decision")
 
 
 # --- служебные эндпоинты для тестов --------------------------------------------
@@ -69,9 +85,8 @@ def test_reset():
 
 @app.get("/_test/received/{external_id}", dependencies=[Depends(require_service_account)])
 def test_received(external_id: str) -> dict:
-    """Всё, что мы (dialog-scoring) прислали на /partner/webhook по этой
-    заявке — замена опросу их API из polling-эры (тесты смотрят сюда вместо
-    get_application(...).status/comments)."""
+    """Всё, что мы (dialog-scoring) прислали по этой заявке: тело как есть
+    плюс type (ocr_result | decision — по адресу) и external_id (= orderId)."""
     return {"items": store.received_items(external_id), "current_status": store.current_status(external_id)}
 
 
@@ -88,19 +103,14 @@ def test_configure(payload: ConfigureRequest):
     dependencies=[Depends(require_service_account)],
 )
 def test_manual_status(external_id: str, payload: ManualStatusRequest):
-    """Имитирует оператора, вручную сменившего статус в их системе в обход
-    нас (правило 12 CLAUDE.md) — следующий наш POST .../webhook с устаревшим
-    prev_status получит 409 ТОЛЬКО если дополнительно включён store.mode=
-    "conflict" (сама по себе смена статуса здесь ничего не проверяет — это
-    задел на будущее: настоящая система заказчика сверяла бы prev_status
-    сама; наша заглушка делает это явно через /_test/configure)."""
+    """Имитирует оператора, вручную сменившего статус в CRM в обход нас.
+    409 на наш следующий результат — только если включён mode="conflict"."""
     store.set_manual_status(external_id, payload.status)
 
 
 @app.get("/_test/photos/{token}")
 def test_get_photo(token: str):
-    """URL-вариант передачи фото (ТЗ T18: «временная ссылка ИЛИ base64») —
-    без авторизации, как и настоящая временная ссылка."""
+    """URL-вариант передачи фото — без авторизации, как временная ссылка."""
     data = store.get_photo(token)
     if data is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="photo not found")
@@ -113,8 +123,8 @@ def _default_passport_fields(payload: TriggerNewApplicationRequest) -> dict:
         "last_name": payload.last_name, "first_name": payload.first_name,
         "middle_name": payload.middle_name, "birth_date": birth.isoformat(),
         "gender": "female" if payload.first_name.endswith(("а", "я")) else "male",
-        "passport_series": f"{uuid.uuid4().int % 10000:04d}",
-        "passport_number": f"{uuid.uuid4().int % 1000000:06d}",
+        "passport_series": f"{random.randrange(10000):04d}",
+        "passport_number": f"{random.randrange(1000000):06d}",
         "issue_date": date(2015, 3, 10).isoformat(),
         "issued_by": "УМВД России по тестовому региону",
         "department_code": "770-001",
@@ -123,120 +133,105 @@ def _default_passport_fields(payload: TriggerNewApplicationRequest) -> dict:
     }
 
 
-def _photo_ref(data: bytes, mode: str) -> dict:
+def _photo_ref(data: bytes, mode: str) -> str:
     if mode == "url":
         token = store.store_photo(data)
-        return {"url": f"http://fake_partner:8000/_test/photos/{token}"}
-    return {"base64": base64.b64encode(data).decode("ascii")}
+        return f"http://fake_partner:8000/_test/photos/{token}"
+    return base64.b64encode(data).decode("ascii")
 
 
-def _build_new_application_body(payload: TriggerNewApplicationRequest) -> dict:
-    """Тело POST .../api/v1/partner/applications — как его собрал бы заказчик."""
+def _new_order_id() -> int:
+    return random.randrange(10**8, 10**9)
+
+
+def _build_new_order_body(payload: TriggerNewApplicationRequest) -> dict:
+    """Тело POST /new-order (NewOrderNotification) — как его собрала бы CRM."""
     fields = _default_passport_fields(payload)
     return {
-        "external_id": payload.external_id or f"WEB-{uuid.uuid4().hex[:10]}",
-        "event_id": str(uuid.uuid4()),
-        "last_name": payload.last_name,
-        "first_name": payload.first_name,
-        "middle_name": payload.middle_name,
+        "orderId": payload.order_id if payload.order_id is not None else _new_order_id(),
+        "lastName": payload.last_name,
+        "firstName": payload.first_name,
+        "fatherName": payload.middle_name,
         "phone": payload.phone,
-        "photos": {
-            "passport_main": _photo_ref(render_passport_main(fields), payload.photo_mode),
-            "passport_reg": _photo_ref(render_passport_registration(fields), payload.photo_mode),
-        },
+        "passportPhotos": [
+            _photo_ref(render_passport_main(fields), payload.photo_mode),
+            _photo_ref(render_passport_registration(fields), payload.photo_mode),
+        ],
     }
 
 
-def _build_review_body(external_id: str, payload: TriggerReviewRequest) -> dict:
-    """Тело POST .../api/v1/partner/review — «Принять на рассмотрение»."""
-    return {
-        "external_id": external_id,
-        "event_id": str(uuid.uuid4()),
-        "status": payload.status,
-        "deal": {
-            "goods_category_code": payload.goods_category_code,
-            "goods_name": payload.goods_name,
-            "goods_price": payload.goods_price,
-            "down_payment": payload.down_payment,
-            "term_months": payload.term_months,
-            "tariff": payload.tariff,
-            **(
-                {"monthly_payment": payload.monthly_payment if payload.monthly_payment is not None
-                 else round((payload.goods_price - payload.down_payment) / payload.term_months, 2)}
-                if payload.send_monthly_payment and payload.term_months > 0
-                else {}
-            ),
-        },
-        "employment": {
-            "type": payload.employment_type,
-            **({"employer": payload.employer} if payload.employer else {}),
-            **({"position": payload.position} if payload.position else {}),
-        },
-        "income": {"declared_monthly": payload.declared_monthly_income},
-        "obligations": {"monthly_payment_total": payload.declared_monthly_obligations},
-        "bki_consent": {
-            "given": payload.bki_consent,
-            "at": datetime.now(timezone.utc).isoformat() if payload.bki_consent else None,
-        },
-        "guarantor": payload.guarantor,
-        "contacts": payload.contacts or [],
+def _build_scoring_body(external_id: str, payload: TriggerReviewRequest) -> dict:
+    """Тело POST /scoring (ScoringRequest) — «Рассмотреть». Поля
+    employment/contacts/goodsName/tariff/monthlyPayment — наши
+    необязательные расширения (в api.yml CRM их нет); send_extensions=False
+    — строго их формат."""
+    body: dict = {
+        "orderId": int(external_id) if external_id.isdigit() else external_id,
+        "productCategory": payload.goods_category_code,
+        "price": payload.goods_price,
+        "firstPayment": payload.down_payment,
+        "period": payload.term_months,
+        "clientIncome": payload.declared_monthly_income,
+        "otherCreditPayments": payload.declared_monthly_obligations,
+        "bkiConsent": payload.bki_consent,
+        "guarantors": [payload.guarantor] if payload.guarantor else [],
     }
+    if not payload.send_extensions:
+        return body
+    body["goodsName"] = payload.goods_name
+    body["tariff"] = payload.tariff
+    if payload.send_monthly_payment and payload.term_months > 0:
+        body["monthlyPayment"] = (
+            payload.monthly_payment if payload.monthly_payment is not None
+            else round((payload.goods_price - payload.down_payment) / payload.term_months, 2)
+        )
+    body["employment"] = {
+        "type": payload.employment_type,
+        **({"employer": payload.employer} if payload.employer else {}),
+        **({"position": payload.position} if payload.position else {}),
+    }
+    body["contacts"] = payload.contacts or []
+    if payload.applicant:
+        body["applicant"] = payload.applicant
+    return body
 
 
 @app.post("/_test/compose-new-application", dependencies=[Depends(require_service_account)])
 def compose_new_application(payload: TriggerNewApplicationRequest) -> dict:
-    """T23: то же тело, что шлёт trigger-new-application, но БЕЗ отправки —
-    его доставляет сам вызывающий. Нужно демо-сиду (app.cli.seed_demo): он
-    доставляет вебхук в наш API в своём процессе под «виртуальными часами»
-    (заявки за прошедшие 60 дней), а сетевой POST отсюда пришёл бы с
-    сегодняшним временем."""
-    return {"body": _build_new_application_body(payload)}
+    """То же тело, что шлёт trigger-new-application, но БЕЗ отправки — его
+    доставляет сам вызывающий (демо-сид под «виртуальными часами»)."""
+    body = _build_new_order_body(payload)
+    return {"body": body, "external_id": str(body["orderId"])}
 
 
 @app.post("/_test/compose-review/{external_id}", dependencies=[Depends(require_service_account)])
 def compose_review(external_id: str, payload: TriggerReviewRequest) -> dict:
-    """T23: тело trigger-review без отправки — см. compose_new_application.
-    bki_consent.at — время вызывающего не знает: сид подставляет своё."""
-    return {"body": _build_review_body(external_id, payload)}
+    return {"body": _build_scoring_body(external_id, payload)}
+
+
+async def _send(path: str, body: dict, what: str) -> None:
+    settings = get_settings()
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.post(
+            f"{settings.dialog_api_base_url}{path}",
+            json=body, headers={"Authorization": f"Bearer {settings.dialog_api_token}"},
+        )
+    # Правило 14 CLAUDE.md — ответ проверяется явно, даже в тестовом хелпере.
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"dialog-scoring отклонил {what}: {response.status_code} {response.text}")
 
 
 @app.post("/_test/trigger-new-application", dependencies=[Depends(require_service_account)])
 async def trigger_new_application(payload: TriggerNewApplicationRequest) -> dict:
-    """Имитирует заказчика: собирает тело POST .../api/v1/partner/applications
-    и сама его отправляет (ТЗ T18: «fake_partner шлёт нам»)."""
-    body = _build_new_application_body(payload)
-    external_id = body["external_id"]
-    event_id = body["event_id"]
-
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(
-            f"{settings.dialog_api_base_url}/api/v1/partner/applications",
-            json=body, headers={"Authorization": f"Bearer {settings.dialog_api_token}"},
-        )
-    # Правило 14 CLAUDE.md — ответ проверяется явно, даже в тестовом хелпере.
-    if response.status_code != 202:
-        raise HTTPException(
-            status_code=502, detail=f"dialog-scoring отклонил заявку: {response.status_code} {response.text}"
-        )
-    return {"external_id": external_id, "event_id": event_id}
+    """Имитирует CRM: собирает тело POST /new-order и сама его отправляет."""
+    body = _build_new_order_body(payload)
+    await _send(OUR_NEW_ORDER_PATH, body, "заявку")
+    return {"external_id": str(body["orderId"])}
 
 
 @app.post("/_test/trigger-review/{external_id}", dependencies=[Depends(require_service_account)])
 async def trigger_review(external_id: str, payload: TriggerReviewRequest) -> dict:
-    """Имитирует оператора, нажавшего «Принять на рассмотрение» — собирает
-    тело POST .../api/v1/partner/review и сама его отправляет."""
-    body = _build_review_body(external_id, payload)
-    event_id = body["event_id"]
-
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(
-            f"{settings.dialog_api_base_url}/api/v1/partner/review",
-            json=body, headers={"Authorization": f"Bearer {settings.dialog_api_token}"},
-        )
-    if response.status_code != 202:
-        raise HTTPException(
-            status_code=502, detail=f"dialog-scoring отклонил анкету: {response.status_code} {response.text}"
-        )
-    return {"external_id": external_id, "event_id": event_id}
+    """Имитирует оператора CRM, нажавшего «Рассмотреть» — POST /scoring."""
+    body = _build_scoring_body(external_id, payload)
+    await _send(OUR_SCORING_PATH, body, "анкету")
+    return {"external_id": external_id}

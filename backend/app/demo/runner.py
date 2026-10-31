@@ -17,7 +17,7 @@
   с отчётом из плана (или «не подключено»);
 - ФССП, комплаенс, версии правил, справочники, сотрудники, импорт — через
   API админки под демо-сотрудниками нужных ролей (аудит пишется как обычно);
-- решения уходят на настоящий /partner/webhook fake_partner; «оператор
+- решения уходят на настоящие входы CRM в fake_partner (result); «оператор
   изменил статус сам» — режим conflict fake_partner (409), как в тестах T18.
 """
 
@@ -37,6 +37,7 @@ import yaml
 from sqlalchemy import func, select
 
 from app.config import Settings
+from app.demo.scenarios import DEMO_EXTERNAL_ID_PREFIX
 from app.demo.clock import install_timestamp_listener, uninstall_timestamp_listener, virtual_time
 from app.demo.portfolio import DemoPortfolio
 from app.demo.scenarios import DemoApplication, DemoPlan
@@ -299,11 +300,11 @@ class DemoSeeder:
         passport_fields = {k: v for k, v in person.ocr_fields().items()
                            if k not in ("last_name", "first_name", "middle_name", "birth_date", "birth_place")}
         composed = _check(await self._fake_partner.post("/_test/compose-new-application", json={
-            "external_id": app.external_id, "last_name": person.last_name, "first_name": person.first_name,
+            "order_id": int(app.external_id), "last_name": person.last_name, "first_name": person.first_name,
             "middle_name": person.middle_name, "phone": person.phone, "birth_date": person.birth_date.isoformat(),
             "passport": passport_fields,
         }), "fake_partner compose-new-application")
-        _check(await self._webhook.post("/api/v1/partner/applications", json=composed["body"]), "вебхук заявки")
+        _check(await self._webhook.post("/api/v1/crm/new-order", json=composed["body"]), "CRM /new-order")
         (application_id,) = self._stage_a_queue.pop()
         self._application_ids[app.external_id] = UUID(application_id)
 
@@ -363,7 +364,7 @@ class DemoSeeder:
 
         deal = app.deal
         composed = _check(await self._fake_partner.post(f"/_test/compose-review/{app.external_id}", json={
-            "status": partner_status, "goods_category_code": deal.goods.category_code,
+            "goods_category_code": deal.goods.category_code,
             "goods_name": deal.goods.name, "goods_price": float(deal.price),
             "down_payment": float(deal.down_payment), "term_months": deal.term_months, "tariff": deal.tariff,
             "monthly_payment": float(deal.monthly_payment), "employment_type": app.employment_type,
@@ -373,10 +374,13 @@ class DemoSeeder:
             "guarantor": app.guarantor.guarantor_payload() if app.guarantor else None,
         }), "fake_partner compose-review")
         body = composed["body"]
-        # Согласие на КИ дано в момент звонка — по виртуальным часам (срок
-        # согласия проверяется стадией Б), а не временем сборки тела.
-        body["bki_consent"]["at"] = datetime.now(timezone.utc).isoformat()
-        _check(await self._webhook.post("/api/v1/partner/review", json=body), "вебхук /review")
+        # Повторное «Рассмотреть» с той же анкетой — для CRM это новый запрос
+        # (оператор нажал ещё раз); у нас /scoring с тем же телом — повтор,
+        # поэтому помечаем вызов, чтобы он был отличим.
+        if partner_status != "on_review":
+            body["rereview"] = partner_status
+        # Согласие на КИ — по виртуальным часам (вход ставит время получения).
+        _check(await self._webhook.post("/api/v1/crm/scoring", json=body), "CRM /scoring")
         (application_id,) = self._stage_b_queue.pop()
 
         person = app.applicant
@@ -520,7 +524,7 @@ class DemoSeeder:
         async with self._session_factory() as session:
             rows = (await session.execute(
                 select(Application.external_id, Application.status)
-                .where(Application.external_id.like("DEMO-%"))
+                .where(Application.external_id.like(f"{DEMO_EXTERNAL_ID_PREFIX}%"))
             )).all()
             statuses = dict(rows)
             counts = (await session.execute(

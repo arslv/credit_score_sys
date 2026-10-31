@@ -109,7 +109,7 @@ async def _run_one(application_id: str) -> None:
 
 @celery_app.task(name="stage_a.process_single_application")
 def process_single_application_task(application_id: str) -> None:
-    """T18: диспетчер вебхука POST /api/v1/partner/applications ставит эту
+    """T18: диспетчер вебхука POST /api/v1/crm/new-order ставит эту
     задачу сразу после сохранения заявки (.delay(), как queue_fns_checks) —
     не ждём следующего тика process_new_applications. Сам sweep выше
     остаётся запасным путём на случай, если воркер был недоступен в момент
@@ -142,6 +142,6 @@ async def _run_crm_data(application_id: str) -> None:
 
 @celery_app.task(name="stage_a.process_crm_data")
 def process_crm_data_task(application_id: str) -> None:
-    """Ставит вебхук POST /api/v1/partner/review, когда заявка ждала
+    """Ставит вебхук POST /api/v1/crm/scoring, когда заявка ждала
     паспортные данные от CRM (awaiting_data) и они пришли."""
     asyncio.run(_run_crm_data(application_id))

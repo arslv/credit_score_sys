@@ -1,23 +1,27 @@
-"""T18: интеграция по новой схеме — заказчик сам шлёт нам заявки, мы отвечаем
-на их эндпоинт (ваше явное указание: «формат определяем мы»). Полный контракт
-и примеры — docs/integration_contract.md.
+"""Вход от CRM — по их API (api.yml от CRM, «Исходящие запросы» с их стороны).
+Полный контракт — docs/integration_contract.md.
 
-Два входа:
-- POST .../applications — новая заявка с сайта (ФИО, телефон, 2 фото паспорта —
-  разворот и прописка; СЕЛФИ НЕ ПРИНИМАЕМ, ваше явное указание). 202 сразу,
-  дальше асинхронно: Celery-задача делает OCR → стадию А.
-- POST .../review — «Принять на рассмотрение»: категория товара, цена, первый
-  взнос, срок, занятость (добавлено нами — без неё ПДН стадии Б систематически
-  недовычисляем, см. config/rulesets/dev.yaml stage_b_completeness), доход,
-  платежи по другим кредитам, согласие на БКИ, поручитель. 202 → стадия Б.
+Два входа (базовый адрес, который мы даём CRM: https://<наш хост>/api/v1/crm):
+- POST /new-order — новая заявка с сайта: номер заявки (orderId), ФИО,
+  телефон, фото паспорта (passportPhotos: первое — разворот, второе —
+  прописка; base64 или ссылка). Сразу 200, дальше асинхронно: OCR → стадия А.
+- POST /scoring — «Рассмотреть»: категория, цена, первый взнос, срок, доход,
+  платежи по кредитам, согласие на БКИ, поручители. 200 → стадия Б.
 
-Оба — идемпотентны по event_id (partner_inbound_events, уникальный индекс):
-повторная доставка того же event_id — 202 без повторной обработки, не 409 и
-не ошибка (их ретраи на таймауте — это нормально, не их вина)."""
+Их тела переводим во внутренний формат анкеты (тот же снимок external_
+snapshots stage="B", что читает стадия Б) — конвейер от формата CRM не
+зависит. Поля, которых в их API нет, но которые мы примем, если CRM начнёт их
+присылать (employment, contacts, applicant, goodsName, monthlyPayment,
+tariff), — необязательные расширения, см. контракт.
+
+Идемпотентность (правило 11 CLAUDE.md): event_id в их запросах нет — свой
+ключ: /new-order — по orderId; /scoring — по orderId + содержимому тела
+(тот же запрос повторно — ничего не делаем; анкету поправили — новая стадия Б)."""
 
 import base64
 import hashlib
 import hmac
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -26,7 +30,7 @@ from urllib.parse import urlsplit
 import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,7 +44,7 @@ from app.system_settings import is_ocr_enabled
 
 logger = structlog.get_logger()
 
-router = APIRouter(prefix="/api/v1/partner", tags=["partner-webhooks"])
+router = APIRouter(prefix="/api/v1/crm", tags=["crm"])
 
 
 async def verify_partner_webhook(request: Request) -> None:
@@ -64,113 +68,105 @@ async def verify_partner_webhook(request: Request) -> None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ip not allowed")
 
 
-class PhotoRefIn(BaseModel):
-    url: str | None = None
-    base64: str | None = None
+class NewOrderIn(BaseModel):
+    """NewOrderNotification из их api.yml."""
 
-    @model_validator(mode="after")
-    def _one_source(self) -> "PhotoRefIn":
-        if not self.url and not self.base64:
-            raise ValueError("нужен url или base64")
-        return self
+    model_config = ConfigDict(extra="ignore")
 
-
-class NewApplicationPhotosIn(BaseModel):
-    # Только разворот и прописка — селфи не принимаем (ваше явное указание).
-    passport_main: PhotoRefIn
-    passport_reg: PhotoRefIn
-
-
-class NewApplicationIn(BaseModel):
-    external_id: str
-    event_id: str
-    last_name: str
-    first_name: str
-    middle_name: str | None = None
+    orderId: int
+    lastName: str
+    firstName: str
+    fatherName: str | None = None
     phone: str
-    photos: NewApplicationPhotosIn
+    # Первое — разворот, второе — прописка; base64 (можно с префиксом
+    # data:image/...;base64,) или https-ссылка. Остальные (если пришлют) не
+    # используем — селфи не принимаем (ваше явное указание).
+    passportPhotos: list[str] = Field(default_factory=list)
 
 
-class BkiConsentIn(BaseModel):
-    given: bool
-    at: datetime | None = None
+class ScoringGuarantorIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
 
-
-class GuarantorIn(BaseModel):
-    last_name: str | None = None
-    first_name: str | None = None
-    middle_name: str | None = None
-    birth_date: str | None = None
-    passport_series: str | None = None
-    passport_number: str | None = None
-    issue_date: str | None = None
-    registration_address: str | None = None
+    lastName: str | None = None
+    firstName: str | None = None
+    fatherName: str | None = None
     phone: str | None = None
+    income: Decimal | None = None
+    otherCreditPayments: Decimal | None = None
+    # Расширение: без даты рождения и паспорта поручителя не проверить
+    # (перечни, ФССП, БКИ) — примем, если CRM начнёт присылать.
+    birthDate: str | None = None
+    passportSeries: str | None = None
+    passportNumber: str | None = None
+    issuedDate: str | None = None
+    registrationAddress: str | None = None
 
 
 class ApplicantPassportIn(BaseModel):
-    """Паспортные данные заявителя — обязательны в /review, пока заявка ждёт
-    их в статусе awaiting_data (распознавание фото было выключено в админке,
-    когда она пришла): тогда их вводит оператор CRM. Ключевые — серия, номер,
-    дата рождения (ФИО берём отсюда или из /applications). В остальных
-    случаях блок игнорируется — данные берутся с фото."""
+    """Расширение: паспортные данные заявителя — нужны только когда
+    распознавание фото выключено в админке (заявка ждёт в awaiting_data)."""
 
-    last_name: str | None = None
-    first_name: str | None = None
-    middle_name: str | None = None
-    birth_date: str | None = None
-    birth_place: str | None = None
+    model_config = ConfigDict(extra="ignore")
+
+    lastName: str | None = None
+    firstName: str | None = None
+    fatherName: str | None = None
+    birthDate: str | None = None
+    birthPlace: str | None = None
     gender: str | None = None
-    passport_series: str | None = None
-    passport_number: str | None = None
-    issue_date: str | None = None
-    issued_by: str | None = None
-    department_code: str | None = None
-    registration_address: str | None = None
+    passportSeries: str | None = None
+    passportNumber: str | None = None
+    issuedDate: str | None = None
+    issuedBy: str | None = None
+    divisionCode: str | None = None
+    registrationAddress: str | None = None
 
 
 class ContactIn(BaseModel):
-    """T23: контактное лицо из анкеты (ТЗ, «Анкета» → «Контакты»). relation —
-    кем приходится: parent | sibling | relative | spouse | friend | colleague |
-    other (подписи — client_rating.contact_relations в правилах); нужен для
-    рейтинга клиента («дал номера родителей», «только друзья»)."""
+    """Расширение: контактное лицо для рейтинга клиента. relation — parent |
+    sibling | relative | spouse | friend | colleague | other."""
+
+    model_config = ConfigDict(extra="ignore")
 
     name: str | None = None
     phone: str | None = None
     relation: str = "other"
 
 
-class ReviewDealIn(BaseModel):
-    goods_category_code: str | None = None
-    goods_name: str | None = None
-    goods_price: Decimal | None = None
-    down_payment: Decimal | None = None
-    term_months: int | None = None
+class EmploymentIn(BaseModel):
+    """Расширение: занятость (обязательна для стадии Б по правилам —
+    stage_b_completeness)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: str | None = None
+    employer: str | None = None
+    position: str | None = None
+
+
+class ScoringIn(BaseModel):
+    """ScoringRequest из их api.yml + необязательные расширения."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    orderId: int
+    productCategory: str | None = None
+    price: Decimal | None = None
+    firstPayment: Decimal | None = None
+    period: int | None = None
+    clientIncome: Decimal | None = None
+    otherCreditPayments: Decimal | None = None
+    bkiConsent: bool = False
+    guarantors: list[ScoringGuarantorIn] = Field(default_factory=list)
+
+    goodsName: str | None = None
     tariff: str | None = None
-    # T21: ежемесячный платёж по нашей рассрочке — их система считает график
-    # с наценкой. Нужен для ПДН; без него — запасной расчёт по тарифу из
-    # правил (tariffs.<тариф>.markup_pct), см. compute_installment_payment.
-    monthly_payment: Decimal | None = Field(default=None, gt=0)
-
-
-class ReviewIn(BaseModel):
-    external_id: str
-    event_id: str
-    # Их текущий статус в момент отправки — prev_status в наших ответах ниже
-    # и ожидаемый статус при записи решения (замена захардкоженного "on_review").
-    status: str
-    deal: ReviewDealIn = Field(default_factory=ReviewDealIn)
-    employment: dict[str, Any] = Field(default_factory=dict)
-    income: dict[str, Any] = Field(default_factory=dict)
-    obligations: dict[str, Any] = Field(default_factory=dict)
-    bki_consent: BkiConsentIn
-    # Распознавание выключено -> паспортные данные заявителя от CRM (см.
-    # ApplicantPassportIn); иначе не нужен.
-    applicant: ApplicantPassportIn | None = None
-    guarantor: GuarantorIn | None = None
-    # T23: контакты для рейтинга клиента; необязательны (старый формат тела
-    # без них по-прежнему принимается).
+    # T21: ежемесячный платёж по рассрочке из их графика; без него —
+    # запасной расчёт по тарифу из правил.
+    monthlyPayment: Decimal | None = Field(default=None, gt=0)
+    employment: EmploymentIn | None = None
     contacts: list[ContactIn] = Field(default_factory=list)
+    applicant: ApplicantPassportIn | None = None
 
 
 # T21: фото — только JPEG или PNG. Проверяем и заголовок ответа (для url), и
@@ -213,30 +209,36 @@ def _check_photo_url(url: str) -> None:
         )
 
 
-async def _fetch_photo(ref: PhotoRefIn) -> bytes:
+def _decode_base64_photo(value: str, max_bytes: int) -> bytes:
+    if value.startswith("data:"):
+        value = value.split(",", 1)[1] if "," in value else ""
+    # Оценка до декодирования: 4 символа base64 = 3 байта.
+    if len(value) * 3 // 4 > max_bytes + 3:
+        raise _photo_too_large(max_bytes)
+    try:
+        data = base64.b64decode(value, validate=True)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"не удалось разобрать base64 фото: {exc}") from exc
+    if len(data) > max_bytes:
+        raise _photo_too_large(max_bytes)
+    return _check_image_bytes(data)
+
+
+async def _fetch_photo(ref: str) -> bytes:
+    """Строка из passportPhotos: ссылка (http/https) или base64."""
     settings = get_settings()
     max_bytes = settings.partner_photo_max_bytes
-    if ref.base64 is not None:
-        # Оценка до декодирования: 4 символа base64 = 3 байта.
-        if len(ref.base64) * 3 // 4 > max_bytes + 3:
-            raise _photo_too_large(max_bytes)
-        try:
-            data = base64.b64decode(ref.base64, validate=True)
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail=f"не удалось разобрать base64 фото: {exc}") from exc
-        if len(data) > max_bytes:
-            raise _photo_too_large(max_bytes)
-        return _check_image_bytes(data)
+    if not ref.lower().startswith(("http://", "https://")):
+        return _decode_base64_photo(ref.strip(), max_bytes)
 
-    assert ref.url is not None  # гарантирован валидатором PhotoRefIn
-    _check_photo_url(ref.url)
+    _check_photo_url(ref)
     chunks: list[bytes] = []
     received = 0
     try:
         # Редиректы не следуем (по умолчанию httpx) — иначе разрешённый хост
         # мог бы перенаправить на неразрешённый.
         async with httpx.AsyncClient(timeout=settings.partner_photo_timeout_seconds) as client:
-            async with client.stream("GET", ref.url) as response:
+            async with client.stream("GET", ref) as response:
                 # Правило 14 CLAUDE.md: ответ любого HTTP-вызова проверяется явно.
                 if response.status_code != 200:
                     raise HTTPException(status_code=422, detail=f"фото по url вернуло HTTP {response.status_code}")
@@ -259,50 +261,58 @@ async def _fetch_photo(ref: PhotoRefIn) -> bytes:
     return _check_image_bytes(b"".join(chunks))
 
 
-@router.post("/applications", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(verify_partner_webhook)])
-async def receive_new_application(
-    payload: NewApplicationIn, request: Request, session: AsyncSession = Depends(get_session),
-) -> dict:
-    existing_event_id = (
-        await session.execute(
-            select(PartnerInboundEvent.id).where(PartnerInboundEvent.event_id == payload.event_id)
-        )
+async def _already_received(session: AsyncSession, event_id: str) -> bool:
+    found = (
+        await session.execute(select(PartnerInboundEvent.id).where(PartnerInboundEvent.event_id == event_id))
     ).scalar_one_or_none()
-    if existing_event_id is not None:
+    return found is not None
+
+
+@router.post("/new-order", dependencies=[Depends(verify_partner_webhook)])
+async def receive_new_order(
+    payload: NewOrderIn, request: Request, session: AsyncSession = Depends(get_session),
+) -> dict:
+    external_id = str(payload.orderId)
+    event_id = f"new-order:{external_id}"
+    if await _already_received(session, event_id):
         return {"status": "accepted"}
 
     existing_application_id = (
-        await session.execute(select(Application.id).where(Application.external_id == payload.external_id))
+        await session.execute(select(Application.id).where(Application.external_id == external_id))
     ).scalar_one_or_none()
 
     photos: dict[str, bytes] = {}
     if existing_application_id is None:
+        if len(payload.passportPhotos) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="нужны два фото паспорта: passportPhotos[0] — разворот с фото, [1] — прописка",
+            )
         # Фото — ДО записи в базу: сеть может подвести, не хотим частично
         # созданную заявку без документов на руках.
-        photos["passport_main"] = await _fetch_photo(payload.photos.passport_main)
-        photos["passport_reg"] = await _fetch_photo(payload.photos.passport_reg)
+        photos["passport_main"] = await _fetch_photo(payload.passportPhotos[0])
+        photos["passport_reg"] = await _fetch_photo(payload.passportPhotos[1])
 
     now = datetime.now(timezone.utc)
     # Распознавание выключено в админке -> заявка ждёт паспортные данные от
-    # CRM в /review, стадия А сейчас не запускается.
+    # CRM в /scoring, стадия А сейчас не запускается.
     initial_status = "received" if await is_ocr_enabled(session) else "awaiting_data"
+    form = {
+        "last_name": payload.lastName, "first_name": payload.firstName,
+        "middle_name": payload.fatherName, "phone": payload.phone,
+    }
     if existing_application_id is None:
         application = Application(
-            external_id=payload.external_id,
+            external_id=external_id,
             status=initial_status,
-            # Параметры сделки неизвестны на этом шаге в новой схеме (ТЗ T18:
-            # они появляются в /review) — те же плейсхолдеры, что раньше
-            # ставил polling-адаптер при отсутствии данных у партнёра.
+            # Параметры сделки на этом шаге неизвестны — придут в /scoring.
             goods_name="—",
             goods_price=Decimal("0"),
             down_payment=Decimal("0"),
             term_months=0,
             tariff="unknown",
             requested_amount=Decimal("0"),
-            profile={
-                "last_name": payload.last_name, "first_name": payload.first_name,
-                "middle_name": payload.middle_name, "phone": payload.phone,
-            },
+            profile=form,
             consent_pd_at=now,
             submitted_at=now,
             partner_last_known_status="new",
@@ -327,15 +337,9 @@ async def receive_new_application(
                 )
             )
 
-        # Правило 3 CLAUDE.md: сырой снимок анкеты сохраняется до разбора —
-        # то, что реально пришло на вебхук, тем же способом, что раньше писал
-        # адаптер (stage="A"), источник блока «Снимки анкеты» в карточке (T17).
-        form_payload = {
-            "form": {
-                "last_name": payload.last_name, "first_name": payload.first_name,
-                "middle_name": payload.middle_name, "phone": payload.phone,
-            }
-        }
+        # Правило 3 CLAUDE.md: сырой снимок анкеты сохраняется до разбора
+        # (без фото — они уже лежат документами).
+        form_payload = {"form": form}
         session.add(
             ExternalSnapshot(
                 application_id=application_id, stage="A",
@@ -349,8 +353,7 @@ async def receive_new_application(
 
     session.add(
         PartnerInboundEvent(
-            event_id=payload.event_id, endpoint="applications",
-            external_id=payload.external_id, application_id=application_id,
+            event_id=event_id, endpoint="new-order", external_id=external_id, application_id=application_id,
         )
     )
     await session.commit()
@@ -363,38 +366,67 @@ async def receive_new_application(
     return {"status": "accepted"}
 
 
-@router.post("/review", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(verify_partner_webhook)])
-async def receive_review(payload: ReviewIn, session: AsyncSession = Depends(get_session)) -> dict:
-    existing_event_id = (
-        await session.execute(
-            select(PartnerInboundEvent.id).where(PartnerInboundEvent.event_id == payload.event_id)
-        )
-    ).scalar_one_or_none()
-    if existing_event_id is not None:
+def _applicant_values(applicant: ApplicantPassportIn | None, profile: dict[str, Any]) -> dict[str, Any]:
+    """Расширение applicant (их стиль имён) → наш формат паспортных полей."""
+    a = applicant or ApplicantPassportIn()
+    return {
+        "last_name": a.lastName or profile.get("last_name"),
+        "first_name": a.firstName or profile.get("first_name"),
+        "middle_name": a.fatherName or profile.get("middle_name"),
+        "birth_date": a.birthDate,
+        "birth_place": a.birthPlace,
+        "gender": a.gender,
+        "passport_series": a.passportSeries,
+        "passport_number": a.passportNumber,
+        "issue_date": a.issuedDate,
+        "issued_by": a.issuedBy,
+        "department_code": a.divisionCode,
+        "registration_address": a.registrationAddress,
+    }
+
+
+def _guarantor_payload(g: ScoringGuarantorIn) -> dict[str, Any]:
+    payload = {
+        "last_name": g.lastName,
+        "first_name": g.firstName,
+        "middle_name": g.fatherName,
+        "phone": g.phone,
+        "birth_date": g.birthDate,
+        "passport_series": g.passportSeries,
+        "passport_number": g.passportNumber,
+        "issue_date": g.issuedDate,
+        "registration_address": g.registrationAddress,
+        "income": str(g.income) if g.income is not None else None,
+        "other_credit_payments": str(g.otherCreditPayments) if g.otherCreditPayments is not None else None,
+    }
+    return {k: v for k, v in payload.items() if v is not None}
+
+
+@router.post("/scoring", dependencies=[Depends(verify_partner_webhook)])
+async def receive_scoring(payload: ScoringIn, request: Request, session: AsyncSession = Depends(get_session)) -> dict:
+    external_id = str(payload.orderId)
+    raw_body = await request.json()
+    body_hash = hashlib.sha256(
+        json.dumps(raw_body, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")
+    ).hexdigest()
+    event_id = f"scoring:{external_id}:{body_hash}"
+    if await _already_received(session, event_id):
         return {"status": "accepted"}
 
     application = (
-        await session.execute(select(Application).where(Application.external_id == payload.external_id))
+        await session.execute(select(Application).where(Application.external_id == external_id))
     ).scalar_one_or_none()
     if application is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="external_id не известен — заявка не приходила через /api/v1/partner/applications",
+            detail="orderId не известен — заявка не приходила через /new-order",
         )
 
     # Заявка ждёт паспортные данные от CRM (распознавание было выключено):
-    # без них стадию А провести не из чего — 422 до любой записи, CRM
-    # поправит и пришлёт снова.
+    # без них стадию А провести не из чего — 422 до любой записи.
     crm_passport = None
     if application.status == "awaiting_data":
-        applicant = payload.applicant.model_dump() if payload.applicant else {}
-        profile = application.profile or {}
-        values = {
-            **applicant,
-            "last_name": applicant.get("last_name") or profile.get("last_name"),
-            "first_name": applicant.get("first_name") or profile.get("first_name"),
-            "middle_name": applicant.get("middle_name") or profile.get("middle_name"),
-        }
+        values = _applicant_values(payload.applicant, application.profile or {})
         fields, missing = fields_from_crm(values)
         if missing:
             raise HTTPException(
@@ -402,40 +434,44 @@ async def receive_review(payload: ReviewIn, session: AsyncSession = Depends(get_
                 detail="распознавание паспорта выключено — пришлите паспортные данные заявителя в applicant; "
                 f"нет или неверный формат: {', '.join(missing)}",
             )
-        crm_passport = (applicant, fields)
+        crm_passport = (values, fields)
 
-    deal = payload.deal
-    if deal.goods_name is not None:
-        application.goods_name = deal.goods_name
-    if deal.goods_price is not None:
-        application.goods_price = deal.goods_price
-    if deal.down_payment is not None:
-        application.down_payment = deal.down_payment
-    if deal.term_months is not None:
-        application.term_months = deal.term_months
-    if deal.tariff is not None:
-        application.tariff = deal.tariff
+    application.goods_name = payload.goodsName or payload.productCategory or application.goods_name
+    if payload.price is not None:
+        application.goods_price = payload.price
+    if payload.firstPayment is not None:
+        application.down_payment = payload.firstPayment
+    if payload.period is not None:
+        application.term_months = payload.period
+    if payload.tariff is not None:
+        application.tariff = payload.tariff
     application.requested_amount = application.goods_price - application.down_payment
-    application.partner_last_known_status = payload.status
-    if payload.bki_consent.given:
-        application.consent_bki_at = payload.bki_consent.at or datetime.now(timezone.utc)
+    if payload.bkiConsent:
+        application.consent_bki_at = datetime.now(timezone.utc)
 
+    # Внутренний формат анкеты стадии Б (тот же, что читает конвейер).
+    # Поручитель у нас один — первый из guarantors; все — в сыром теле.
+    employment = payload.employment.model_dump(exclude_none=True) if payload.employment else {}
     stage_b_payload = {
         "deal": {
-            "goods_category_code": deal.goods_category_code,
-            "goods_price": str(deal.goods_price) if deal.goods_price is not None else None,
-            "down_payment": str(deal.down_payment) if deal.down_payment is not None else None,
-            "term_months": deal.term_months,
-            "tariff": deal.tariff,
-            "monthly_payment": str(deal.monthly_payment) if deal.monthly_payment is not None else None,
+            "goods_category_code": payload.productCategory,
+            "goods_price": str(payload.price) if payload.price is not None else None,
+            "down_payment": str(payload.firstPayment) if payload.firstPayment is not None else None,
+            "term_months": payload.period,
+            "tariff": payload.tariff,
+            "monthly_payment": str(payload.monthlyPayment) if payload.monthlyPayment is not None else None,
         },
-        "employment": payload.employment,
-        "income": payload.income,
-        "obligations": payload.obligations,
-        "guarantor": payload.guarantor.model_dump(exclude_none=True) if payload.guarantor else None,
+        "employment": employment,
+        "income": {"declared_monthly": str(payload.clientIncome)} if payload.clientIncome is not None else {},
+        "obligations": (
+            {"monthly_payment_total": str(payload.otherCreditPayments)}
+            if payload.otherCreditPayments is not None else {}
+        ),
+        "guarantor": _guarantor_payload(payload.guarantors[0]) if payload.guarantors else None,
         "contacts": [c.model_dump(exclude_none=True) for c in payload.contacts],
     }
-    payload_raw = {"stage_b": stage_b_payload}
+    # Правило 3 CLAUDE.md: сырое тело — рядом с разобранным.
+    payload_raw = {"stage_b": stage_b_payload, "crm_raw": raw_body}
     session.add(
         ExternalSnapshot(
             application_id=application.id, stage="B", payload_raw=payload_raw,
@@ -443,13 +479,10 @@ async def receive_review(payload: ReviewIn, session: AsyncSession = Depends(get_
         )
     )
     if crm_passport is not None:
-        raw_applicant, fields = crm_passport
-        session.add(crm_form_ocr_result(application.id, raw={"applicant": raw_applicant}, fields=fields))
+        values, fields = crm_passport
+        session.add(crm_form_ocr_result(application.id, raw={"applicant": values}, fields=fields))
     session.add(
-        PartnerInboundEvent(
-            event_id=payload.event_id, endpoint="review",
-            external_id=payload.external_id, application_id=application.id,
-        )
+        PartnerInboundEvent(event_id=event_id, endpoint="scoring", external_id=external_id, application_id=application.id)
     )
     await session.commit()
     application_id = application.id

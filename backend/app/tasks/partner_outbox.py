@@ -1,6 +1,6 @@
 """T18: подбирает partner_outbox_events (статус pending, подошёл срок
 next_attempt_at) и повторяет доставку — «ничего не теряем» (ваше явное
-указание): немедленная попытка внутри write_decision_status/write_comment/
+указание): немедленная попытка внутри write_decision_status/
 send_ocr_result (app/integrations/adapter.py) не добралась — строка осталась
 pending, эта задача подбирает её дальше бесконечно, с растущим бэкоффом до
 потолка (partner_outbox_max_delay_seconds), без ограничения числа попыток."""
@@ -15,7 +15,7 @@ from app.celery_app import celery_app
 from app.config import get_settings
 from app.db import new_sessionmaker
 from app.integrations.adapter import _log_event, _record_manual_override
-from app.integrations.base import PartnerConflictError, PartnerUnavailableError
+from app.integrations.base import PartnerBadRequestError, PartnerConflictError, PartnerUnavailableError
 from app.integrations.partner_notifier import PartnerNotifier
 from app.models import PartnerOutboxEvent
 
@@ -71,7 +71,9 @@ async def _drain() -> dict[str, int]:
                         operator_reason=exc.reason,
                     )
                 summary["conflict"] += 1
-            except PartnerUnavailableError as exc:
+            # 4xx — тоже повтор с растущей паузой («ничего не теряем»): CRM
+            # могла временно отклонить, причина видна в last_error.
+            except (PartnerUnavailableError, PartnerBadRequestError) as exc:
                 next_delay = min(
                     settings.partner_outbox_base_delay_seconds * (2**attempt),
                     settings.partner_outbox_max_delay_seconds,

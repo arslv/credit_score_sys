@@ -9,7 +9,6 @@ from app.schemas import PartnerStatus
 @dataclass
 class _ReceivedEvent:
     type: str
-    event_id: str
     body: dict[str, Any]
     received_at: datetime
 
@@ -17,10 +16,8 @@ class _ReceivedEvent:
 @dataclass
 class _TrackedApplication:
     """Статус заявки, КАКИМ ЕГО ЗНАЕТ fake_partner — независимая от нас
-    «правда», нужна только для симуляции конфликта (409): если его сменили
-    через /_test/manual-status, следующая наша попытка записать решение с
-    устаревшим prev_status не совпадёт — ровно так, как настоящая система
-    заказчика отличила бы «оператор обогнал вас»."""
+    «правда»: последнее наше решение или ручная смена через
+    /_test/manual-status."""
 
     external_id: str
     status: str = PartnerStatus.NEW.value
@@ -45,18 +42,18 @@ class Store:
     def _app(self, external_id: str) -> _TrackedApplication:
         return self._apps.setdefault(external_id, _TrackedApplication(external_id=external_id))
 
-    def receive(self, body: dict[str, Any]) -> None:
-        """Запоминает то, что мы прислали на /partner/webhook, и — для
-        type="decision" — обновляет «свой» статус этой заявки."""
-        external_id = body["external_id"]
+    def receive(self, kind: str, body: dict[str, Any]) -> None:
+        """Запоминает то, что мы прислали (kind: ocr_result | decision — по
+        адресу), и для решения обновляет «свой» статус заявки."""
+        external_id = str(body["orderId"])
         app = self._app(external_id)
         app.received.append(
             _ReceivedEvent(
-                type=body["type"], event_id=body["event_id"], body=body,
+                type=kind, body={**body, "type": kind, "external_id": external_id},
                 received_at=datetime.now(timezone.utc),
             )
         )
-        if body["type"] == "decision" and body.get("status"):
+        if kind == "decision" and body.get("status"):
             app.status = body["status"]
 
     def received_items(self, external_id: str) -> list[dict[str, Any]]:

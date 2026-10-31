@@ -22,17 +22,17 @@ class Settings(BaseSettings):
     # ниже), мы отвечаем на их эндпоинт. Старый polling-адаптер (T04,
     # partner_base_url/partner_poll_interval_seconds) убран целиком.
     #
-    # Входящие вебхуки (POST .../api/v1/partner/applications, .../review) —
+    # Вход от CRM (POST .../api/v1/crm/new-order, .../scoring) —
     # статичный токен в заголовке; allowlist IP — список через запятую,
     # пустой список выключает проверку (так в dev/test: внутри docker-сети
     # allowlist не имеет смысла, а в проде его обязаны заполнить).
     partner_inbound_token: str = "dev-inbound-token"
     # Только для тестов: токен служебных /_test/* эндпоинтов fake_partner
     # (require_service_account) — отдельный от partner_inbound_token выше
-    # (тот — для /partner/webhook, этот — для её собственных /_test/*).
+    # (тот — для входов CRM, этот — для её собственных /_test/*).
     fake_partner_test_token: str = "dev-token"
     partner_ip_allowlist: str = ""
-    # T21: фото паспорта по ссылке (POST .../applications, photos.*.url) —
+    # T21: фото паспорта по ссылке (POST .../new-order, passportPhotos) —
     # только с этих хостов (через запятую, точное имя); пусто — url-вариант
     # не принимаем вовсе, только base64. Только https: http — исключительно
     # для dev (fake_partner внутри docker-сети), в production сервис с
@@ -46,10 +46,10 @@ class Settings(BaseSettings):
     # и для приложения, и для client_max_body_size в nginx (docker-compose.prod.yml,
     # deploy/nginx). Два фото base64 по 8 МБ — ~21 МБ JSON, отсюда 25.
     request_body_max_mb: int = 25
-    # Исходящие уведомления — URL и токен ИХ эндпоинта (нам его дадут, когда
-    # согласуют контракт; dev-значение указывает на fake_partner, который
-    # теперь ПРИНИМАЕТ наши вызовы, см. fake_partner/app/main.py).
-    partner_outbound_url: str = "http://fake_partner:8000/partner/webhook"
+    # Исходящие уведомления — БАЗОВЫЙ адрес API CRM (к нему добавляются
+    # /v1/integration/scoring/passport-result и .../result, см.
+    # app/integrations/partner_notifier.py) и токен. Dev-значение — fake_partner.
+    partner_outbound_url: str = "http://fake_partner:8000"
     partner_outbound_token: str = "dev-outbound-token"
     partner_outbound_timeout_seconds: float = 10.0
     # Повтор неудачной (5xx/таймаут) доставки — экспоненциальный бэкофф с

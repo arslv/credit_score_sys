@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # заявки (имитирует заказчика) и принимает НАШИ исходящие уведомления.
     #
     # Токен, которым МЫ (dialog-scoring) обязаны представиться на
-    # POST /partner/webhook — тот же, что наш PARTNER_OUTBOUND_TOKEN.
+    # её входах (passport-result, result) — тот же, что наш PARTNER_OUTBOUND_TOKEN.
     expected_inbound_token: str = "dev-outbound-token"
     # Служебный токен для /_test/* эндпоинтов этого сервиса (как и раньше).
     fake_partner_token: str = "dev-token"

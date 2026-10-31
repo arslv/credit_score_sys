@@ -35,6 +35,7 @@ from app.sources.bki import (
     good_history_report,
     overdue_history_report,
 )
+from tests._crm import SCORING_PATH, crm_headers, scoring_body_from_internal
 from tests.conftest import unique_valid_passport_series
 from tests.test_engine_pipeline import _all_decisions, _all_sent_texts, _ingest, _last_decision, active_ruleset  # noqa: F401
 
@@ -97,10 +98,9 @@ async def _mark_fssp_checked(session_factory, application_id, *, subject_type: s
 async def _prepare_application_at_stage_b(
     partner_admin, partner_client, storage, session_factory, *, stage_b_payload=None, **create_overrides
 ):
-    """T18: два вебхука, как сделал бы заказчик в новой схеме — /applications
-    (через _ingest), затем /review с готовым снимком анкеты стадии Б (та же
-    форма deal/employment/income/obligations/guarantor, что раньше писали
-    напрямую в ExternalSnapshot). Заявка после review остаётся to_operator —
+    """Два запроса, как сделала бы CRM по своему API — /new-order (через
+    _ingest), затем /scoring с анкетой стадии Б (описана во внутреннем виде
+    deal/employment/income/obligations/guarantor и переведена в их формат). Заявка после review остаётся to_operator —
     тем же путём её подбирают run_stage_b/finalize_stage_b ниже, как и раньше."""
     from httpx import ASGITransport, AsyncClient
 
@@ -109,8 +109,7 @@ async def _prepare_application_at_stage_b(
 
     consent_bki = create_overrides.pop("consent_bki", True)
     # T18: цена/взнос/срок/тариф/название товара — теперь поля /review (deal),
-    # не /applications: раньше шли в create_overrides заявки, здесь перенаправляем
-    # их в deal, иначе Pydantic молча отбросит неизвестные поля в NewApplicationIn.
+    # не /new-order: раньше шли в create_overrides заявки, здесь перенаправляем их в deal.
     deal_overrides = {
         key: create_overrides.pop(key)
         for key in ("goods_price", "down_payment", "term_months", "tariff", "goods_name")
@@ -126,34 +125,12 @@ async def _prepare_application_at_stage_b(
     # (например, только goods_category_code), остальное не улетает на
     # плейсхолдеры /applications (0/"unknown") — см. докстрайк _DEFAULT_STAGE_B_PAYLOAD.
     deal = {**_DEFAULT_STAGE_B_PAYLOAD["deal"], **(payload.get("deal") or {}), **deal_overrides}
-    review_body = {
-        "external_id": external_id,
-        "event_id": str(uuid.uuid4()),
-        "status": "on_review",
-        "deal": {
-            "goods_category_code": deal.get("goods_category_code"),
-            "goods_name": deal.get("goods_name"),
-            "goods_price": deal.get("goods_price"),
-            "down_payment": deal.get("down_payment"),
-            "term_months": deal.get("term_months"),
-            "tariff": deal.get("tariff"),
-            "monthly_payment": deal.get("monthly_payment"),
-        },
-        "employment": payload.get("employment") or {},
-        "income": payload.get("income") or {},
-        "obligations": payload.get("obligations") or {},
-        "bki_consent": {
-            "given": consent_bki,
-            "at": datetime.now(timezone.utc).isoformat() if consent_bki else None,
-        },
-        "guarantor": payload.get("guarantor"),
-    }
+    review_body = scoring_body_from_internal(
+        external_id, {**payload, "deal": deal}, bki_consent=consent_bki,
+    )
     async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="https://test") as client:
-        response = await client.post(
-            "/api/v1/partner/review", json=review_body,
-            headers={"Authorization": f"Bearer {get_settings().partner_inbound_token}"},
-        )
-    assert response.status_code == 202, response.text  # правило 14 CLAUDE.md
+        response = await client.post(SCORING_PATH, json=review_body, headers=crm_headers())
+    assert response.status_code == 200, response.text  # правило 14 CLAUDE.md
 
     # Этот хелпер намеренно пропускает стадию А (тесты файла — про стадию Б/БКИ
     # саму по себе) — вебхук /review не трогает application.status (его меняет

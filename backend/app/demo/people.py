@@ -150,12 +150,13 @@ class Person:
         }
 
     def guarantor_payload(self) -> dict[str, str]:
-        """Формат guarantor в теле /review (app/api/partner_webhooks.py::GuarantorIn)."""
+        """Поручитель в теле /scoring (ScoringGuarantor CRM + наши расширения
+        с паспортом, app/api/partner_webhooks.py::ScoringGuarantorIn)."""
         return {
-            "last_name": self.last_name, "first_name": self.first_name, "middle_name": self.middle_name,
-            "birth_date": self.birth_date.isoformat(), "passport_series": self.passport_series,
-            "passport_number": self.passport_number, "issue_date": self.issue_date.isoformat(),
-            "registration_address": self.registration_address, "phone": self.phone,
+            "lastName": self.last_name, "firstName": self.first_name, "fatherName": self.middle_name,
+            "birthDate": self.birth_date.isoformat(), "passportSeries": self.passport_series,
+            "passportNumber": self.passport_number, "issuedDate": self.issue_date.isoformat(),
+            "registrationAddress": self.registration_address, "phone": self.phone,
         }
 
 

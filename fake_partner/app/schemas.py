@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 
 class PartnerStatus(StrEnum):
-    """Статусы в системе заказчика (ТЗ, «Соответствие статусов») — вокабуляр
-    не менялся в T18, меняется только способ доставки (вебхук, не опрос)."""
+    """Статусы в CRM — пока наши условные (config/status_mapping.yaml); список
+    настоящих статусов CRM ещё не прислала."""
 
     NEW = "new"
     ON_CALL = "on_call"
@@ -21,10 +21,10 @@ class PartnerStatus(StrEnum):
 
 
 class TriggerNewApplicationRequest(BaseModel):
-    """POST /_test/trigger-new-application — fake_partner строит тело вебхука
-    .../api/v1/partner/applications и сама его отправляет нам."""
+    """POST /_test/trigger-new-application — fake_partner строит тело
+    POST /new-order (NewOrderNotification) и сама его отправляет нам."""
 
-    external_id: str | None = None  # None -> сгенерировать
+    order_id: int | None = None  # None -> сгенерировать
     last_name: str = "Тестов"
     first_name: str = "Тест"
     middle_name: str | None = "Тестович"
@@ -40,9 +40,8 @@ class TriggerNewApplicationRequest(BaseModel):
 
 
 class TriggerReviewRequest(BaseModel):
-    """POST /_test/trigger-review/{external_id} — тело вебхука .../review."""
+    """POST /_test/trigger-review/{external_id} — тело POST /scoring."""
 
-    status: str = PartnerStatus.ON_REVIEW.value
     goods_category_code: str = "household_appliances"
     goods_name: str = "Стиральная машина"
     goods_price: float = 60000.0
@@ -63,11 +62,19 @@ class TriggerReviewRequest(BaseModel):
     declared_monthly_income: float = 90000.0
     declared_monthly_obligations: float = 0.0
     bki_consent: bool = True
+    # Поручитель в их формате (ScoringGuarantor: lastName, firstName,
+    # fatherName, phone, income, otherCreditPayments) + наши расширения
+    # (birthDate, passportSeries, passportNumber, issuedDate, registrationAddress).
     guarantor: dict[str, Any] | None = None
+    # Паспорт заявителя (расширение applicant) — когда распознавание выключено.
+    applicant: dict[str, Any] | None = None
+    # False — строго формат api.yml CRM, без наших расширений (goodsName,
+    # tariff, monthlyPayment, employment, contacts, applicant).
+    send_extensions: bool = True
 
 
 class ConfigureRequest(BaseModel):
-    """POST /_test/configure — режим ответа на /partner/webhook (для тестов
+    """POST /_test/configure — режим ответа на наши POST (для тестов
     outbox-повторов и конфликта статуса)."""
 
     mode: str = "ok"  # "ok" | "conflict" | "unavailable"
@@ -76,8 +83,6 @@ class ConfigureRequest(BaseModel):
 
 
 class ManualStatusRequest(BaseModel):
-    """T10/T18: имитирует оператора, вручную сменившего статус в обход нас —
-    следующая наша попытка записать решение с prev_status, который мы знали
-    ДО этого, получит 409 от /partner/webhook."""
+    """T10/T18: имитирует оператора, вручную сменившего статус в обход нас."""
 
     status: str

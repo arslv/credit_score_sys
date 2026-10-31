@@ -808,7 +808,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/partner/applications": {
+    "/api/v1/crm/new-order": {
         parameters: {
             query?: never;
             header?: never;
@@ -817,15 +817,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Receive New Application */
-        post: operations["receive_new_application_api_v1_partner_applications_post"];
+        /** Receive New Order */
+        post: operations["receive_new_order_api_v1_crm_new_order_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/partner/review": {
+    "/api/v1/crm/scoring": {
         parameters: {
             query?: never;
             header?: never;
@@ -834,8 +834,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Receive Review */
-        post: operations["receive_review_api_v1_partner_review_post"];
+        /** Receive Scoring */
+        post: operations["receive_scoring_api_v1_crm_scoring_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -874,37 +874,34 @@ export interface components {
     schemas: {
         /**
          * ApplicantPassportIn
-         * @description Паспортные данные заявителя — обязательны в /review, пока заявка ждёт
-         *     их в статусе awaiting_data (распознавание фото было выключено в админке,
-         *     когда она пришла): тогда их вводит оператор CRM. Ключевые — серия, номер,
-         *     дата рождения (ФИО берём отсюда или из /applications). В остальных
-         *     случаях блок игнорируется — данные берутся с фото.
+         * @description Расширение: паспортные данные заявителя — нужны только когда
+         *     распознавание фото выключено в админке (заявка ждёт в awaiting_data).
          */
         ApplicantPassportIn: {
-            /** Last Name */
-            last_name?: string | null;
-            /** First Name */
-            first_name?: string | null;
-            /** Middle Name */
-            middle_name?: string | null;
-            /** Birth Date */
-            birth_date?: string | null;
-            /** Birth Place */
-            birth_place?: string | null;
+            /** Lastname */
+            lastName?: string | null;
+            /** Firstname */
+            firstName?: string | null;
+            /** Fathername */
+            fatherName?: string | null;
+            /** Birthdate */
+            birthDate?: string | null;
+            /** Birthplace */
+            birthPlace?: string | null;
             /** Gender */
             gender?: string | null;
-            /** Passport Series */
-            passport_series?: string | null;
-            /** Passport Number */
-            passport_number?: string | null;
-            /** Issue Date */
-            issue_date?: string | null;
-            /** Issued By */
-            issued_by?: string | null;
-            /** Department Code */
-            department_code?: string | null;
-            /** Registration Address */
-            registration_address?: string | null;
+            /** Passportseries */
+            passportSeries?: string | null;
+            /** Passportnumber */
+            passportNumber?: string | null;
+            /** Issueddate */
+            issuedDate?: string | null;
+            /** Issuedby */
+            issuedBy?: string | null;
+            /** Divisioncode */
+            divisionCode?: string | null;
+            /** Registrationaddress */
+            registrationAddress?: string | null;
         };
         /** ApplicationDetail */
         ApplicationDetail: {
@@ -1038,13 +1035,6 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-        };
-        /** BkiConsentIn */
-        BkiConsentIn: {
-            /** Given */
-            given: boolean;
-            /** At */
-            at?: string | null;
         };
         /** BkiMonthlyItem */
         BkiMonthlyItem: {
@@ -1249,10 +1239,8 @@ export interface components {
         };
         /**
          * ContactIn
-         * @description T23: контактное лицо из анкеты (ТЗ, «Анкета» → «Контакты»). relation —
-         *     кем приходится: parent | sibling | relative | spouse | friend | colleague |
-         *     other (подписи — client_rating.contact_relations в правилах); нужен для
-         *     рейтинга клиента («дал номера родителей», «только друзья»).
+         * @description Расширение: контактное лицо для рейтинга клиента. relation — parent |
+         *     sibling | relative | spouse | friend | colleague | other.
          */
         ContactIn: {
             /** Name */
@@ -1550,6 +1538,19 @@ export interface components {
             /** Password */
             password?: string | null;
         };
+        /**
+         * EmploymentIn
+         * @description Расширение: занятость (обязательна для стадии Б по правилам —
+         *     stage_b_completeness).
+         */
+        EmploymentIn: {
+            /** Type */
+            type?: string | null;
+            /** Employer */
+            employer?: string | null;
+            /** Position */
+            position?: string | null;
+        };
         /** ExternalSnapshotOut */
         ExternalSnapshotOut: {
             /**
@@ -1693,27 +1694,6 @@ export interface components {
             /** Active */
             active: boolean;
         };
-        /** GuarantorIn */
-        GuarantorIn: {
-            /** Last Name */
-            last_name?: string | null;
-            /** First Name */
-            first_name?: string | null;
-            /** Middle Name */
-            middle_name?: string | null;
-            /** Birth Date */
-            birth_date?: string | null;
-            /** Passport Series */
-            passport_series?: string | null;
-            /** Passport Number */
-            passport_number?: string | null;
-            /** Issue Date */
-            issue_date?: string | null;
-            /** Registration Address */
-            registration_address?: string | null;
-            /** Phone */
-            phone?: string | null;
-        };
         /** GuarantorReasonOut */
         GuarantorReasonOut: {
             /** Reason */
@@ -1806,26 +1786,23 @@ export interface components {
             /** Latest Review Verdict */
             latest_review_verdict: string | null;
         };
-        /** NewApplicationIn */
-        NewApplicationIn: {
-            /** External Id */
-            external_id: string;
-            /** Event Id */
-            event_id: string;
-            /** Last Name */
-            last_name: string;
-            /** First Name */
-            first_name: string;
-            /** Middle Name */
-            middle_name?: string | null;
+        /**
+         * NewOrderIn
+         * @description NewOrderNotification из их api.yml.
+         */
+        NewOrderIn: {
+            /** Orderid */
+            orderId: number;
+            /** Lastname */
+            lastName: string;
+            /** Firstname */
+            firstName: string;
+            /** Fathername */
+            fatherName?: string | null;
             /** Phone */
             phone: string;
-            photos: components["schemas"]["NewApplicationPhotosIn"];
-        };
-        /** NewApplicationPhotosIn */
-        NewApplicationPhotosIn: {
-            passport_main: components["schemas"]["PhotoRefIn"];
-            passport_reg: components["schemas"]["PhotoRefIn"];
+            /** Passportphotos */
+            passportPhotos?: string[];
         };
         /** OcrResultOut */
         OcrResultOut: {
@@ -2002,13 +1979,6 @@ export interface components {
             /** Kind */
             kind: string;
         };
-        /** PhotoRefIn */
-        PhotoRefIn: {
-            /** Url */
-            url?: string | null;
-            /** Base64 */
-            base64?: string | null;
-        };
         /** ReasonCodeOut */
         ReasonCodeOut: {
             /** Code */
@@ -2037,50 +2007,6 @@ export interface components {
         /** RetryCheckResult */
         RetryCheckResult: {
             check: components["schemas"]["CheckOut"];
-        };
-        /** ReviewDealIn */
-        ReviewDealIn: {
-            /** Goods Category Code */
-            goods_category_code?: string | null;
-            /** Goods Name */
-            goods_name?: string | null;
-            /** Goods Price */
-            goods_price?: number | string | null;
-            /** Down Payment */
-            down_payment?: number | string | null;
-            /** Term Months */
-            term_months?: number | null;
-            /** Tariff */
-            tariff?: string | null;
-            /** Monthly Payment */
-            monthly_payment?: number | string | null;
-        };
-        /** ReviewIn */
-        ReviewIn: {
-            /** External Id */
-            external_id: string;
-            /** Event Id */
-            event_id: string;
-            /** Status */
-            status: string;
-            deal?: components["schemas"]["ReviewDealIn"];
-            /** Employment */
-            employment?: {
-                [key: string]: unknown;
-            };
-            /** Income */
-            income?: {
-                [key: string]: unknown;
-            };
-            /** Obligations */
-            obligations?: {
-                [key: string]: unknown;
-            };
-            bki_consent: components["schemas"]["BkiConsentIn"];
-            applicant?: components["schemas"]["ApplicantPassportIn"] | null;
-            guarantor?: components["schemas"]["GuarantorIn"] | null;
-            /** Contacts */
-            contacts?: components["schemas"]["ContactIn"][];
         };
         /** RollbackRequest */
         RollbackRequest: {
@@ -2126,6 +2052,68 @@ export interface components {
             auto_approve_above: number | null;
             /** Auto Reject Below */
             auto_reject_below: number | null;
+        };
+        /** ScoringGuarantorIn */
+        ScoringGuarantorIn: {
+            /** Lastname */
+            lastName?: string | null;
+            /** Firstname */
+            firstName?: string | null;
+            /** Fathername */
+            fatherName?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Income */
+            income?: number | string | null;
+            /** Othercreditpayments */
+            otherCreditPayments?: number | string | null;
+            /** Birthdate */
+            birthDate?: string | null;
+            /** Passportseries */
+            passportSeries?: string | null;
+            /** Passportnumber */
+            passportNumber?: string | null;
+            /** Issueddate */
+            issuedDate?: string | null;
+            /** Registrationaddress */
+            registrationAddress?: string | null;
+        };
+        /**
+         * ScoringIn
+         * @description ScoringRequest из их api.yml + необязательные расширения.
+         */
+        ScoringIn: {
+            /** Orderid */
+            orderId: number;
+            /** Productcategory */
+            productCategory?: string | null;
+            /** Price */
+            price?: number | string | null;
+            /** Firstpayment */
+            firstPayment?: number | string | null;
+            /** Period */
+            period?: number | null;
+            /** Clientincome */
+            clientIncome?: number | string | null;
+            /** Othercreditpayments */
+            otherCreditPayments?: number | string | null;
+            /**
+             * Bkiconsent
+             * @default false
+             */
+            bkiConsent: boolean;
+            /** Guarantors */
+            guarantors?: components["schemas"]["ScoringGuarantorIn"][];
+            /** Goodsname */
+            goodsName?: string | null;
+            /** Tariff */
+            tariff?: string | null;
+            /** Monthlypayment */
+            monthlyPayment?: number | string | null;
+            employment?: components["schemas"]["EmploymentIn"] | null;
+            /** Contacts */
+            contacts?: components["schemas"]["ContactIn"][];
+            applicant?: components["schemas"]["ApplicantPassportIn"] | null;
         };
         /** SimulateRequest */
         SimulateRequest: {
@@ -3792,7 +3780,7 @@ export interface operations {
             };
         };
     };
-    receive_new_application_api_v1_partner_applications_post: {
+    receive_new_order_api_v1_crm_new_order_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3801,12 +3789,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NewApplicationIn"];
+                "application/json": components["schemas"]["NewOrderIn"];
             };
         };
         responses: {
             /** @description Successful Response */
-            202: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3827,7 +3815,7 @@ export interface operations {
             };
         };
     };
-    receive_review_api_v1_partner_review_post: {
+    receive_scoring_api_v1_crm_scoring_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3836,12 +3824,12 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReviewIn"];
+                "application/json": components["schemas"]["ScoringIn"];
             };
         };
         responses: {
             /** @description Successful Response */
-            202: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,0 +1,220 @@
+openapi: 3.0.3
+
+info:
+  title: Распознавание паспорта и скоринг
+  version: "1.0.0"
+
+servers:
+  - url: https://zc.example.ru
+
+tags:
+  - name: Входящие запросы
+  - name: Исходящие запросы
+
+paths:
+
+  /v1/integration/scoring/passport-result:
+    post:
+      tags: [Входящие запросы]
+      security:
+        - inboundToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PassportRecognitionResult"
+      responses:
+        "200":
+          description: OK
+
+  /v1/integration/scoring/result:
+    post:
+      tags: [Входящие запросы]
+      security:
+        - inboundToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScoringResult"
+      responses:
+        "200":
+          description: OK
+
+  /new-order:
+    post:
+      tags: [Исходящие запросы]
+      security:
+        - outboundToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewOrderNotification"
+      responses:
+        "200":
+          description: OK
+
+  /scoring:
+    post:
+      tags: [Исходящие запросы]
+      security:
+        - outboundToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScoringRequest"
+      responses:
+        "200":
+          description: OK
+
+components:
+
+  securitySchemes:
+    inboundToken:
+      type: http
+      scheme: bearer
+    outboundToken:
+      type: http
+      scheme: bearer
+
+  schemas:
+
+    NewOrderNotification:
+      type: object
+      properties:
+        orderId:
+          type: integer
+          description: Заявка
+        lastName:
+          type: string
+          description: Фамилия
+        firstName:
+          type: string
+          description: Имя
+        fatherName:
+          type: string
+          description: Отчество
+        phone:
+          type: string
+          description: Телефон
+        passportPhotos:
+          type: array
+          items:
+            type: string
+          description: Фото паспорта
+
+    ScoringRequest:
+      type: object
+      properties:
+        orderId:
+          type: integer
+          description: Заявка
+        productCategory:
+          type: string
+          description: Категория
+        price:
+          type: number
+          description: Цена
+        firstPayment:
+          type: number
+          description: Первый взнос
+        period:
+          type: integer
+          description: Срок
+        clientIncome:
+          type: number
+          description: Доход
+        otherCreditPayments:
+          type: number
+          description: Платежи по кредитам
+        bkiConsent:
+          type: boolean
+          description: Согласие на БКИ
+        guarantors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScoringGuarantor"
+          description: Поручители
+
+    ScoringGuarantor:
+      type: object
+      properties:
+        lastName:
+          type: string
+          description: Фамилия
+        firstName:
+          type: string
+          description: Имя
+        fatherName:
+          type: string
+          description: Отчество
+        phone:
+          type: string
+          description: Телефон
+        income:
+          type: number
+          description: Доход
+        otherCreditPayments:
+          type: number
+          description: Платежи по кредитам
+
+    PassportRecognitionResult:
+      type: object
+      properties:
+        orderId:
+          type: integer
+          description: Заявка
+        lastName:
+          type: string
+          description: Фамилия
+        firstName:
+          type: string
+          description: Имя
+        fatherName:
+          type: string
+          description: Отчество
+        birthDate:
+          type: string
+          format: date
+          description: Дата рождения
+        passportSeries:
+          type: string
+          description: Серия
+        passportNumber:
+          type: string
+          description: Номер
+        issuedBy:
+          type: string
+          description: Кем выдан
+        issuedDate:
+          type: string
+          format: date
+          description: Дата выдачи
+        divisionCode:
+          type: string
+          description: Код подразделения
+        registrationAddress:
+          type: string
+          description: Адрес
+
+    ScoringResult:
+      type: object
+      properties:
+        orderId:
+          type: integer
+          description: Заявка
+        status:
+          type: string
+          description: Статус
+        score:
+          type: integer
+          description: Балл
+        reason:
+          type: string
+          description: Причина
