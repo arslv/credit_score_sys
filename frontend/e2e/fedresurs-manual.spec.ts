@@ -18,9 +18,10 @@ test("оператор отмечает проверку банкротства;
   expect(url.origin + url.pathname).toBe("https://bankrot.fedresurs.ru/bankrupts");
   const query = url.searchParams.get("searchString") ?? "";
   expect(query.length).toBeGreaterThan(0);
-  await expect(section.locator(".manual-check__query").first()).toHaveText(query);
+  // Под рукой — копирование того же запроса (ИНН или ФИО).
+  await expect(section.getByRole("button", { name: /копировать (ИНН|ФИО)/ }).first()).toBeVisible();
 
-  await section.getByRole("button", { name: "Найдено банкротство" }).click();
+  await section.getByRole("button", { name: "Найдено", exact: true }).click();
   const save = section.getByRole("button", { name: "Сохранить" });
   await expect(save).toBeDisabled(); // без описания не сохранить
   await section.getByLabel(/Что найдено/).fill("дело А15-1/2026, реструктуризация долгов");

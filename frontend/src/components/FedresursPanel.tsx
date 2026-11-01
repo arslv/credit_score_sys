@@ -116,42 +116,34 @@ export function FedresursPanel({
         {latestCheck && <span className="muted"> · отмечено {formatDateTime(latestCheck.started_at)}</span>}
       </div>
       {state === "hit" && foundComment && <p className="manual-check__note">Что найдено: {foundComment}</p>}
-      {state === "pending" && (
-        <p className="manual-check__note">
-          Сайт Федресурса закрыт от автоматических запросов, поэтому проверяем вручную.
-          {!canOperate && " Проверяет оператор или администратор."}
-        </p>
-      )}
+      {state === "pending" && !canOperate && <p className="manual-check__note">Проверяет оператор или администратор.</p>}
 
+      {/* Сайт закрыт защитой от ботов — проверяем руками: одна кнопка открывает
+          поиск с подставленным ИНН или ФИО, рядом дата рождения для сверки с
+          однофамильцами, дальше — отметка результата. */}
       {showForm && (
-        <ol className="manual-check__steps">
-          <li>
-            <span>Откройте поиск — данные уже подставлены</span>
-            {searchUrl ? (
-              <>
-                <a className="btn btn-small btn-primary" href={searchUrl} target="_blank" rel="noreferrer">
-                  Найти на Федресурсе ↗
-                </a>
-                <span className="manual-check__query-line">
-                  {inn ? "по ИНН" : "по ФИО"} <code className="manual-check__query">{query}</code>
-                  <button type="button" className="btn-link" onClick={() => void copyQuery()}>
-                    {copied ? "скопировано ✓" : "скопировать"}
-                  </button>
-                </span>
-              </>
-            ) : (
-              <span className="muted">нет ФИО — возьмите его из анкеты</span>
-            )}
-          </li>
-          {!inn && birthDate && (
-            <li>
-              <span>Сверьте дату рождения</span>
-              <code className="manual-check__query">{birthDate}</code>
-              <span className="muted">однофамильцы — не он</span>
-            </li>
+        <div className="fed-check">
+          {searchUrl ? (
+            <a className="btn btn-primary" href={searchUrl} target="_blank" rel="noreferrer">
+              Найти на Федресурсе ↗
+            </a>
+          ) : (
+            <span className="muted">нет ФИО — возьмите из анкеты</span>
           )}
-          <li>
-            <span>Отметьте результат</span>
+          {searchUrl && (
+            <span className="fed-check__hint">
+              {inn ? `по ИНН ${inn}` : birthDate ? `сверьте дату рождения ${birthDate}` : "по ФИО"}
+              <button
+                type="button"
+                className="btn-link fed-check__copy"
+                title={`Скопировать ${inn ? "ИНН" : "ФИО"}`}
+                onClick={() => void copyQuery()}
+              >
+                {copied ? "скопировано ✓" : `копировать ${inn ? "ИНН" : "ФИО"}`}
+              </button>
+            </span>
+          )}
+          <span className="fed-check__result">
             <button
               type="button"
               className="btn btn-small"
@@ -166,15 +158,15 @@ export function FedresursPanel({
               disabled={saveMutation.isPending}
               onClick={() => setFoundOpen(true)}
             >
-              Найдено банкротство
+              Найдено
             </button>
             {rechecking && (
               <button type="button" className="btn btn-small" onClick={() => setRechecking(false)}>
                 Отмена
               </button>
             )}
-          </li>
-        </ol>
+          </span>
+        </div>
       )}
 
       {showForm && foundOpen && (
