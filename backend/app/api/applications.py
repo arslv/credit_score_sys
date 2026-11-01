@@ -20,6 +20,7 @@ from app.db import get_session
 from app.engine.pipeline import _subject_from_ocr, unwrap_ocr_fields
 from app.engine.rules import resolve_matrix_overrides
 from app.engine.client_rating import compute_client_rating
+from app.engine.fssp_alerts import active_alert_condition
 from app.engine.guarantors import current_guarantor
 from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.status_mapping import _render_rule_text, build_operator_comment, get_all_reason_notes
@@ -955,7 +956,7 @@ async def get_application(
         (
             await session.execute(
                 select(FsspPostDecisionAlert.subject_type)
-                .where(FsspPostDecisionAlert.application_id == application_id)
+                .where(FsspPostDecisionAlert.application_id == application_id, active_alert_condition())
                 .distinct()
             )
         ).scalars().all()

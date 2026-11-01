@@ -29,15 +29,21 @@ async def _application(session) -> Application:
 
 
 async def test_same_person_reuses_row_other_person_becomes_current(session_factory):
+    # Каждая анкета — отдельной транзакцией, как приходят настоящие
+    # «Рассмотреть» (в одной транзакции now() у строк одинаков).
     async with session_factory() as session:
         application = await _application(session)
-
         first = await _resolve_guarantor(session, application, dict(_PERSON))
+        await session.commit()
+    async with session_factory() as session:
+        application = await session.get(Application, application.id)
         again = await _resolve_guarantor(session, application, {**_PERSON, "registration_address": "новый адрес"})
+        await session.commit()
         assert again.id == first.id
         assert again.profile["registration_address"] == "новый адрес"
-
+    async with session_factory() as session:
+        application = await session.get(Application, application.id)
         other = await _resolve_guarantor(session, application, {**_PERSON, "passport_number": "654321"})
+        await session.commit()
         assert other.id != first.id
         assert (await current_guarantor(session, application.id)).id == other.id
-        await session.rollback()

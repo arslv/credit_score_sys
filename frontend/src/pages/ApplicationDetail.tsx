@@ -329,10 +329,13 @@ export function ApplicationDetailPage() {
   const fsspLeft = manualState.filter((s) => !s.fsspDone).map((s) => s.label);
   const fedLeft = manualState.filter((s) => !s.fedDone).map((s) => s.label);
   const grayStageB = latestDecision?.outcome === "manual_review" && latestDecision.stage === "B";
-  const fsspNeedsAction =
-    (grayStageB && latestDecision?.reason_code === "FSSP_NOT_CHECKED") ||
-    app.fssp_post_decision_alert_subjects.length > 0;
-  const grayInCrm = grayStageB && latestDecision?.reason_code !== "FSSP_NOT_CHECKED";
+  // Серая зона «ФССП не пройдена» — действие нужно, пока ФССП у кого-то не
+  // пройдена; прошли — решение не пересчитывается само (новое — после
+  // повторного «Рассмотреть» в CRM), «требуется действие» снимаем.
+  const fsspGray = grayStageB && latestDecision?.reason_code === "FSSP_NOT_CHECKED";
+  const fsspNeedsAction = (fsspGray && fsspLeft.length > 0) || app.fssp_post_decision_alert_subjects.length > 0;
+  const fsspDoneAfterGray = fsspGray && fsspLeft.length === 0;
+  const grayInCrm = grayStageB && !fsspGray;
   // Банкротство проверяется вручную — пока по заявителю нет отметки и заявка
   // ещё в работе (после отказа или истечения — незачем).
   const fedresursNeedsAction =
@@ -666,6 +669,11 @@ export function ApplicationDetailPage() {
             </div>
             {explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>}
             {grayInCrm && <p className="verdict-action">Решение принимает оператор в CRM.</p>}
+            {fsspDoneAfterGray && (
+              <p className="verdict-action">
+                ФССП уже пройдена — новое решение будет, когда оператор CRM нажмёт «Рассмотреть» ещё раз.
+              </p>
+            )}
             {latestDecision?.freeze && (
               <p className="verdict-action">
                 Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.

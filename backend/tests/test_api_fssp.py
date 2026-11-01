@@ -289,6 +289,30 @@ async def test_fssp_hit_after_decision_creates_post_decision_alert_without_chang
         assert len(alerts) == 1
         assert alerts[0].subject_type == "applicant"
 
+    detail = await admin_client.get(f"/api/applications/{application_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["fssp_post_decision_alert_subjects"] == ["applicant"]
+
+    # Проверили ещё раз — долга нет: пометка больше не действует (строка
+    # пометки остаётся, append-only), в карточке «требуется действие» снято.
+    clean = FakeFsspCaptchaSource(valid_code=_VALID_CODE, productions=[])
+    with _patched_source(clean):
+        again = await admin_client.post(
+            f"/api/applications/{application_id}/fssp/search",
+            json={"subject_type": "applicant", "region_code": "77", "reason": "повторная проверка"},
+        )
+        assert again.status_code == 200, again.text
+        resubmit = await admin_client.post(
+            f"/api/applications/{application_id}/fssp/{again.json()['session_id']}/submit-code",
+            json={"code": _VALID_CODE},
+        )
+        assert resubmit.status_code == 200, resubmit.text
+        assert resubmit.json()["check"]["status"] == "ok"
+
+    detail = await admin_client.get(f"/api/applications/{application_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["fssp_post_decision_alert_subjects"] == []
+
 
 async def test_fssp_search_validation_error_returns_422_and_leaves_audit_without_check(
     admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,

@@ -50,6 +50,7 @@ from app.models import (
     IntegrationEvent,
     StatusHistory,
 )
+from app.engine.fssp_alerts import active_alert_condition
 from app.registries.sync import is_registry_stale
 from app.security.deps import require_roles
 
@@ -122,7 +123,7 @@ async def get_system_status(
             registries.append(RegistryStatus(registry=registry, stale=stale))
 
     fssp_results_after_decision = (
-        await session.execute(select(func.count()).select_from(FsspPostDecisionAlert))
+        await session.execute(select(func.count()).select_from(FsspPostDecisionAlert).where(active_alert_condition()))
     ).scalar_one()
 
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
