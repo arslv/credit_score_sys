@@ -40,6 +40,7 @@ from app.config import Settings
 from app.demo.scenarios import DEMO_EXTERNAL_ID_PREFIX
 from app.demo.clock import install_timestamp_listener, uninstall_timestamp_listener, virtual_time
 from app.demo.portfolio import DemoPortfolio
+from app.engine.guarantors import current_guarantor
 from app.demo.scenarios import DemoApplication, DemoPlan
 from app.integrations.partner_notifier import PartnerNotifier
 from app.models import Application, Decision, Employee, Guarantor
@@ -340,9 +341,7 @@ class DemoSeeder:
         region = app.applicant.fssp_region
         if subject == "guarantor":
             async with self._session_factory() as session:
-                guarantor = (await session.execute(
-                    select(Guarantor).where(Guarantor.application_id == application_id)
-                )).scalars().first()
+                guarantor = await current_guarantor(session, application_id)
             if guarantor is None:
                 raise SeedError(f"{app.external_id}: поручитель не найден")
             subject_id = str(guarantor.id)

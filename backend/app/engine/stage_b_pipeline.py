@@ -31,6 +31,7 @@ from app.engine.external_checks import queue_fns_checks
 from app.engine.features import compute_stage_a_features
 from app.engine.freeze import find_active_sanctions_freeze
 from app.engine.goods import compute_goods_features
+from app.engine.guarantors import current_guarantor
 from app.engine.limits import evaluate_deal_limits
 from app.engine.rules import (
     TriggeredRule,
@@ -161,9 +162,7 @@ async def _fssp_checked_for_decision(session, application: Application) -> bool:
     if not applicant_checked:
         return False
 
-    guarantor = (
-        await session.execute(select(Guarantor).where(Guarantor.application_id == application.id))
-    ).scalars().first()
+    guarantor = await current_guarantor(session, application.id)
     if guarantor is None or guarantor.status != "used":
         return True
 
@@ -255,6 +254,21 @@ async def _resolve_guarantor(
             passport_number=number, phone=phone,
         )
         client_id = client.id
+
+    # Тот же человек в повторной анкете («Рассмотреть» ещё раз) — та же строка:
+    # уже пройденные по нему проверки (ФССП с капчей) остаются в силе. Новая
+    # строка — только если поручитель другой (другой паспорт).
+    current = await current_guarantor(session, application.id)
+    if current is not None:
+        prev = current.profile or {}
+        if (prev.get("passport_series"), prev.get("passport_number"), prev.get("birth_date")) == (
+            series, number, birth_date_raw,
+        ):
+            current.profile = guarantor_payload
+            current.client_id = client_id or current.client_id
+            current.status = "checking"
+            await session.flush()
+            return current
 
     guarantor = Guarantor(
         application_id=application.id, client_id=client_id, profile=guarantor_payload, status="checking",
@@ -537,9 +551,7 @@ async def finalize_stage_b(
         guarantor_used = False
         guarantor_reason_code = None
         if guarantor_payload:
-            guarantor = (
-                await session.execute(select(Guarantor).where(Guarantor.application_id == application_id))
-            ).scalars().first()
+            guarantor = await current_guarantor(session, application_id)
             if guarantor is not None:
                 guarantor_freeze = (
                     await find_active_sanctions_freeze(session, client_id=guarantor.client_id)

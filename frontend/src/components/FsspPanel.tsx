@@ -20,6 +20,7 @@ export function FsspPanel({
   applicationId,
   subjectType,
   subjectLabel,
+  subjectName = null,
   subjectId,
   latestCheck,
   canOperate,
@@ -28,6 +29,8 @@ export function FsspPanel({
   applicationId: string;
   subjectType: "applicant" | "guarantor";
   subjectLabel: string;
+  /** ФИО — чтобы было видно, кого проверяем (у поручителя особенно). */
+  subjectName?: string | null;
   subjectId: string | null;
   latestCheck: FsspCheckSummary | null;
   canOperate: boolean;
@@ -155,7 +158,9 @@ export function FsspPanel({
       }`}
     >
       <div className="manual-check__status">
-        <b>{subjectLabel[0]!.toUpperCase() + subjectLabel.slice(1)}:</b>{" "}
+        <b>{subjectLabel[0]!.toUpperCase() + subjectLabel.slice(1)}</b>
+        {subjectName && <span className="manual-check__who"> · {subjectName}</span>}
+        <b>:</b>{" "}
         {latestCheck ? checkResultLabel("fssp", latestCheck.status) : <span>не проверено</span>}
       </div>
 

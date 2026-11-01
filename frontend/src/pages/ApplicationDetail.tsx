@@ -246,12 +246,17 @@ export function ApplicationDetailPage() {
   const reviewedAt = reviewSnapshots.length > 0 ? reviewSnapshots[reviewSnapshots.length - 1]!.received_at : null;
 
   const visibleChecks = app.checks.filter((c) => c.source !== "mvd");
+  // Поручитель после повторного «Рассмотреть» записывается заново (новый id):
+  // в ленте и на шкале — проверки только текущего; вся история — в таблице.
+  const currentChecks = visibleChecks.filter(
+    (c) => c.subject_type !== "guarantor" || (c.subject_id ?? null) === (app.guarantor_id ?? null),
+  );
   // Ручные проверки (ФССП, Федресурс) и поручитель — после звонка, к стадии Б.
   const isManual = (c: CheckRow) => c.source === "fssp" || c.source === "fedresurs";
   // В ленте — только последняя попытка по каждому источнику и субъекту:
   // повторные проверки (ФССП с новой капчей, «Повторить») пишутся новыми
   // строками, вся история — в «Все проверки одной таблицей».
-  const latestChecks = latestPerSource(visibleChecks);
+  const latestChecks = latestPerSource(currentChecks);
   const checksA = latestChecks.filter((c) => c.subject_type !== "guarantor" && !isManual(c));
   const checksB = latestChecks.filter((c) => c.subject_type === "guarantor" || isManual(c));
 
@@ -261,6 +266,22 @@ export function ApplicationDetailPage() {
   // решением.
   const applicantFssp = findLatestCheck("fssp", "applicant", null);
   const applicantFedresurs = findLatestCheck("fedresurs", "applicant", null);
+  const manualSubjects: { type: "applicant" | "guarantor"; id: string | null; label: string }[] = [
+    { type: "applicant", id: null, label: "заявителя" },
+    ...(app.has_guarantor && app.guarantor_id
+      ? [{ type: "guarantor" as const, id: app.guarantor_id, label: "поручителя" }]
+      : []),
+  ];
+  // ФССП пройден — есть результат (найдено / не найдено); недоступность сайта
+  // или ошибка — не пройден. Банкротство — есть отметка сотрудника.
+  const fsspPassed = (c: CheckRow | null) => c?.status === "ok" || c?.status === "hit";
+  const manualState = manualSubjects.map((s) => {
+    const fssp = findLatestCheck("fssp", s.type, s.id);
+    const fed = findLatestCheck("fedresurs", s.type, s.id);
+    return { ...s, fssp, fed, fsspDone: fsspPassed(fssp), fedDone: Boolean(fed) };
+  });
+  const fsspLeft = manualState.filter((s) => !s.fsspDone).map((s) => s.label);
+  const fedLeft = manualState.filter((s) => !s.fedDone).map((s) => s.label);
   const grayStageB = latestDecision?.outcome === "manual_review" && latestDecision.stage === "B";
   const fsspNeedsAction =
     (grayStageB && latestDecision?.reason_code === "FSSP_NOT_CHECKED") ||
@@ -269,7 +290,20 @@ export function ApplicationDetailPage() {
   // Банкротство проверяется вручную — пока по заявителю нет отметки и заявка
   // ещё в работе (после отказа или истечения — незачем).
   const fedresursNeedsAction =
-    !applicantFedresurs && app.decisions.length > 0 && !["rejected_a", "rejected_b", "expired"].includes(app.status);
+    fedLeft.length > 0 && app.decisions.length > 0 && !["rejected_a", "rejected_b", "expired"].includes(app.status);
+  // Что именно осталось — поимённо: «ФССП поручителя, банкротство заявителя и поручителя».
+  const joinRu = (items: string[]) =>
+    items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} и ${items[items.length - 1]}`;
+  const lateFssp = manualState
+    .filter((m) => app.fssp_post_decision_alert_subjects.includes(m.type))
+    .map((m) => m.label);
+  const leftText = [
+    fsspNeedsAction && fsspLeft.length > 0 && `ФССП ${joinRu(fsspLeft)}`,
+    lateFssp.length > 0 && `пересмотреть решение: у ${joinRu(lateFssp)} ФССП нашёл долг после решения`,
+    fedresursNeedsAction && `банкротство ${joinRu(fedLeft)}`,
+  ]
+    .filter(Boolean)
+    .join("; ");
   // Стадия Б ждёт, пока сотрудник закажет отчёт БКИ (запрос платный).
   const bkiWaiting = app.status === "awaiting_bki";
   const bkiNeedsAction = bkiWaiting && !app.bki_order?.pending;
@@ -278,7 +312,8 @@ export function ApplicationDetailPage() {
   // скрыт (результаты, если были, остаются в «Что проверили»). Проверки, что
   // ждут действия, показаны выше в «Нужно ваше действие».
   const manualRelevant = !["rejected_a", "rejected_b", "expired"].includes(app.status);
-  const showManual = manualRelevant && (!fsspNeedsAction || !fedresursNeedsAction);
+  const manualInAction = fsspNeedsAction || fedresursNeedsAction;
+  const showManual = manualRelevant && !manualInAction;
 
   const clientBlock = clientRows({
     clientName: app.client_name,
@@ -417,6 +452,7 @@ export function ApplicationDetailPage() {
           applicationId={app.id}
           subjectType="guarantor"
           subjectLabel="поручитель"
+          subjectName={guarantorName || null}
           subjectId={app.guarantor_id}
           latestCheck={findLatestCheck("fssp", "guarantor", app.guarantor_id)}
           canOperate={canOperateFssp}
@@ -462,12 +498,15 @@ export function ApplicationDetailPage() {
   );
 
   // Путь заявки целиком — что пройдено и что осталось до окончательного решения.
-  const fsspDone = applicantFssp?.status === "ok" || applicantFssp?.status === "hit";
-  const fedDone = Boolean(applicantFedresurs);
-  const manualHit = applicantFssp?.status === "hit" || applicantFedresurs?.status === "hit";
+  const manualHit = manualState.some((s) => s.fssp?.status === "hit" || s.fed?.status === "hit");
   const lastOverride = app.manual_overrides.length > 0 ? app.manual_overrides[app.manual_overrides.length - 1]! : null;
   const callDone = Boolean(reviewedAt) || Boolean(latestB);
-  const manualLeft = [!fsspDone && "ФССП", !fedDone && "банкротство"].filter(Boolean).join(", ");
+  const manualLeft = [
+    fsspLeft.length > 0 && `ФССП ${joinRu(fsspLeft)}`,
+    fedLeft.length > 0 && `банкротство ${joinRu(fedLeft)}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
   const journey: { label: string; note: string; state: JourneyState }[] = [
     { label: "Подача", note: formatDateTime(app.submitted_at), state: "done" },
     {
@@ -731,8 +770,9 @@ export function ApplicationDetailPage() {
               canOperate={canOperateFssp}
             />
           )}
-          {fsspNeedsAction && fsspSection}
-          {fedresursNeedsAction && fedresursSection}
+          {leftText && <p className="pf-action__left">Осталось: {leftText}</p>}
+          {manualInAction && fsspSection}
+          {manualInAction && fedresursSection}
         </div>
       )}
 
@@ -752,8 +792,8 @@ export function ApplicationDetailPage() {
         {showManual && (
           <div className="pf-card pf-manual">
             <h2 className="pf-section-title">Ручные проверки</h2>
-            {!fsspNeedsAction && fsspSection}
-            {!fedresursNeedsAction && fedresursSection}
+            {fsspSection}
+            {fedresursSection}
           </div>
         )}
       </div>

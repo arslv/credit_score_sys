@@ -4795,3 +4795,14 @@ mark {
 .match__status .badge {
   font-size: var(--font-xs);
 }
+
+/* Ручные проверки: ФИО рядом с «Заявитель/Поручитель»; что осталось — строкой
+   под заголовком «Нужно ваше действие». */
+.manual-check__who {
+  color: var(--color-text-muted);
+}
+
+.pf-action__left {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-sm);
+}

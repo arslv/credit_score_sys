@@ -107,7 +107,9 @@ export function FedresursPanel({
   return (
     <div className={`manual-check manual-check--${state}`}>
       <div className="manual-check__status">
-        <b>{subjectLabel[0]!.toUpperCase() + subjectLabel.slice(1)}:</b>{" "}
+        <b>{subjectLabel[0]!.toUpperCase() + subjectLabel.slice(1)}</b>
+        {fullName && <span className="manual-check__who"> · {fullName}</span>}
+        <b>:</b>{" "}
         {state === "pending" && <span>не проверено</span>}
         {state === "ok" && <span>банкротства нет</span>}
         {state === "hit" && <span>найдено банкротство</span>}

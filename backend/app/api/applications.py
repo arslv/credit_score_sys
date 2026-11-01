@@ -20,6 +20,7 @@ from app.db import get_session
 from app.engine.pipeline import _subject_from_ocr, unwrap_ocr_fields
 from app.engine.rules import resolve_matrix_overrides
 from app.engine.client_rating import compute_client_rating
+from app.engine.guarantors import current_guarantor
 from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.status_mapping import _render_rule_text, build_operator_comment, get_all_reason_notes
 from app.models import (
@@ -929,9 +930,7 @@ async def get_application(
             .order_by(ManualOverride.created_at)
         )
     ).scalars().all()
-    guarantor_row = (
-        await session.execute(select(Guarantor).where(Guarantor.application_id == application_id).limit(1))
-    ).scalars().first()
+    guarantor_row = await current_guarantor(session, application_id)
     guarantor_id = guarantor_row.id if guarantor_row is not None else None
     guarantor_profile = guarantor_row.profile if (full_pii and guarantor_row is not None) else None
     fssp_alert_subjects = sorted(

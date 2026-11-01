@@ -39,6 +39,7 @@ test("наблюдатель видит статус банкротства, н�
   await login(page, seed.viewer.email, seed.viewer.password);
   await page.goto(`/applications/${seed.gray_fssp.id}`);
   const section = page.locator("#fedresurs").locator("xpath=ancestor::section[1]");
-  await expect(section.getByText("Проверяет оператор или администратор.")).toBeVisible();
+  // У заявки с поручителем — по строке на заявителя и поручителя.
+  await expect(section.getByText("Проверяет оператор или администратор.").first()).toBeVisible();
   await expect(section.getByRole("button", { name: "Банкротства нет" })).toHaveCount(0);
 });

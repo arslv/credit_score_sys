@@ -17,14 +17,14 @@ import json
 import os
 import sys
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.config import get_settings
 from app.db import new_sessionmaker
 from app.engine.versions import get_active_ruleset_version
 from app.engine.stage_b_pipeline import STAGE_B_FEATURE_SET_VERSION
-from app.models import Application, Check, Client, Decision, Employee, FeatureSnapshot, ManualOverride
+from app.models import Application, Check, Client, Decision, Employee, FeatureSnapshot, Guarantor, ManualOverride
 from app.security.passwords import hash_password
 
 # T22: global-setup сеет ДВЕ базы (dev и отдельную dialog_e2e) одним и тем же
@@ -203,6 +203,33 @@ async def _seed_stage_b_decision(session, *, suffix: str, outcome: str, reason_c
     return {"id": str(application.id)}
 
 
+async def _add_guarantor_with_history(session, application_id: str) -> dict:
+    """Поручитель для карточки серой зоны: прежний (анкета до повторного
+    «Рассмотреть») и текущий. По прежнему ФССП «ничего не найдено», по
+    текущему — сайт был недоступен: проверка ФССП поручителя не пройдена.
+    В ленте и на шкале должен учитываться только текущий."""
+    now = datetime.now(timezone.utc)
+    # created_at прежнего — раньше: в одной транзакции now() у обоих одинаков,
+    # и «текущий» (последний записанный) выбирался бы случайно.
+    old = Guarantor(application_id=application_id, profile={"last_name": "Прежний", "first_name": "Поручитель"},
+                    status="used", created_at=now - timedelta(hours=1))
+    current = Guarantor(
+        application_id=application_id, status="used",
+        profile={"last_name": f"Поручителев{RUN}", "first_name": "Пётр", "middle_name": "Петрович",
+                 "birth_date": "1980-02-03"},
+    )
+    session.add_all([old, current])
+    await session.flush()
+    for guarantor, status in ((old, "ok"), (current, "source_unavailable")):
+        session.add(Check(
+            application_id=application_id, subject_type="guarantor", subject_id=guarantor.id, source="fssp",
+            status=status, request={"e2e": True}, response_raw={"e2e": True}, parsed=None,
+            started_at=now, finished_at=now, duration_ms=1,
+        ))
+    await session.flush()
+    return {"last_name": f"Поручителев{RUN}"}
+
+
 async def main() -> None:
     _refuse_if_production()
 
@@ -227,6 +254,7 @@ async def main() -> None:
                     "features": {"pti": 0.42, "bki_active_contracts_count": 1},
                 },
             )
+            gray_fssp["guarantor"] = await _add_guarantor_with_history(session, gray_fssp["id"])
             # Доход нулевой: declared_pti и pti — None, КИ получена.
             no_income = await _seed_stage_b_decision(
                 # Балл между порогами — серая зона без ФССП-причины: «Нужно
