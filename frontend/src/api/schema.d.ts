@@ -993,6 +993,8 @@ export interface components {
              */
             bki_report_types: components["schemas"]["BkiReportTypeOut"][];
             bki_order?: components["schemas"]["BkiOrderOut"] | null;
+            /** Bki Request State */
+            bki_request_state?: string | null;
             /**
              * Bureau Checks
              * @default []

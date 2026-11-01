@@ -13,11 +13,14 @@ export function BkiRequestPanel({
   types,
   order,
   canOperate,
+  retryReason = null,
 }: {
   applicationId: string;
   types: ReportType[];
   order: Order | null | undefined;
   canOperate: boolean;
+  /** Отчёт не получен — почему; кнопки те же, запрос повторный. */
+  retryReason?: string | null;
 }) {
   const queryClient = useQueryClient();
   const mutation = useMutation({
@@ -32,7 +35,7 @@ export function BkiRequestPanel({
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ["application", applicationId] }),
   });
 
-  const pending = order?.pending ? order : null;
+  const pending = order?.pending && !retryReason ? order : null;
 
   return (
     <section className="pf-card bki-request" data-testid="bki-request" aria-labelledby="bki-request-title">
@@ -40,8 +43,13 @@ export function BkiRequestPanel({
         <h2 id="bki-request-title" className="pf-section-title bki-request__title">
           Кредитная история (БКИ)
         </h2>
-        {!pending && <span className="action-tag">требуется действие</span>}
+        {!pending && !retryReason && <span className="action-tag">требуется действие</span>}
       </div>
+      {!pending && retryReason && (
+        <p className="bki-request__retry" role="status">
+          Отчёт не получен — {retryReason.toLowerCase()}. Можно запросить ещё раз.
+        </p>
+      )}
 
       {pending ? (
         <p className="bki-request__status" role="status">

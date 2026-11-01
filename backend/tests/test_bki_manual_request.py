@@ -193,3 +193,54 @@ async def test_order_rules(
     assert body["bki_order"] is None
     async with session_factory() as session:
         assert (await session.get(Application, application_id)).status == "awaiting_bki"
+
+
+async def test_report_not_received_can_be_requested_again(
+    manual_mode, queued, admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """Отчёт не получен (бюро не подключено / недоступно) — серая зона, но
+    кнопки остаются: запрос можно повторить, и тогда решение по отчёту."""
+    from app.sources.bki import NotConfiguredBkiProvider
+
+    external_id, application_id = await _ready_application(partner_admin, partner_client, storage, session_factory)
+    await run_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=FakeBkiProvider())
+    response = await _order(admin_client, session_factory, application_id, "basic", email="bki-retry@example.com")
+    assert response.status_code == 202, response.text
+    assert await finalize_stage_b(
+        session_factory, application_id, partner_client=partner_client, bki_provider=NotConfiguredBkiProvider(),
+    ) == "gray_zone"
+
+    detail = await admin_client.get(f"/api/applications/{application_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["bki_request_state"] == "retry"
+
+    again = await admin_client.post(f"/api/applications/{application_id}/bki-request", json={"report_type": "detailed"})
+    assert again.status_code == 202, again.text
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(good_history_report()))
+    assert await finalize_stage_b(
+        session_factory, application_id, partner_client=partner_client, bki_provider=provider,
+    ) == "approved"
+    assert len(provider.requested_subjects) == 1
+
+    async with session_factory() as session:
+        reasons = (
+            await session.execute(
+                select(Decision.reason_code).where(Decision.application_id == application_id).order_by(Decision.created_at)
+            )
+        ).scalars().all()
+    assert reasons[0] == "BKI_NOT_CONFIGURED"
+    assert [d["status"] for d in await _all_decisions(partner_admin, external_id)][-1] == "approved"
+
+    after = await admin_client.get(f"/api/applications/{application_id}")
+    assert after.json()["bki_request_state"] is None  # отчёт получен — кнопок больше нет
+
+
+async def test_no_retry_without_bki_consent(
+    manual_mode, admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    _external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, consent_bki=False,
+    )
+    assert await run_stage_b(session_factory, application_id, partner_client=partner_client) == "gray_zone"
+    response = await _order(admin_client, session_factory, application_id, "basic", email="bki-noconsent@example.com")
+    assert response.status_code == 409

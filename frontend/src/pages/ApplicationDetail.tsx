@@ -352,6 +352,9 @@ export function ApplicationDetailPage() {
     .join("; ");
   // Стадия Б ждёт, пока сотрудник закажет отчёт БКИ (запрос платный).
   const bkiWaiting = app.status === "awaiting_bki";
+  // Отчёт БКИ не получен (бюро не подключено, недоступно…) — серая зона, но
+  // запрос можно повторить теми же кнопками.
+  const bkiRetry = app.bki_request_state === "retry";
   const bkiNeedsAction = bkiWaiting && !app.bki_order?.pending;
   const actionCount = Number(fsspNeedsAction) + Number(fedresursNeedsAction) + Number(bkiNeedsAction);
   // Ручные проверки (ФССП, банкротство) — одна карточка на постоянном месте:
@@ -805,12 +808,13 @@ export function ApplicationDetailPage() {
       </section>
 
       {/* Кредитная история — отдельным блоком: запрос в БКИ платный, по кнопке. */}
-      {bkiWaiting && (
+      {(bkiWaiting || bkiRetry) && (
         <BkiRequestPanel
           applicationId={app.id}
           types={app.bki_report_types ?? []}
           order={app.bki_order}
           canOperate={canOperateFssp}
+          retryReason={bkiRetry ? reasonCodeLabel(latestDecision?.reason_code ?? "") : null}
         />
       )}
 

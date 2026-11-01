@@ -22,7 +22,9 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     # снова stage_b.
     "awaiting_bki": {"stage_b"},
     "rejected_b": set(),
-    "gray_zone": {"stage_b"},
+    # awaiting_bki — повторный запрос отчёта БКИ, если прошлый не получен
+    # (app/api/bki.py, кнопка в карточке).
+    "gray_zone": {"stage_b", "awaiting_bki"},
     "approved": {"contracted", "expired"},
     "contracted": set(),
     "expired": set(),

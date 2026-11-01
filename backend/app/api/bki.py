@@ -14,13 +14,37 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.engine.versions import get_active_ruleset_version, load_config
-from app.models import Application, BkiRequestOrder, Employee, StatusHistory
+from app.engine.state_machine import transition
+from app.models import Application, BkiRequestOrder, Decision, Employee, StatusHistory
 from app.security.audit import record_audit
 from app.security.deps import require_roles
 
 router = APIRouter(prefix="/api", tags=["bki"])
 
 _BKI_REQUEST_ROLES = ("operator", "admin")
+
+# Серая зона, потому что отчёт БКИ не получен (бюро не подключено, недоступно,
+# ошибка, клиент не определён) — запрос можно повторить кнопкой. Нет согласия
+# на КИ — не повторяем (нужно новое согласие от CRM); отчёт получен — незачем.
+BKI_RETRYABLE_REASONS = frozenset({"BKI_NOT_CONFIGURED", "BKI_SOURCE_UNAVAILABLE", "BKI_ERROR", "BKI_CLIENT_UNKNOWN"})
+
+
+async def bki_request_state(session: AsyncSession, application: Application) -> str | None:
+    """waiting — стадия Б ждёт первого заказа; retry — отчёт не получен, можно
+    запросить ещё раз; None — кнопок нет."""
+    if application.status == "awaiting_bki":
+        return "waiting"
+    if application.status != "gray_zone":
+        return None
+    latest = (
+        await session.execute(
+            select(Decision).where(Decision.application_id == application.id)
+            .order_by(Decision.created_at.desc()).limit(1)
+        )
+    ).scalars().first()
+    if latest is not None and latest.stage == "B" and latest.reason_code in BKI_RETRYABLE_REASONS:
+        return "retry"
+    return None
 
 
 class BkiRequestIn(BaseModel):
@@ -51,10 +75,11 @@ async def request_bki_report(
     ).scalar_one_or_none()
     if application is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="заявка не найдена")
-    if application.status != "awaiting_bki":
+    request_state = await bki_request_state(session, application)
+    if request_state is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="заявка не ждёт запроса в БКИ — отчёт уже заказан или стадия Б ещё не дошла до БКИ",
+            detail="заявка не ждёт запроса в БКИ — отчёт уже заказан, получен или стадия Б ещё не дошла до БКИ",
         )
 
     ruleset_row = await get_active_ruleset_version(session)
@@ -62,6 +87,8 @@ async def request_bki_report(
     if config is None or payload.report_type not in config.bki.report_types:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="неизвестный вид отчёта БКИ")
 
+    # В ожидании — один заказ (повтор после неполученного отчёта начинает
+    # новое ожидание, прошлые заказы не в счёт).
     waiting_order = (
         await session.execute(
             select(BkiRequestOrder.id)
@@ -69,10 +96,15 @@ async def request_bki_report(
             .where(BkiRequestOrder.created_at >= _waiting_since_subquery(application_id))
             .limit(1)
         )
-    ).scalar_one_or_none()
+    ).scalar_one_or_none() if request_state == "waiting" else None
     if waiting_order is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="отчёт уже заказан — ждём ответа бюро")
 
+    if request_state == "retry":
+        # Повтор после неполученного отчёта: снова ждём БКИ — заказ ниже
+        # относится к этому ожиданию.
+        transition(session, application, "awaiting_bki", actor_type="employee", employee_id=employee.id)
+        await session.flush()
     session.add(BkiRequestOrder(application_id=application_id, report_type=payload.report_type, employee_id=employee.id))
     await record_audit(
         session, employee_id=employee.id, action="request_bki_report",

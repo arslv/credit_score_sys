@@ -782,6 +782,9 @@ class ApplicationDetail(BaseModel):
     # действующих правилах) и последний заказ по заявке.
     bki_report_types: list[BkiReportTypeOut] = []
     bki_order: BkiOrderOut | None = None
+    # Кнопки запроса в БКИ: waiting — ждём первого заказа; retry — отчёт не
+    # получен, можно повторить; None — кнопок нет (app/api/bki.py).
+    bki_request_state: str | None = None
     # Проверки из подробного отчёта бюро (ФССП, банкротство…) — рядом с
     # нашими, с пометкой «от БКИ»; в решение не входят.
     bureau_checks: list[BureauCheckOut] = []
@@ -1101,6 +1104,9 @@ async def get_application(
         )
 
     bki_types, bki_order = await _bki_request_info(session, application)
+    from app.api.bki import bki_request_state
+
+    request_state = await bki_request_state(session, application)
     bureau_rows = (
         await session.execute(
             select(BkiBureauCheck).where(BkiBureauCheck.application_id == application.id)
@@ -1156,6 +1162,7 @@ async def get_application(
         passport_checks=passport_checks,
         bki_report_types=bki_types,
         bki_order=bki_order,
+        bki_request_state=request_state,
         bureau_checks=[
             BureauCheckOut(
                 id=b.id, subject_type=b.subject_type, source=b.source, block=b.block, status=b.status,

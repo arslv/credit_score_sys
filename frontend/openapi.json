@@ -2952,6 +2952,17 @@
               }
             ]
           },
+          "bki_request_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bki Request State"
+          },
           "bureau_checks": {
             "items": {
               "$ref": "#/components/schemas/BureauCheckOut"
