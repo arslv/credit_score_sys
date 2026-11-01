@@ -83,13 +83,23 @@ class FsspCaptchaChallenge:
     captcha_png: bytes
 
 
+class FsspRateLimitedError(Exception):
+    """Сайт ответил «попробуйте позже» — временная блокировка поиска
+    (app/sources/fssp_cooldown.py). raw_response — ответ сайта (правило 3)."""
+
+    def __init__(self, message: str, *, raw_response: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.raw_response = raw_response
+
+
 @dataclass(frozen=True)
 class FsspSubmitOutcome:
     """kind: "ok" — код принят, check_result заполнен (в т.ч. "ничего не
     найдено" — это OK, не ошибка); "wrong_code" — код не принят (включая
     "лимит попыток превышен" — для вызывающего кода это то же самое: нужен
     новый code_id); "source_unavailable" — сайт/сеть подвели, check_result
-    с SOURCE_UNAVAILABLE."""
+    с SOURCE_UNAVAILABLE; "rate_limited" — сайт временно ограничил поиск
+    («попробуйте позже»), check_result с SOURCE_UNAVAILABLE."""
 
     kind: str
     check_result: CheckResult | None = None
@@ -162,6 +172,13 @@ def _finish_production(fields: dict[str, str]) -> dict[str, Any]:
     subject_text = fields.get("predmet", "")
     amount = fields.get("summa", "0").replace(" ", "").replace(",", ".")
     return {"subject": subject_text, "amount": amount, "raw": dict(fields)}
+
+
+def _is_blocked(body_html: str) -> bool:
+    """Сайт временно не даёт искать (после неверных кодов / частых запросов):
+    «Извините, что-то пошло не так. Попробуйте позже»."""
+    lowered = body_html.lower()
+    return "попробуйте позже" in lowered or "что-то пошло не так" in lowered
 
 
 def _is_not_found(body_html: str) -> bool:
@@ -336,6 +353,8 @@ class FsspCaptchaHttpSource:
             raise FsspSearchError(f"сайт недоступен: {exc}") from exc
 
         body = html_module.unescape(payload.get("data", ""))
+        if _is_blocked(body):
+            raise FsspRateLimitedError("сайт ФССП временно ограничил поиск", raw_response=payload)
         code_id_match = _CODE_ID_RE.search(body)
         img_match = _CAPTCHA_IMG_RE.search(body)
         # Старый протокол — code_id в разметке; новый — сессия сайта в куке.
@@ -377,6 +396,20 @@ class FsspCaptchaHttpSource:
             )
 
         body = html_module.unescape(payload.get("data", ""))
+
+        # Неверный код — сайт сразу показывает новую капчу; «превышено…
+        # попробуйте позже» и «что-то пошло не так» — уже блокировка: новую
+        # капчу не запрашиваем, это её продлевает.
+        if "captcha-popup" in body:
+            return FsspSubmitOutcome(kind="wrong_code")
+        if _is_blocked(body) or "превышен" in body.lower():
+            return FsspSubmitOutcome(
+                kind="rate_limited",
+                check_result=CheckResult(
+                    status=CheckStatus.SOURCE_UNAVAILABLE, response_raw={"html": body},
+                    error_text="сайт ФССП временно ограничил поиск",
+                ),
+            )
 
         if _is_wrong_code(body):
             return FsspSubmitOutcome(kind="wrong_code")

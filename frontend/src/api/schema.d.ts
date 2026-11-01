@@ -1754,6 +1754,10 @@ export interface components {
             new_captcha_png_base64?: string | null;
             /** Message */
             message?: string | null;
+            /** Retry At */
+            retry_at?: string | null;
+            /** Typical Minutes */
+            typical_minutes?: number | null;
         };
         /** FunnelStepItem */
         FunnelStepItem: {

@@ -47,7 +47,11 @@ from app.security.audit import record_audit
 from app.security.deps import require_roles
 from app.sources.base import Subject
 from app.sources.factory import build_fssp_captcha_source
-from app.sources.fssp import FsspSearchError, FsspValidationError
+from app.redis import get_redis
+from app.sources.fssp import FsspRateLimitedError, FsspSearchError, FsspValidationError
+from app.sources.fssp_cooldown import active_block, mark_blocked, mark_ok
+
+_BLOCK_MESSAGE = "Сайт ФССП временно ограничил поиск — так бывает после нескольких неверных кодов"
 
 router = APIRouter(prefix="/api", tags=["fssp"])
 
@@ -136,7 +140,7 @@ async def _record_fssp_search_failure(
     сырой ответ, правило 3 CLAUDE.md); на отказ валидации (субъект неполный,
     FsspValidationError) внешний сайт не запрашивался вовсе — писать checks
     нечего, это не "источник недоступен"."""
-    if isinstance(exc, FsspSearchError):
+    if isinstance(exc, (FsspSearchError, FsspRateLimitedError)):
         now = _now()
         session.add(
             Check(
@@ -209,9 +213,23 @@ async def fssp_search(
             status_code=status.HTTP_409_CONFLICT, detail="повторная проверка ФССП по этой заявке требует причины"
         )
 
+    block = await active_block(get_redis(), settings.fssp_block_cooldown_seconds)
+    if block is not None:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=block.to_detail(_BLOCK_MESSAGE))
+
     source = build_fssp_captcha_source(settings)
     try:
         challenge = await source.search(subject, region_code=body.region_code)
+    except FsspRateLimitedError as exc:
+        await _record_fssp_search_failure(
+            session, employee_id=employee.id, application_id=application_id,
+            subject_type=body.subject_type, subject_id=body.subject_id, request=request, exc=exc,
+        )
+        await session.commit()
+        block = await mark_blocked(get_redis(), settings.fssp_block_cooldown_seconds)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=block.to_detail(_BLOCK_MESSAGE),
+        ) from exc
     except FsspValidationError as exc:
         await _record_fssp_search_failure(
             session, employee_id=employee.id, application_id=application_id,
@@ -228,6 +246,8 @@ async def fssp_search(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"сайт ФССП недоступен: {exc}"
         ) from exc
+
+    await mark_ok(get_redis())
 
     # Поиск удался -> ТЕПЕРЬ предыдущая активная сессия по этому субъекту
     # гасится (T16, п.5 ваших правок); старый code_id submit-code больше не
@@ -277,11 +297,15 @@ class FsspSubmitCodeRequest(BaseModel):
 
 
 class FsspSubmitCodeResponse(BaseModel):
-    outcome: str  # ok | wrong_code | source_unavailable
+    outcome: str  # ok | wrong_code | source_unavailable | rate_limited
     check: dict | None = None
     new_session_id: UUID | None = None
     new_captcha_png_base64: str | None = None
     message: str | None = None
+    # rate_limited: когда снова можно запросить капчу и сколько блокировка
+    # длилась в прошлые разы (мин.).
+    retry_at: datetime | None = None
+    typical_minutes: int | None = None
 
 
 async def _post_decision_alert_if_needed(
@@ -370,6 +394,19 @@ async def fssp_submit_code(
         # subject/region, новый code_id, старый уже не принимается.
         try:
             challenge = await source.search(subject, region_code=captcha_session.region_code)
+        except FsspRateLimitedError as exc:
+            # Код неверный, а новую капчу сайт уже не даёт — блокировка.
+            await _record_fssp_search_failure(
+                session, employee_id=employee.id, application_id=application_id,
+                subject_type=captcha_session.subject_type, subject_id=captcha_session.subject_id,
+                request=request, exc=exc,
+            )
+            await session.commit()
+            block = await mark_blocked(get_redis(), settings.fssp_block_cooldown_seconds)
+            return FsspSubmitCodeResponse(
+                outcome="rate_limited", message=f"Код неверный. {_BLOCK_MESSAGE}", retry_at=block.retry_at,
+                typical_minutes=block.typical_minutes,
+            )
         except FsspValidationError as exc:
             await _record_fssp_search_failure(
                 session, employee_id=employee.id, application_id=application_id,
@@ -404,7 +441,7 @@ async def fssp_submit_code(
             message="Код неверный, введите новый",
         )
 
-    if submit_outcome.kind == "source_unavailable":
+    if submit_outcome.kind in ("source_unavailable", "rate_limited"):
         captcha_session.status = "expired"
         result = submit_outcome.check_result
         check = Check(
@@ -426,6 +463,12 @@ async def fssp_submit_code(
             },
         )
         await session.commit()
+        if submit_outcome.kind == "rate_limited":
+            block = await mark_blocked(get_redis(), settings.fssp_block_cooldown_seconds)
+            return FsspSubmitCodeResponse(
+                outcome="rate_limited", message=_BLOCK_MESSAGE, retry_at=block.retry_at,
+                typical_minutes=block.typical_minutes,
+            )
         return FsspSubmitCodeResponse(outcome="source_unavailable", message="сайт ФССП недоступен, попробуйте позже")
 
     # kind == "ok"

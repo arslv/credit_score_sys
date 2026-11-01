@@ -12,6 +12,7 @@ from app.sources.base import CheckStatus, Subject
 from app.sources.fssp import (
     FakeFsspCaptchaSource,
     FsspCaptchaHttpSource,
+    FsspRateLimitedError,
     FsspSearchError,
     FsspValidationError,
     parse_fssp_result_html,
@@ -201,13 +202,66 @@ async def test_http_submit_code_not_found():
 
 @respx.mock
 async def test_http_submit_code_wrong_code():
+    """Неверный код — сайт сразу показывает новую капчу."""
+    respx.get("https://is.fssp.gov.ru/ajax_search").mock(
+        return_value=Response(200, text=_jsonp(_captcha_html("code-id-2")))
+    )
+    outcome = await _http_source().submit_code(
+        code_id="code-id-1", code="00000", subject=_SUBJECT, region_code="05",
+    )
+    assert outcome.kind == "wrong_code"
+
+
+@respx.mock
+async def test_http_submit_attempts_exceeded_is_rate_limited():
+    """«Количество неверных попыток превышено. Попробуйте позже» — блокировка,
+    не повод сразу просить новую капчу (это её продлевает)."""
     respx.get("https://is.fssp.gov.ru/ajax_search").mock(
         return_value=Response(200, text=_jsonp(_wrong_code_html()))
     )
     outcome = await _http_source().submit_code(
         code_id="code-id-1", code="00000", subject=_SUBJECT, region_code="05",
     )
-    assert outcome.kind == "wrong_code"
+    assert outcome.kind == "rate_limited"
+    assert outcome.check_result.status == CheckStatus.SOURCE_UNAVAILABLE
+
+
+def _blocked_html() -> str:
+    return '<div class="results" style="margin:10px 0;"><div class="empty">Извините, что-то пошло не так. Попробуйте позже</div></div>'
+
+
+@respx.mock
+async def test_http_search_blocked_raises_rate_limited_with_raw():
+    respx.get("https://is.fssp.gov.ru/ajax_search").mock(return_value=Response(200, text=_jsonp(_blocked_html())))
+    try:
+        await _http_source().search(_SUBJECT, region_code="05")
+        assert False, "должно было бросить FsspRateLimitedError"
+    except FsspRateLimitedError as exc:
+        assert exc.raw_response["data"] == _blocked_html()
+
+
+async def test_block_cooldown_and_measured_duration():
+    from datetime import timedelta
+
+    from app.sources import fssp_cooldown
+
+    redis = get_redis()
+    await redis.delete("fssp:block:since", "fssp:block:last", "fssp:block:durations")
+    assert await fssp_cooldown.active_block(redis, 600) is None
+
+    block = await fssp_cooldown.mark_blocked(redis, 600)
+    assert block.typical_minutes is None
+    active = await fssp_cooldown.active_block(redis, 600)
+    assert active is not None and active.retry_at > active.since
+    assert await fssp_cooldown.active_block(redis, 0) is None  # пауза прошла — можно пробовать
+
+    # Блокировка началась 12 минут назад, сейчас поиск прошёл — запомнили ~12 мин.
+    await redis.set("fssp:block:since", (block.since - timedelta(minutes=12)).isoformat())
+    await fssp_cooldown.mark_ok(redis)
+    assert await fssp_cooldown.active_block(redis, 600) is None
+    again = await fssp_cooldown.mark_blocked(redis, 600)
+    assert again.typical_minutes == 12
+    await redis.delete("fssp:block:since", "fssp:block:last", "fssp:block:durations")
 
 
 @respx.mock

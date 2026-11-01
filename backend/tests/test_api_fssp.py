@@ -386,3 +386,52 @@ async def test_fssp_search_site_unavailable_leaves_audit_and_check_trace(
         ).scalars().all()
         assert len(audit_rows) == 1
         assert audit_rows[0].details["result"] == "source_unavailable"
+
+
+class _BlockedSource(FakeFsspCaptchaSource):
+    """Сайт отвечает «Извините, что-то пошло не так. Попробуйте позже»."""
+
+    def __init__(self) -> None:
+        super().__init__(valid_code=_VALID_CODE)
+        self.searches = 0
+
+    async def search(self, subject, *, region_code):
+        from app.sources.fssp import FsspRateLimitedError
+
+        self.searches += 1
+        raise FsspRateLimitedError("сайт ФССП временно ограничил поиск", raw_response={"data": "Попробуйте позже"})
+
+
+async def test_site_block_returns_retry_time_and_pauses_requests(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """Сайт временно заблокировал поиск — 429 с временем, когда можно снова,
+    и пока пауза идёт, сайт не запрашиваем (повторы продлевают блокировку)."""
+    from app.redis import get_redis
+
+    redis = get_redis()
+    await redis.delete("fssp:block:since", "fssp:block:last", "fssp:block:durations")
+    application_id = await _rejected_applicant(partner_admin, partner_client, storage, session_factory, active_ruleset)
+    await create_employee(session_factory, email="op-block@example.com", role="operator")
+    await login(admin_client, "op-block@example.com")
+
+    blocked = _BlockedSource()
+    try:
+        with _patched_source(blocked):
+            first = await admin_client.post(
+                f"/api/applications/{application_id}/fssp/search",
+                json={"subject_type": "applicant", "region_code": "77"},
+            )
+            assert first.status_code == 429, first.text
+            detail = first.json()["detail"]
+            assert detail["code"] == "fssp_rate_limited"
+            assert detail["retry_at"] > detail["since"]
+
+            again = await admin_client.post(
+                f"/api/applications/{application_id}/fssp/search",
+                json={"subject_type": "applicant", "region_code": "77", "reason": "ещё раз"},
+            )
+            assert again.status_code == 429, again.text
+        assert blocked.searches == 1  # во время паузы сайт не трогали
+    finally:
+        await redis.delete("fssp:block:since", "fssp:block:last", "fssp:block:durations")

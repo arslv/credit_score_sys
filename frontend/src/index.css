@@ -4885,3 +4885,12 @@ mark {
   gap: var(--space-2);
   margin-left: auto;
 }
+
+/* ФССП временно ограничил поиск — сколько ждать. */
+.fssp-block {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--status-gray-soft);
+  font-size: var(--font-sm);
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { checkResultLabel } from "../lib/labels";
@@ -8,6 +8,50 @@ import { checkResultLabel } from "../lib/labels";
 // выбрать регион (никогда не подставляется автоматически, только подсказка) и
 // ввести код с картинки. Неверный код сразу открывает новую капчу (решение по
 // UX), недоступность сайта — без автоповтора, нужно начать заново руками.
+
+// Сайт ФССП временно ограничил поиск («попробуйте позже») — когда можно
+// снова и сколько блокировка длилась в прошлые разы (app/sources/fssp_cooldown.py).
+interface FsspBlock {
+  retryAt: Date;
+  typicalMinutes: number | null;
+}
+
+function blockFromDetail(detail: unknown): FsspBlock | null {
+  const d = detail as { code?: string; retry_at?: string; typical_minutes?: number | null } | undefined;
+  if (d?.code !== "fssp_rate_limited" || !d.retry_at) return null;
+  return { retryAt: new Date(d.retry_at), typicalMinutes: d.typical_minutes ?? null };
+}
+
+function BlockNotice({ block }: { block: FsspBlock }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const left = Math.max(0, Math.ceil((block.retryAt.getTime() - now) / 1000));
+  const minutes = Math.floor(left / 60);
+  const seconds = left % 60;
+  const at = block.retryAt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div className="fssp-block" role="alert">
+      <b>Сайт ФССП временно ограничил поиск</b> — так бывает после нескольких неверных кодов.{" "}
+      {left > 0 ? (
+        <>
+          Повторить можно через{" "}
+          <b>
+            {minutes}:{String(seconds).padStart(2, "0")}
+          </b>{" "}
+          (в {at}).
+        </>
+      ) : (
+        <>Можно пробовать снова.</>
+      )}
+      {block.typicalMinutes != null && (
+        <span className="muted"> В прошлые разы ограничение длилось около {block.typicalMinutes} мин.</span>
+      )}
+    </div>
+  );
+}
 
 interface FsspCheckSummary {
   id: string;
@@ -46,6 +90,17 @@ export function FsspPanel({
   const [code, setCode] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [block, setBlock] = useState<FsspBlock | null>(null);
+  const [, forceTick] = useState(0);
+  // Пауза кончилась — кнопки снова доступны (перерисовка в момент retry_at).
+  useEffect(() => {
+    if (!block) return;
+    const wait = block.retryAt.getTime() - Date.now();
+    if (wait <= 0) return;
+    const timer = window.setTimeout(() => forceTick((n) => n + 1), wait + 200);
+    return () => window.clearTimeout(timer);
+  }, [block]);
+  const blocked = block != null && block.retryAt.getTime() > Date.now();
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["application", applicationId] });
 
@@ -95,8 +150,14 @@ export function FsspPanel({
       setError(null);
     },
     onError: (err: unknown) => {
-      const detail = (err as { detail?: string })?.detail;
-      setError(detail ?? "Не удалось запросить капчу ФССП");
+      const detail = (err as { detail?: unknown })?.detail;
+      const siteBlock = blockFromDetail(detail);
+      if (siteBlock) {
+        setBlock(siteBlock);
+        setError(null);
+        return;
+      }
+      setError(typeof detail === "string" ? detail : "Не удалось запросить капчу ФССП");
     },
   });
 
@@ -119,6 +180,15 @@ export function FsspPanel({
         setCaptchaBase64(data.new_captcha_png_base64 ?? null);
         setCode("");
         setMessage(data.message ?? "Код неверный, введите новый");
+        return;
+      }
+      if (data.outcome === "rate_limited") {
+        setBlock(
+          data.retry_at ? { retryAt: new Date(data.retry_at), typicalMinutes: data.typical_minutes ?? null } : null,
+        );
+        setMessage(null);
+        setCaptchaBase64(null);
+        setSessionId(null);
         return;
       }
       if (data.outcome === "source_unavailable") {
@@ -187,7 +257,11 @@ export function FsspPanel({
       {!canOperate && !latestCheck && <p className="muted">Проверку запускает оператор или администратор.</p>}
 
       {canOperate && !open && (
-        <button className="btn btn-small" disabled={startMutation.isPending} onClick={() => startMutation.mutate()}>
+        <button
+          className="btn btn-small"
+          disabled={startMutation.isPending || blocked}
+          onClick={() => startMutation.mutate()}
+        >
           {latestCheck ? "Повторить проверку" : "Начать проверку"}
         </button>
       )}
@@ -219,7 +293,7 @@ export function FsspPanel({
           <div className="row stack">
             <button
               className="btn btn-primary btn-small"
-              disabled={!regionCode || searchMutation.isPending}
+              disabled={!regionCode || searchMutation.isPending || blocked}
               onClick={() => searchMutation.mutate()}
             >
               Запросить капчу
@@ -275,6 +349,7 @@ export function FsspPanel({
         </div>
       )}
 
+      {block && <BlockNotice block={block} />}
       {error && <p className="alert" role="alert">{error}</p>}
     </div>
   );

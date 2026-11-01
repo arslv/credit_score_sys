@@ -190,6 +190,10 @@ class Settings(BaseSettings):
     fssp_source_mode: str = ""  # "" | fake | http
     fssp_min_request_interval_seconds: float = 5.0
     fssp_request_timeout_seconds: float = 15.0
+    # Сайт ответил «попробуйте позже» (временная блокировка после неверных
+    # кодов) — столько секунд не запрашиваем его снова; сколько блокировка
+    # длится на самом деле, сайт не сообщает (app/sources/fssp_cooldown.py).
+    fssp_block_cooldown_seconds: int = 600
     fssp_regions_path: str = "config/fssp_regions.yaml"
     # Сессия "код показан, ждём ввода" считается истёкшей через столько минут
     # без ответа оператора — новый поиск можно начать, старая строка
