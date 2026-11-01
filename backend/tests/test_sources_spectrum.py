@@ -121,7 +121,7 @@ class _Transport:
         return self._response
 
 
-async def test_provider_requests_package_and_never_raises(monkeypatch):
+async def test_provider_requests_package_and_never_raises():
     transport = _Transport(REPORT)
     provider = SpectrumDataBkiProvider(transport)
 
@@ -136,14 +136,83 @@ async def test_provider_requests_package_and_never_raises(monkeypatch):
     )
     assert down.status is CheckStatus.SOURCE_UNAVAILABLE
 
-    # Блоки подробного отчёта — по таблице BUREAU_BLOCKS (заполняется по их описаниям).
-    monkeypatch.setattr(spectrum, "BUREAU_BLOCKS", {"fssp_block": "fssp"})
-    premium = {"data": [{"content": {"check_person": {
+    # Подробный пакет: кредитный рейтинг + проверки (ФССП, банкротство).
+    result = await SpectrumDataBkiProvider(_Transport(PREMIUM)).request_report(_subject(), report_code="PREM@domain")
+    assert result.status is CheckStatus.OK and result.report.score == 736
+    assert [(c.source, c.status) for c in result.extra_checks] == [("fssp", "hit"), ("fedresurs", "hit")]
+
+
+# Примеры из описаний блоков P.0035.SSP.HIS и P.0124.BNK.HIS-SHT (кабинет),
+# только нужные поля.
+FSSP_BLOCK = {
+    "size": 2,
+    "items": [
+        {"epNumber": "01010/11/10101-ИП", "weSubjTypeName": "Страховые взносы, включая пени",
+         "debtBalanceTotal": 0, "unloadStatus": "C", "endDate": "2017-02-10", "isOpen": False,
+         "weRisedate": "2016-11-08", "bailiffOfficeTerotdel": "Клинцовское РОСП"},
+        {"epNumber": "01010/11/10102-ИП", "weSubjTypeName": "Страховые взносы, включая пени",
+         "debtBalanceTotal": 500, "unloadStatus": "U", "endDate": "", "isOpen": True,
+         "weRisedate": "2016-11-18", "bailiffOfficeTerotdel": "Клинцовское РОСП"},
+    ],
+    "openCount": 1, "closeCount": 1, "limitReached": False,
+}
+BANKRUPTCY_BLOCK = {
+    "debtor": {"lastName": "Фамилия", "inn": "12345678"},
+    "actualCaseStatus": "IN_PROGRESS", "sourceType": "FINAL_REPORT", "debtorStatus": "IS_LISTED",
+    "legalCaseNumbers": ["123456"], "courtName": "Арбитражный суд Тамбовской области",
+    "legalCaseClosed": False, "procedureType": "EXTERNAL_MANAGEMENT",
+    "lastMessageName": "Сведения об отчете оценщика", "lastMessageDate": "2020-01-01T00:00:00.0Z",
+}
+PREMIUM = {"data": [{
+    "state": {"sources": [
+        {"_id": "check_person/executive_proceeding_base", "state": "OK"},
+        {"_id": "check_person/fedresurs_short", "state": "OK"},
+    ]},
+    "content": {"check_person": {
         **REPORT["data"][0]["content"]["check_person"],
-        "fssp_block": {"items": [], "src_meta": {"state": "OK"}},
-    }}}]}
-    result = await SpectrumDataBkiProvider(_Transport(premium)).request_report(_subject(), report_code="PREM@domain")
-    assert result.extra_checks == [BureauCheck(source="fssp", block="fssp_block", status="ok", parsed={"items": []})]
+        "proceeding_v2": {"executive_v2": FSSP_BLOCK},
+        "bankruptcy_short": BANKRUPTCY_BLOCK,
+    }},
+}]}
+
+
+def _premium(content: dict, states: dict[str, str]) -> dict:
+    return {"data": [{
+        "state": {"sources": [{"_id": k, "state": v} for k, v in states.items()]},
+        "content": {"check_person": content},
+    }]}
+
+
+def test_bureau_fssp_counts_only_open_proceedings():
+    fssp, bankruptcy = spectrum.extract_bureau_checks(PREMIUM)
+
+    assert fssp.source == "fssp" and fssp.status == "hit"
+    assert fssp.block == "check_person.proceeding_v2.executive_v2"
+    assert fssp.parsed["open_count"] == 1 and fssp.parsed["open_debt_total"] == "500"
+    assert [i["ep_number"] for i in fssp.parsed["open_items"]] == ["01010/11/10102-ИП"]  # закрытое — не в счёт
+    assert "1" in fssp.parsed["summary"] and "500" in fssp.parsed["summary"]
+
+    assert bankruptcy.source == "fedresurs" and bankruptcy.status == "hit"
+    assert bankruptcy.parsed["debtor_status"] == "IS_LISTED"
+    assert bankruptcy.parsed["case_numbers"] == ["123456"]
+    assert "дело идёт" in bankruptcy.parsed["summary"]
+
+
+def test_bureau_nothing_found_unavailable_and_not_in_package():
+    ok = {"check_person/executive_proceeding_base": "OK", "check_person/fedresurs_short": "OK"}
+
+    # Только закрытые ИП, блока банкротства нет при ответившем источнике — чисто.
+    closed_only = {**FSSP_BLOCK, "items": FSSP_BLOCK["items"][:1], "openCount": 0}
+    checks = spectrum.extract_bureau_checks(_premium({"proceeding_v2": {"executive_v2": closed_only}}, ok))
+    assert [(c.source, c.status) for c in checks] == [("fssp", "ok"), ("fedresurs", "ok")]
+    assert checks[1].parsed["summary"] == "в реестре банкротств нет"
+
+    # Источник не ответил — «не удалось», не «чисто».
+    down = spectrum.extract_bureau_checks(_premium({}, {**ok, "check_person/fedresurs_short": "ERROR"}))
+    assert [(c.source, c.status) for c in down] == [("fssp", "ok"), ("fedresurs", "source_unavailable")]
+
+    # «Обычный» пакет — этих источников в отчёте нет, проверок нет.
+    assert spectrum.extract_bureau_checks(REPORT) == []
 
 
 class _ProviderWithBureauChecks:

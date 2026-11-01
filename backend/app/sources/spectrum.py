@@ -16,13 +16,16 @@
 отчёта) — SpectrumTransport; HTTP-реализация — когда будет описание API из
 кабинета. До того провайдер не собирается фабрикой (app/sources/factory.py).
 
+Проверки подробного пакета — по BUREAU_BLOCKS: ФССП (P.0035) и банкротство
+(P.0124) разобраны по описаниям блоков, остальные — когда будут описания.
+
 Правило 4: провайдер никогда не бросает исключение наружу."""
 
 import re
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from app.sources.base import CheckStatus, Subject
 from app.sources.bki import BkiProviderResult, BkiReport
@@ -152,26 +155,137 @@ class BureauCheck:
     parsed: dict = field(default_factory=dict)
 
 
-# Ключ блока в content.check_person → наш источник. Разбор статуса каждого
-# блока — по его описанию в кабинете (структура отчёта); пока описаний нет,
-# статус — только по src_meta.state («проверка прошла / не прошла»), без
-# «найдено / не найдено».
-BUREAU_BLOCKS: dict[str, str] = {}
+def _money(value: Any) -> Decimal:
+    try:
+        return Decimal(str(value)) if value not in (None, "") else Decimal("0")
+    except InvalidOperation:
+        return Decimal("0")
+
+
+def _parse_fssp(block: dict) -> tuple[str, dict]:
+    """P.0035.SSP.HIS — открытые исполнительные производства (isOpen по
+    описанию блока: нет даты окончания и запись не «C»). Поиск по ФИО и дате
+    рождения — бывают и чужие ИП (сказано в описании), поэтому это подсказка
+    оператору, в решение не входит."""
+    items = [i for i in block.get("items") or [] if isinstance(i, dict)]
+    open_items = [i for i in items if i.get("isOpen") is True]
+    open_count = block.get("openCount")
+    if not isinstance(open_count, int):
+        open_count = len(open_items)
+    debt = sum((_money(i.get("debtBalanceTotal")) for i in open_items), Decimal("0"))
+    parsed = {
+        "open_count": open_count,
+        "closed_count": block.get("closeCount"),
+        "open_debt_total": str(debt),
+        "limit_reached": bool(block.get("limitReached")),
+        "open_items": [
+            {
+                "ep_number": i.get("epNumber"),
+                "subject": i.get("weSubjTypeName"),
+                "debt_total": str(_money(i.get("debtBalanceTotal"))),
+                "started": i.get("weRisedate"),
+                "office": i.get("bailiffOfficeTerotdel"),
+            }
+            for i in open_items
+        ],
+    }
+    if open_count:
+        parsed["summary"] = f"открытых производств: {open_count}, долг {debt:.2f} ₽"
+    else:
+        parsed["summary"] = "открытых производств нет"
+    return ("hit" if open_count else "ok"), parsed
+
+
+# Статусы должника по описанию P.0124.BNK.HIS-SHT: есть в реестре / был.
+_BANKRUPTCY_LISTED = {"IS_LISTED", "WAS_LISTED"}
+
+
+def _parse_bankruptcy(block: dict) -> tuple[str, dict]:
+    """P.0124.BNK.HIS-SHT — банкротство по ИНН/СНИЛС (ЕФРСБ). Найдено, если
+    человек есть или был в реестре должников (debtorStatus) или по нему есть
+    дело; пустой блок — не найдено."""
+    debtor_status = block.get("debtorStatus")
+    case_numbers = [n for n in block.get("legalCaseNumbers") or [] if n]
+    found = debtor_status in _BANKRUPTCY_LISTED or bool(case_numbers) or bool(block.get("actualCaseStatus"))
+    parsed = {
+        "debtor_status": debtor_status,
+        "case_status": block.get("actualCaseStatus"),
+        "case_closed": block.get("legalCaseClosed"),
+        "procedure": block.get("procedureType"),
+        "case_numbers": case_numbers,
+        "court": block.get("courtName"),
+        "discharged": block.get("isDischarged"),
+        "last_message": block.get("lastMessageName"),
+        "last_message_date": block.get("lastMessageDate"),
+    }
+    if found:
+        state = "дело завершено" if block.get("legalCaseClosed") else "дело идёт"
+        parsed["summary"] = f"есть в реестре банкротств ({state})"
+    else:
+        parsed["summary"] = "в реестре банкротств нет"
+    return ("hit" if found else "ok"), parsed
+
+
+@dataclass(frozen=True)
+class BureauBlock:
+    path: tuple[str, ...]  # путь от content («Структура отчёта» в описании блока)
+    source: str  # наш источник, рядом с проверкой которого показываем
+    source_ids: tuple[str, ...]  # data[].state.sources[]._id — ответил ли источник
+    parse: Callable[[dict], tuple[str, dict]]
+
+
+# Блоки подробного отчёта, описания которых уже есть (кабинет → Документация →
+# блок → «Структура отчёта»). Остальные (паспорт, ИНН, НПД, перечни) — по мере
+# появления описаний; без описания блок просто не показывается.
+BUREAU_BLOCKS: list[BureauBlock] = [
+    BureauBlock(
+        path=("check_person", "proceeding_v2", "executive_v2"), source="fssp",
+        source_ids=("check_person/executive_proceeding_base",), parse=_parse_fssp,
+    ),
+    BureauBlock(
+        path=("check_person", "bankruptcy_short"), source="fedresurs",
+        source_ids=("check_person/fedresurs_short",), parse=_parse_bankruptcy,
+    ),
+]
+
+
+def _dig(content: dict, path: tuple[str, ...]) -> Any:
+    node: Any = content
+    for key in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(key)
+    return node
 
 
 def extract_bureau_checks(response: dict) -> list[BureauCheck]:
-    _history, content = _credit_history(response)
-    person = content.get("check_person") or {}
+    """Проверки из подробного отчёта. Источник не ответил (state не OK) —
+    source_unavailable; источник ответил, а блока нет — «ничего не найдено»;
+    источника в отчёте нет вовсе (не входит в пакет) — проверки нет."""
     checks: list[BureauCheck] = []
-    for key, source in BUREAU_BLOCKS.items():
-        block = person.get(key)
-        if not isinstance(block, dict):
-            continue
-        state = str((block.get("src_meta") or {}).get("state", "OK")).upper()
-        checks.append(BureauCheck(
-            source=source, block=key, status="ok" if state == "OK" else "source_unavailable",
-            parsed={k: v for k, v in block.items() if k != "src_meta"},
-        ))
+    for item in response.get("data") or []:
+        content = item.get("content") or {}
+        states = {
+            s.get("_id"): str(s.get("state", "")).upper()
+            for s in (item.get("state") or {}).get("sources") or []
+            if isinstance(s, dict)
+        }
+        for spec in BUREAU_BLOCKS:
+            block_key = ".".join(spec.path)
+            source_states = [states[i] for i in spec.source_ids if i in states]
+            if source_states and "OK" not in source_states:
+                checks.append(BureauCheck(
+                    source=spec.source, block=block_key, status="source_unavailable",
+                    parsed={"summary": "источник бюро не ответил", "source_state": source_states[0]},
+                ))
+                continue
+            block = _dig(content, spec.path)
+            if not isinstance(block, dict):
+                if not source_states:
+                    continue
+                block = {}  # источник ответил OK, записей нет
+            status, parsed = spec.parse(block)
+            checks.append(BureauCheck(source=spec.source, block=block_key, status=status, parsed=parsed))
     return checks
 
 

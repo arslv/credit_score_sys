@@ -56,7 +56,8 @@ function BureauLines({ checks }: { checks: BureauCheck[] }) {
     <ul className="bureau-lines">
       {checks.map((b) => (
         <li key={b.id} className={`manual-check__status bureau-line bureau-line--${checkTone(b.status)}`}>
-          <b>{capitalize(subjectTypeLabel(b.subject_type))}:</b> {checkResultLabel(b.source, b.status)} <BkiTag />
+          <b>{capitalize(subjectTypeLabel(b.subject_type))}:</b> {checkResultLabel(b.source, b.status)}
+          {typeof b.parsed?.summary === "string" && <> — {b.parsed.summary}</>} <BkiTag />
           <span className="muted"> · {formatDateTime(b.created_at)}</span>
         </li>
       ))}
