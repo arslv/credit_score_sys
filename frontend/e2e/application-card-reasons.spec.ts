@@ -197,5 +197,5 @@ test("ход заявки: событие стадии Б с деталями, �
   // У этой заявки решение сразу на стадии Б — события стадии А нет, а не «в обработке».
   await expect(feed.locator(".ev", { hasText: "Стадия А" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Нужно сделать" })).toHaveCount(0);
-  await expect(page.getByText(/Нужно ваше действие/)).toBeVisible();
+  await expect(page.getByText(/нужно ваше действие/i)).toBeVisible();
 });

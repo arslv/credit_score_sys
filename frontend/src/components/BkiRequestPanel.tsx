@@ -35,9 +35,11 @@ export function BkiRequestPanel({
   const pending = order?.pending ? order : null;
 
   return (
-    <section className="mc bki-request" data-testid="bki-request">
+    <section className="pf-card bki-request" data-testid="bki-request" aria-labelledby="bki-request-title">
       <div className="mc__head">
-        <h3 className="mc__title">Кредитная история</h3>
+        <h2 id="bki-request-title" className="pf-section-title bki-request__title">
+          Кредитная история (БКИ)
+        </h2>
         {!pending && <span className="action-tag">требуется действие</span>}
       </div>
 
@@ -55,11 +57,13 @@ export function BkiRequestPanel({
       ) : canOperate ? (
         <>
           <div className="bki-request__buttons">
-            {types.map((t) => (
+            {/* Первый вид — основной (обычно хватает его), остальные — дороже,
+                нужны редко: серые. */}
+            {types.map((t, i) => (
               <button
                 key={t.code}
                 type="button"
-                className={t.allows_approval ? "btn btn-primary" : "btn"}
+                className={i === 0 ? "btn btn-primary" : "btn"}
                 disabled={mutation.isPending}
                 onClick={() => mutation.mutate(t.code)}
               >
@@ -67,11 +71,16 @@ export function BkiRequestPanel({
               </button>
             ))}
           </div>
-          <p className="muted bki-request__hint">
-            {types
-              .map((t) => `${t.label} — ${t.allows_approval ? "с кредитами и просрочками, дороже" : "без кредитов, одобрить по нему нельзя"}`)
-              .join(" · ")}
-          </p>
+          {types.length > 1 && (
+            <p className="muted bki-request__hint">
+              {types[0]!.label} — балл, просрочки и платежи, обычно его достаточно ·{" "}
+              {types
+                .slice(1)
+                .map((t) => t.label)
+                .join(", ")}{" "}
+              — дороже, нужен редко: плюс ФССП, банкротство, паспорт и другие проверки
+            </p>
+          )}
         </>
       ) : (
         <p className="muted">Запрос в БКИ делает оператор или администратор.</p>

@@ -354,12 +354,14 @@ export function ApplicationDetailPage() {
   const bkiWaiting = app.status === "awaiting_bki";
   const bkiNeedsAction = bkiWaiting && !app.bki_order?.pending;
   const actionCount = Number(fsspNeedsAction) + Number(fedresursNeedsAction) + Number(bkiNeedsAction);
+  // Ручные проверки (ФССП, банкротство) — одна карточка на постоянном месте:
+  // отметили одну — вторая не перескакивает.
+  const manualActionCount = Number(fsspNeedsAction) + Number(fedresursNeedsAction);
   // После отказа или истечения ручные проверки уже ничего не меняют — блок
   // скрыт (результаты, если были, остаются в «Что проверили»). Проверки, что
   // ждут действия, показаны выше в «Нужно ваше действие».
   const manualRelevant = !["rejected_a", "rejected_b", "expired"].includes(app.status);
-  const manualInAction = fsspNeedsAction || fedresursNeedsAction;
-  const showManual = manualRelevant && !manualInAction;
+  const showManual = manualRelevant || fsspNeedsAction || fedresursNeedsAction;
 
   const clientBlock = clientRows({
     clientName: app.client_name,
@@ -802,51 +804,47 @@ export function ApplicationDetailPage() {
         </ol>
       </section>
 
-      {(actionCount > 0 || bkiWaiting) && (
-        <div className="pf-card pf-action">
-          <div className="pf-action__head">
-            <span className="pf-action__icon" aria-hidden="true">
-              !
-            </span>
-            {actionCount === 0
-              ? "Ждём ответа бюро кредитных историй"
-              : `Нужно ваше действие — ${actionCount === 1 ? "1 шаг" : `${actionCount} шага`}`}
-          </div>
-          {bkiWaiting && (
-            <BkiRequestPanel
-              applicationId={app.id}
-              types={app.bki_report_types ?? []}
-              order={app.bki_order}
-              canOperate={canOperateFssp}
-            />
+      {/* Кредитная история — отдельным блоком: запрос в БКИ платный, по кнопке. */}
+      {bkiWaiting && (
+        <BkiRequestPanel
+          applicationId={app.id}
+          types={app.bki_report_types ?? []}
+          order={app.bki_order}
+          canOperate={canOperateFssp}
+        />
+      )}
+
+      {showManual && (
+        // Вид карточки не меняется, когда одна проверка пройдена: те же
+        // разделы на тех же местах, меняется только подсветка.
+        <div className={manualActionCount > 0 ? "pf-card pf-action" : "pf-card pf-action pf-action--done"}>
+          {manualActionCount > 0 ? (
+            <div className="pf-action__head">
+              <span className="pf-action__icon" aria-hidden="true">
+                !
+              </span>
+              Ручные проверки — нужно ваше действие
+            </div>
+          ) : (
+            <h2 className="pf-section-title">Ручные проверки</h2>
           )}
           {leftText && <p className="pf-action__left">Осталось: {leftText}</p>}
-          {manualInAction && fsspSection}
-          {manualInAction && fedresursSection}
+          {fsspSection}
+          {fedresursSection}
         </div>
       )}
 
       {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
 
-      <div className={showManual ? "ac2-grid" : "ac2-grid ac2-grid--single"}>
-        <section className="pf-card pf-feed">
-          <h2 className="pf-section-title">Ход заявки</h2>
-          <ol className="feed">
-            {events.map((e) => (
-              <FeedRow key={e.key} event={e} />
-            ))}
-          </ol>
-          {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
-        </section>
-
-        {showManual && (
-          <div className="pf-card pf-manual">
-            <h2 className="pf-section-title">Ручные проверки</h2>
-            {fsspSection}
-            {fedresursSection}
-          </div>
-        )}
-      </div>
+      <section className="pf-card pf-feed">
+        <h2 className="pf-section-title">Ход заявки</h2>
+        <ol className="feed">
+          {events.map((e) => (
+            <FeedRow key={e.key} event={e} />
+          ))}
+        </ol>
+        {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
+      </section>
 
       {/* Всё вспомогательное — ниже и свёрнуто: открывают, когда нужно. */}
       <div className="more">

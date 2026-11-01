@@ -4834,3 +4834,23 @@ mark {
 
 .bureau-line--bad::before { background: var(--status-bad); }
 .bureau-line--warn::before { background: var(--status-gray); }
+
+/* Кредитная история — отдельный блок над ручными проверками. */
+.bki-request {
+  padding: var(--space-4) var(--space-5);
+  border-left: 3px solid var(--color-accent);
+}
+
+.bki-request__title {
+  margin: 0;
+}
+
+/* Ручные проверки без невыполненных шагов — та же карточка, без подсветки. */
+.pf-action--done {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+.pf-action--done .pf-section-title {
+  margin-bottom: var(--space-3);
+}
