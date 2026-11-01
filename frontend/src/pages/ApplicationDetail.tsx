@@ -535,6 +535,7 @@ export function ApplicationDetailPage() {
         fullName={app.client_name ?? null}
         birthDate={birthText(birthDate)}
         inn={innOf("applicant", null)}
+        address={ocrValue(app.ocr_result?.fields ?? null, "registration_address") ?? null}
         latestCheck={applicantFedresurs}
         canOperate={canOperateFssp}
       />
@@ -547,6 +548,7 @@ export function ApplicationDetailPage() {
           fullName={guarantorName || null}
           birthDate={birthText(app.guarantor_profile?.birth_date as string | undefined)}
           inn={innOf("guarantor", app.guarantor_id)}
+          address={(app.guarantor_profile?.registration_address as string | undefined) ?? null}
           latestCheck={findLatestCheck("fedresurs", "guarantor", app.guarantor_id)}
           canOperate={canOperateFssp}
         />
@@ -667,13 +669,17 @@ export function ApplicationDetailPage() {
                 <Badge value={app.status} label={applicationStatusLabel(app.status)} />
               )}
             </div>
-            {explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>}
-            {grayInCrm && <p className="verdict-action">Решение принимает оператор в CRM.</p>}
-            {fsspDoneAfterGray && (
-              <p className="verdict-action">
-                ФССП уже пройдена — новое решение будет, когда оператор CRM нажмёт «Рассмотреть» ещё раз.
+            {/* Причина — на момент решения. ФССП с тех пор пройдена — так и
+                пишем, а не «не пройдена», как было тогда. */}
+            {fsspDoneAfterGray ? (
+              <p className="pf-verdict__reason">
+                На момент решения ФССП не была пройдена. Сейчас пройдена — новое решение будет, когда оператор
+                CRM нажмёт «Рассмотреть» ещё раз.
               </p>
+            ) : (
+              explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>
             )}
+            {grayInCrm && <p className="verdict-action">Решение принимает оператор в CRM.</p>}
             {latestDecision?.freeze && (
               <p className="verdict-action">
                 Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.

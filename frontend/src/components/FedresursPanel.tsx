@@ -38,6 +38,7 @@ export function FedresursPanel({
   fullName,
   birthDate,
   inn,
+  address,
   latestCheck,
   canOperate,
 }: {
@@ -50,6 +51,10 @@ export function FedresursPanel({
   birthDate: string | null;
   /** ИНН из проверки ФНС — по нему поиск точный, без однофамильцев. */
   inn: string | null;
+  /** Адрес прописки — Федресурс показывает адрес у каждого найденного, по
+      нему отличают однофамильцев, когда ИНН не известен (даты рождения в
+      списке на сайте нет). */
+  address?: string | null;
   latestCheck: FedresursCheckSummary | null;
   canOperate: boolean;
 }) {
@@ -132,7 +137,9 @@ export function FedresursPanel({
           )}
           {searchUrl && (
             <span className="fed-check__hint">
-              {inn ? `по ИНН ${inn}` : birthDate ? `сверьте дату рождения ${birthDate}` : "по ФИО"}
+              {inn
+                ? `по ИНН ${inn}${birthDate ? ` · д.р. ${birthDate}` : ""}`
+                : `ИНН не найден — ищем по ФИО${address ? `, сверяйте адрес: ${address}` : ""}`}
               <button
                 type="button"
                 className="btn-link fed-check__copy"
