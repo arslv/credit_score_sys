@@ -58,7 +58,7 @@ docker compose stop worker beat && docker compose exec api python -m app.cli.see
 
 1. **Ничего не перезаписываем.** Таблицы `decisions`, `feature_snapshots`, `checks`,
    `status_history`, `external_snapshots`, `ocr_results`, `integration_events`,
-   `ruleset_versions`, `audit_log`, `bki_reports`, `bki_request_orders`, `system_settings` — только INSERT. Никаких UPDATE/DELETE
+   `ruleset_versions`, `audit_log`, `bki_reports`, `bki_request_orders`, `bki_bureau_checks`, `system_settings` — только INSERT. Никаких UPDATE/DELETE
    по ним. `applications.status` — единственный изменяемый указатель; каждое его
    изменение сопровождается записью в `status_history` в той же транзакции.
    (`bki_requests_in_flight` — исключение: техническое состояние

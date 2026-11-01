@@ -46,6 +46,31 @@ class BkiReport(Base):
     completed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
 
 
+class BkiBureauCheck(Base):
+    """Проверка из подробного отчёта бюро (ФССП, банкротство, паспорт, ИНН…)
+    — append-only (правило 1). Показывается в карточке рядом с нашей
+    проверкой того же источника, с пометкой «от БКИ»; в решение не входит."""
+
+    __tablename__ = "bki_bureau_checks"
+    __table_args__ = (sa.Index("ix_bki_bureau_checks_application", "application_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), sa.ForeignKey("applications.id"), nullable=False
+    )
+    subject_type: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    source: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    block: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    status: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    parsed: Mapped[dict | None] = mapped_column(JSONB)
+    report_type: Mapped[str | None] = mapped_column(sa.Text)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
 class BkiRequestOrder(Base):
     """Заказ отчёта БКИ сотрудником — кто и какой вид отчёта выбрал
     (append-only, правило 1 CLAUDE.md). Стадия Б в ручном режиме ждёт

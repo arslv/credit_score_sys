@@ -215,7 +215,7 @@ const REASON_CODE_LABELS: Record<string, string> = {
   UNKNOWN_TARIFF: "Тариф не найден в конфиге",
   BKI_CONSENT_MISSING_OR_EXPIRED: "Нет согласия на запрос БКИ",
   BKI_NOT_CONFIGURED: "БКИ не подключено",
-  BKI_REPORT_TYPE_NO_APPROVAL: "Отчёт БКИ без кредитов",
+  BKI_REPORT_TYPE_NO_APPROVAL: "Отчёт БКИ без права одобрения",
   FSSP_NOT_CHECKED: "ФССП не проверено",
   BKI_CLIENT_UNKNOWN: "Клиент не определён однозначно",
   BKI_SOURCE_UNAVAILABLE: "БКИ временно недоступно",

@@ -156,19 +156,27 @@ bki:
   consent_max_age_days: 30 # ТЗ, «Согласия»: согласие на КИ ограничено по сроку
   in_flight_timeout_minutes: 10 # T11: зависший запрос (воркер упал) считается сбойным после этого срока
   # Виды отчёта для ручного запроса — две кнопки в карточке заявки (запрос
-  # платный, только по кнопке сотрудника, BKI_REQUEST_MODE=manual).
-  # provider_code — код у бюро (Спектрум Бюро, cbch.ru: reportCode 1 — полный
-  # кредитный отчёт, 2 — информационная часть КИ). allows_approval: false —
-  # в отчёте нет кредитов, долговую нагрузку не посчитать: одобряет человек.
+  # платный, только по кнопке сотрудника, BKI_REQUEST_MODE=manual). Бюро —
+  # Спектрум Дата (app/sources/spectrum.py): provider_code — идентификатор
+  # пакета в их API, заполнить после доступа к API.
+  #   basic    — пакет «Кредитный рейтинг»: балл, просрочки, число кредитов,
+  #              средний платёж (диапазонами), обращения в бюро;
+  #   detailed — пакет «Проверка соискателя — Премиум»: то же и ~30 проверок
+  #              (ФССП, банкротство, паспорт, ИНН…) — показываются в карточке
+  #              рядом с нашими, в решение не входят.
+  # allows_approval: false — одобрять по такому отчёту нельзя.
   report_types:
     basic:
       label: Обычный
-      provider_code: "2"
-      allows_approval: false
+      provider_code: ""
+      allows_approval: true
     detailed:
       label: Подробный
-      provider_code: "1"
+      provider_code: ""
       allows_approval: true
+  # Суммы и количества у бюро — диапазонами: для ПДН берём верхнюю границу
+  # (осторожнее). lower | middle | upper.
+  range_bound: upper
 
 score_thresholds:
   enabled: true

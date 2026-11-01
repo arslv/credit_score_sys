@@ -46,6 +46,7 @@ from app.integrations.partner_notifier import PartnerNotifier
 from app.integrations.status_mapping import build_operator_comment, get_status_mapping, render_comment
 from app.models import (
     Application,
+    BkiBureauCheck,
     BkiRequestOrder,
     Check,
     Client,
@@ -623,7 +624,7 @@ async def finalize_stage_b(
             report = deserialize_report(cached_row.report_raw)
             bki_result_features = compute_bki_features(
                 report, monthly_income=declared_income, declared_monthly_obligations=declared_obligations,
-                installment_payment=installment, today=today,
+                installment_payment=installment, today=today, range_bound=config.bki.range_bound,
             )
             score = float(cached_row.score) if cached_row.score is not None else report.score
             return await _write_financial_decision(
@@ -650,6 +651,23 @@ async def finalize_stage_b(
             tariff_offer_comment=tariff_offer_comment, partner_client=partner_client, bki_provider=bki_provider,
             report_type=report_type,
         )
+
+
+async def _record_bureau_checks(
+    session_factory: async_sessionmaker, application_id: UUID, report_type: str | None, checks: list,
+) -> None:
+    """Проверки из подробного отчёта бюро (ФССП, банкротство, паспорт…) —
+    отдельной таблицей, рядом с нашими: в решение и в наши правила не входят
+    (решение владельца — наши проверки идут как обычно)."""
+    if not checks:
+        return
+    async with session_factory() as session:
+        for check in checks:
+            session.add(BkiBureauCheck(
+                application_id=application_id, subject_type="applicant", source=check.source, block=check.block,
+                status=check.status, parsed=check.parsed, report_type=report_type,
+            ))
+        await session.commit()
 
 
 async def _pending_bki_order(session, application_id: UUID) -> BkiRequestOrder | None:
@@ -711,18 +729,22 @@ async def _finalize_after_bki_call(
 
     try:
         entry = config.bki.report_types.get(report_type) if report_type else None
-        result = await bki_provider.request_report(subject, report_code=entry.provider_code if entry else None)
+        result = await bki_provider.request_report(subject, report_code=(entry.provider_code or None) if entry else None)
     except Exception:  # провайдер обязан не бросать (см. app/sources/bki.py) — защита
         logger.exception("bki_provider_raised", application_id=str(application_id))
         result = BkiProviderResult(status=CheckStatus.ERROR, error_text="провайдер БКИ выбросил исключение")
 
     today = datetime.now(timezone.utc).date()
     report_ok = result.status in (CheckStatus.OK, CheckStatus.NO_DATA) and result.report is not None
-    report_raw = serialize_report(result.report) if report_ok else None
+    # Правило 3: сырой ответ бюро — рядом с разобранным отчётом.
+    report_raw = {
+        **(serialize_report(result.report) if report_ok else {}),
+        **({"raw": result.raw} if result.raw is not None else {}),
+    } or None
     bki_result_features = (
         compute_bki_features(
             result.report, monthly_income=declared_income, declared_monthly_obligations=declared_obligations,
-            installment_payment=installment, today=today,
+            installment_payment=installment, today=today, range_bound=config.bki.range_bound,
         )
         if report_ok
         else {"features": {}}
@@ -735,6 +757,7 @@ async def _finalize_after_bki_call(
         score=Decimal(str(score)) if score is not None else None,  # правило 5 CLAUDE.md — Decimal, не float
         error_text=result.error_text, report_type=report_type,
     )
+    await _record_bureau_checks(session_factory, application_id, report_type, result.extra_checks)
     await release_in_flight(session_factory, in_flight_id, failed=not report_ok)
 
     async with session_factory() as session:

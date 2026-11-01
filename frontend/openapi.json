@@ -2951,6 +2951,14 @@
                 "type": "null"
               }
             ]
+          },
+          "bureau_checks": {
+            "items": {
+              "$ref": "#/components/schemas/BureauCheckOut"
+            },
+            "type": "array",
+            "title": "Bureau Checks",
+            "default": []
           }
         },
         "type": "object",
@@ -3576,6 +3584,71 @@
           "data_as_of"
         ],
         "title": "Body_upload_payments_api_imports_payments_post"
+      },
+      "BureauCheckOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "subject_type": {
+            "type": "string",
+            "title": "Subject Type"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "block": {
+            "type": "string",
+            "title": "Block"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "report_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Type"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "parsed": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parsed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "subject_type",
+          "source",
+          "block",
+          "status",
+          "report_type",
+          "created_at",
+          "parsed"
+        ],
+        "title": "BureauCheckOut"
       },
       "CheckOut": {
         "properties": {

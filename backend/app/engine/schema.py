@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -119,6 +119,9 @@ class BkiConfig(BaseModel):
     # Виды отчёта для ручного запроса (кнопки в карточке). Пусто — кнопки без
     # выбора вида не показываются (старые версии правил).
     report_types: dict[str, BkiReportTypeConfig] = Field(default_factory=dict)
+    # Бюро отдаёт суммы и количества диапазонами («100000-149999»): какую
+    # границу брать для ПДН и правил — lower | middle | upper (осторожнее).
+    range_bound: Literal["lower", "middle", "upper"] = "upper"
 
 
 class TariffConfig(BaseModel):

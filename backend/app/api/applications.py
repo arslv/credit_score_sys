@@ -25,6 +25,7 @@ from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.status_mapping import _render_rule_text, build_operator_comment, get_all_reason_notes
 from app.models import (
     Application,
+    BkiBureauCheck,
     BkiReport,
     BkiRequestOrder,
     Check,
@@ -702,6 +703,17 @@ class ClientRatingOut(BaseModel):
     ruleset_version: int
 
 
+class BureauCheckOut(BaseModel):
+    id: UUID
+    subject_type: str
+    source: str
+    block: str
+    status: str
+    report_type: str | None
+    created_at: datetime
+    parsed: dict[str, Any] | None
+
+
 class BkiReportTypeOut(BaseModel):
     code: str
     label: str
@@ -770,6 +782,9 @@ class ApplicationDetail(BaseModel):
     # действующих правилах) и последний заказ по заявке.
     bki_report_types: list[BkiReportTypeOut] = []
     bki_order: BkiOrderOut | None = None
+    # Проверки из подробного отчёта бюро (ФССП, банкротство…) — рядом с
+    # нашими, с пометкой «от БКИ»; в решение не входят.
+    bureau_checks: list[BureauCheckOut] = []
 
 
 async def _bki_request_info(
@@ -1086,6 +1101,12 @@ async def get_application(
         )
 
     bki_types, bki_order = await _bki_request_info(session, application)
+    bureau_rows = (
+        await session.execute(
+            select(BkiBureauCheck).where(BkiBureauCheck.application_id == application.id)
+            .order_by(BkiBureauCheck.created_at)
+        )
+    ).scalars().all()
     return ApplicationDetail(
         id=application.id, number=application.number, external_id=application.external_id,
         status=application.status, client_name=client_name, goods_name=application.goods_name,
@@ -1135,6 +1156,13 @@ async def get_application(
         passport_checks=passport_checks,
         bki_report_types=bki_types,
         bki_order=bki_order,
+        bureau_checks=[
+            BureauCheckOut(
+                id=b.id, subject_type=b.subject_type, source=b.source, block=b.block, status=b.status,
+                report_type=b.report_type, created_at=b.created_at, parsed=b.parsed,
+            )
+            for b in bureau_rows
+        ],
     )
 
 

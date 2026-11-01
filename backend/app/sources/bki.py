@@ -10,7 +10,7 @@ is_configured=False (NotConfiguredBkiProvider) — честное «нет до�
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.sources.base import CheckStatus, Subject
 
@@ -37,6 +37,10 @@ class BkiReport:
     contracts: list[BkiContract] = field(default_factory=list)
     inquiries: list[BkiInquiry] = field(default_factory=list)
     score: int | None = None  # покупной балл бюро
+    # Сводка вместо списка договоров — у бюро, которое отдаёт агрегаты
+    # диапазонами (Спектрум Дата, app/sources/spectrum.py): тогда признаки
+    # считаются по ней (app/engine/bki_features.py).
+    summary: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,10 @@ class BkiProviderResult:
     status: CheckStatus  # ok | no_data | source_unavailable | error
     report: BkiReport | None = None
     error_text: str | None = None
+    # Сырой ответ бюро как есть (правило 3) и проверки из подробного отчёта
+    # (ФССП, банкротство…) — показываются рядом с нашими, в решение не входят.
+    raw: dict | None = None
+    extra_checks: list[Any] = field(default_factory=list)
 
 
 class BkiProvider(Protocol):
@@ -185,6 +193,7 @@ def serialize_report(report: BkiReport) -> dict:
             {"requested_at": i.requested_at.isoformat(), "requester": i.requester} for i in report.inquiries
         ],
         "score": report.score,
+        "summary": report.summary,
     }
 
 
@@ -207,4 +216,5 @@ def deserialize_report(raw: dict) -> BkiReport:
             for i in (raw or {}).get("inquiries", [])
         ],
         score=(raw or {}).get("score"),
+        summary=(raw or {}).get("summary"),
     )

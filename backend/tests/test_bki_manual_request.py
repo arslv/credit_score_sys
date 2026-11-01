@@ -4,13 +4,19 @@
 заказа и с кодом выбранного вида."""
 
 import uuid
+from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+import pytest_asyncio
+import yaml
 from sqlalchemy import select
 
 from app.config import get_settings
+from app.engine.schema import parse_ruleset
 from app.engine.stage_b_pipeline import finalize_stage_b, run_stage_b
+from app.engine.versions import save_ruleset_version
 from app.models import AuditLog, BkiReport, BkiRequestOrder, Decision, StatusHistory
 from app.models import Application
 from app.sources.bki import FakeBkiProvider, good_history_report
@@ -95,7 +101,7 @@ async def test_detailed_order_requests_full_report_and_approves(
     status = await finalize_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=provider)
 
     assert status == "approved"
-    assert provider.requested_codes == ["1"]  # полный кредитный отчёт у бюро
+    assert provider.requested_codes == [None]  # пакет бюро ещё не задан в правилах
     async with session_factory() as session:
         report = (await session.execute(select(BkiReport).where(BkiReport.application_id == application_id))).scalar_one()
         assert report.report_type == "detailed"
@@ -121,11 +127,24 @@ async def test_detailed_order_requests_full_report_and_approves(
     assert [d["status"] for d in sent] == ["approved"]
 
 
-async def test_basic_order_never_approves(
-    manual_mode, queued, admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+@pytest_asyncio.fixture
+async def basic_without_approval(active_ruleset, session_factory):
+    """Версия правил, где по «обычному» отчёту одобрять нельзя
+    (allows_approval: false) и заданы пакеты бюро."""
+    raw = yaml.safe_load(Path(get_settings().ruleset_path).read_text(encoding="utf-8"))
+    raw["effective_from"] = (date.today() - timedelta(days=1)).isoformat()
+    raw["bki"]["report_types"]["basic"].update(allows_approval=False, provider_code="BASIC@test")
+    raw["bki"]["report_types"]["detailed"]["provider_code"] = "PREMIUM@test"
+    async with session_factory() as session:
+        row = await save_ruleset_version(session, parse_ruleset(raw))
+        await session.commit()
+    return row
+
+
+async def test_report_type_without_approval_never_approves(
+    manual_mode, queued, admin_client, partner_admin, partner_client, storage, session_factory, basic_without_approval,
 ):
-    """«Обычный» — информационная часть КИ без кредитов: долговую нагрузку не
-    посчитать, одобряет человек (allows_approval: false в правилах)."""
+    """allows_approval: false — по такому отчёту одобряет только человек."""
     external_id, application_id = await _ready_application(partner_admin, partner_client, storage, session_factory)
     provider = FakeBkiProvider(reports=_bki_reports_for_applicant(good_history_report()))
     await run_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=provider)
@@ -135,14 +154,14 @@ async def test_basic_order_never_approves(
     status = await finalize_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=provider)
 
     assert status == "gray_zone"
-    assert provider.requested_codes == ["2"]
+    assert provider.requested_codes == ["BASIC@test"]
     async with session_factory() as session:
         decision = (await session.execute(select(Decision).where(Decision.application_id == application_id))).scalar_one()
         assert decision.outcome == "manual_review"
         assert decision.reason_code == "BKI_REPORT_TYPE_NO_APPROVAL"
         assert decision.score == Decimal("780.00")
     sent = await _all_decisions(partner_admin, external_id)
-    assert "информационная часть" in sent[-1]["reason"]
+    assert "решение за оператором" in sent[-1]["reason"]
 
 
 async def test_order_rules(
@@ -169,7 +188,7 @@ async def test_order_rules(
     body = detail.json()
     assert body["status"] == "awaiting_bki"
     assert [(t["code"], t["label"], t["allows_approval"]) for t in body["bki_report_types"]] == [
-        ("basic", "Обычный", False), ("detailed", "Подробный", True),
+        ("basic", "Обычный", True), ("detailed", "Подробный", True),
     ]
     assert body["bki_order"] is None
     async with session_factory() as session:

@@ -35,6 +35,34 @@ import {
 
 type Decision = components["schemas"]["DecisionOut"];
 type CheckRow = components["schemas"]["CheckOut"];
+type BureauCheck = components["schemas"]["BureauCheckOut"];
+
+// Проверка из подробного отчёта бюро — рядом с нашей, с этой пометкой; наша
+// проверка — без пометки (решение владельца: обе видны, в решение входит наша).
+function BkiTag() {
+  return (
+    <span className="bki-tag" title="Проверка из отчёта бюро кредитных историй, не наша">
+      БКИ
+    </span>
+  );
+}
+
+const capitalize = (text: string) => (text ? text[0]!.toUpperCase() + text.slice(1) : text);
+
+// Строки «по данным БКИ» под нашей ручной проверкой того же источника.
+function BureauLines({ checks }: { checks: BureauCheck[] }) {
+  if (checks.length === 0) return null;
+  return (
+    <ul className="bureau-lines">
+      {checks.map((b) => (
+        <li key={b.id} className={`manual-check__status bureau-line bureau-line--${checkTone(b.status)}`}>
+          <b>{capitalize(subjectTypeLabel(b.subject_type))}:</b> {checkResultLabel(b.source, b.status)} <BkiTag />
+          <span className="muted"> · {formatDateTime(b.created_at)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 type ManualOverride = components["schemas"]["ManualOverrideOut"];
 type EventTone = "ok" | "bad" | "warn" | "info" | "wait";
 type JourneyState = "done" | "bad" | "warn" | "current" | "pending" | "skipped";
@@ -110,8 +138,16 @@ function OperatorOverride({ override: o }: { override: ManualOverride }) {
 
 // Проверки стадии — точками в строке события, без пояснений: что не в
 // порядке, видно по цвету, подробности — по «подробнее» у события.
-function CheckChips({ checks, passport }: { checks: CheckRow[]; passport: PassportCheck[] }) {
-  if (checks.length === 0 && passport.length === 0) return null;
+function CheckChips({
+  checks,
+  passport,
+  bureau = [],
+}: {
+  checks: CheckRow[];
+  passport: PassportCheck[];
+  bureau?: BureauCheck[];
+}) {
+  if (checks.length === 0 && passport.length === 0 && bureau.length === 0) return null;
   const passportTone = passport.some((i) => i.status === "fail")
     ? "bad"
     : passport.some((i) => i.status !== "ok")
@@ -133,6 +169,11 @@ function CheckChips({ checks, passport }: { checks: CheckRow[]; passport: Passpo
         >
           {sourceMeta(c.source).label}
           {c.subject_type === "guarantor" && " (поручитель)"}
+        </li>
+      ))}
+      {bureau.map((b) => (
+        <li key={b.id} className={`ev__chip ev__chip--${checkTone(b.status)}`} title={checkResultLabel(b.source, b.status)}>
+          {sourceMeta(b.source).label} <BkiTag />
         </li>
       ))}
     </ul>
@@ -246,6 +287,11 @@ export function ApplicationDetailPage() {
   const reviewedAt = reviewSnapshots.length > 0 ? reviewSnapshots[reviewSnapshots.length - 1]!.received_at : null;
 
   const visibleChecks = app.checks.filter((c) => c.source !== "mvd");
+  const bureauChecks = app.bureau_checks ?? [];
+  const bureauLatest = bureauChecks.filter(
+    (b, i) => !bureauChecks.slice(i + 1).some((n) => n.source === b.source && n.subject_type === b.subject_type),
+  );
+  const bureauFor = (source: string) => bureauLatest.filter((b) => b.source === source);
   // Поручитель после повторного «Рассмотреть» записывается заново (новый id):
   // в ленте и на шкале — проверки только текущего; вся история — в таблице.
   const currentChecks = visibleChecks.filter(
@@ -383,7 +429,9 @@ export function ApplicationDetailPage() {
         at: d.created_at,
         tone: decisionEventTone(d),
         title: `Стадия ${stageLabel(d.stage)}: ${outcome[0]!.toLowerCase()}${outcome.slice(1)}`,
-        chips: isLatestOfStage ? <CheckChips checks={stageChecks} passport={passport} /> : undefined,
+        chips: isLatestOfStage ? (
+          <CheckChips checks={stageChecks} passport={passport} bureau={d.stage === "B" ? bureauLatest : []} />
+        ) : undefined,
         details: isLatestOfStage ? (
           <>
             {reasons}
@@ -459,6 +507,7 @@ export function ApplicationDetailPage() {
           hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("guarantor")}
         />
       )}
+      <BureauLines checks={bureauFor("fssp")} />
     </section>
   );
 
@@ -494,6 +543,7 @@ export function ApplicationDetailPage() {
           canOperate={canOperateFssp}
         />
       )}
+      <BureauLines checks={bureauFor("fedresurs")} />
     </section>
   );
 
@@ -840,7 +890,7 @@ export function ApplicationDetailPage() {
         <details className="more__item">
           <summary>
             <h2 className="more__name">Что проверили</h2>
-            <span className="more__hint">все проверки и повторы одной таблицей · {visibleChecks.length}</span>
+            <span className="more__hint">все проверки и повторы одной таблицей · {visibleChecks.length + bureauChecks.length}</span>
           </summary>
           <div className="more__body">
             <table className="table">
@@ -865,6 +915,17 @@ export function ApplicationDetailPage() {
                     <td>{checkResultLabel(c.source, c.status)}</td>
                     <td className="muted">{formatDateTime(c.started_at)}</td>
                     <td className="muted">{c.error_text ?? "—"}</td>
+                  </tr>
+                ))}
+                {bureauChecks.map((b) => (
+                  <tr key={b.id}>
+                    <td>
+                      <SourceBadge source={b.source} /> <BkiTag />
+                    </td>
+                    <td className="muted">{subjectTypeLabel(b.subject_type)}</td>
+                    <td>{checkResultLabel(b.source, b.status)}</td>
+                    <td className="muted">{formatDateTime(b.created_at)}</td>
+                    <td className="muted">—</td>
                   </tr>
                 ))}
               </tbody>

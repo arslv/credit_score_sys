@@ -993,6 +993,11 @@ export interface components {
              */
             bki_report_types: components["schemas"]["BkiReportTypeOut"][];
             bki_order?: components["schemas"]["BkiOrderOut"] | null;
+            /**
+             * Bureau Checks
+             * @default []
+             */
+            bureau_checks: components["schemas"]["BureauCheckOut"][];
         };
         /** ApplicationListItem */
         ApplicationListItem: {
@@ -1178,6 +1183,33 @@ export interface components {
              * Format: date
              */
             data_as_of: string;
+        };
+        /** BureauCheckOut */
+        BureauCheckOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Subject Type */
+            subject_type: string;
+            /** Source */
+            source: string;
+            /** Block */
+            block: string;
+            /** Status */
+            status: string;
+            /** Report Type */
+            report_type: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Parsed */
+            parsed: {
+                [key: string]: unknown;
+            } | null;
         };
         /** CheckOut */
         CheckOut: {

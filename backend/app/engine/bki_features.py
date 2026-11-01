@@ -137,9 +137,54 @@ def compute_declared_pti_features(
     return {"declared_pti": declared_pti, "declared_pti_exceeds_max": declared_pti > pti_max, **installment}
 
 
+def _summary_bki_features(
+    summary: dict, *, monthly_income: Decimal, declared_monthly_obligations: Decimal,
+    installment_payment: Decimal | None, range_bound: str,
+) -> dict:
+    """Признаки по сводке бюро (диапазоны вместо договоров, Спектрум Дата).
+    Граница диапазона — bki.range_bound в правилах. Средний платёж — платёж
+    по всем действующим кредитам в месяц. Чего в сводке нет (просрочки по
+    окнам 6/12/24 мес., число просрочек, глубина истории, запросы за 3/6
+    мес.) — None: правило по такому признаку не срабатывает, а не
+    срабатывает «по нулю». Текущая просрочка — во все окна (она есть сейчас),
+    максимальная за всю историю — отдельным признаком."""
+
+    def bound(key: str) -> Decimal | None:
+        value = summary.get(key)
+        if not value:
+            return None
+        low, high = (_decimal(value[0]), _decimal(value[1]))
+        return low if range_bound == "lower" else (low + high) / 2 if range_bound == "middle" else high
+
+    factual = bound("average_payment") or Decimal("0")
+    pti = (
+        float((factual + installment_payment) / monthly_income)
+        if monthly_income > 0 and installment_payment is not None
+        else None
+    )
+    current = summary.get("current_overdue_days")
+    active = bound("active_accounts")
+    return {
+        "features": {
+            "pti": pti,
+            "bki_active_contracts_count": int(active) if active is not None else 0,
+            "bki_credit_history_depth_months": None,
+            "bki_obligations_discrepancy": float(declared_monthly_obligations - factual),
+            **{f"bki_max_overdue_{months}mo": current for months in _OVERDUE_WINDOWS_MONTHS},
+            **{f"bki_overdue_{bucket}_plus_count": None for bucket in _OVERDUE_BUCKETS},
+            "bki_inquiries_1mo": summary.get("inquiries_1mo"),
+            "bki_inquiries_3mo": None,
+            "bki_inquiries_6mo": None,
+            "bki_max_overdue_ever_days": summary.get("max_overdue_days"),
+            "bki_bad_debt": bool(summary.get("bad_debt")),
+            "bki_overdue_sum": float(bound("overdue_sum")) if bound("overdue_sum") is not None else None,
+        }
+    }
+
+
 def compute_bki_features(
     report: BkiReport, *, monthly_income: Decimal, declared_monthly_obligations: Decimal,
-    installment_payment: Decimal | None, today: date,
+    installment_payment: Decimal | None, today: date, range_bound: str = "upper",
 ) -> dict:
     """После получения отчёта: фактический ПДН и сигналы под features.* (тот
     же неймспейс, что features.fssp_* из T09). score — bare top-level
@@ -147,6 +192,11 @@ def compute_bki_features(
 
     T21: ПДН = (платежи по действующим кредитам из КИ + платёж по нашей
     рассрочке) / доход. Без платежа по рассрочке — None, не заниженная цифра."""
+    if report.summary is not None:
+        return _summary_bki_features(
+            report.summary, monthly_income=monthly_income, declared_monthly_obligations=declared_monthly_obligations,
+            installment_payment=installment_payment, range_bound=range_bound,
+        )
     active_contracts = [c for c in report.contracts if c.status == _ACTIVE]
     factual_monthly_obligations = sum((_decimal(c.monthly_payment) for c in active_contracts), Decimal("0"))
     pti = (

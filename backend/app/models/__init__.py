@@ -1,7 +1,7 @@
 from app.models.application import Application, Guarantor
 from app.models.auth import ComplianceReview, FreezeLift, Session
 from app.models.base import Base
-from app.models.bki import BkiReport, BkiRequestInFlight, BkiRequestOrder
+from app.models.bki import BkiBureauCheck, BkiReport, BkiRequestInFlight, BkiRequestOrder
 from app.models.check import Check
 from app.models.client import Client
 from app.models.contract import Contract, DelinquencyDaily, Payment, PaymentSchedule
@@ -24,6 +24,7 @@ __all__ = [
     "Application",
     "Guarantor",
     "BkiReport",
+    "BkiBureauCheck",
     "BkiRequestInFlight",
     "BkiRequestOrder",
     "Check",
