@@ -193,3 +193,19 @@ async def test_fresh_ocr_status_is_not_stuck(admin_client, session_factory):
     body = response.json()
     assert body["status"] == "ok"
     assert body["stuck_in_ocr"] == 0
+
+
+async def test_bki_configured_only_with_spectrum_credentials(admin_client, session_factory, monkeypatch):
+    """Плитки «БКИ» и «Недействительные паспорта» (паспорт проверяет бюро):
+    spectrum без логина/пароля — «не подключено», как и у стадии Б."""
+    await create_employee(session_factory, email="admin-bki@example.com", role="admin")
+    await login(admin_client, "admin-bki@example.com")
+    settings = get_settings()
+    monkeypatch.setattr(settings, "bki_provider_mode", "spectrum")
+
+    monkeypatch.setattr(settings, "spectrum_user", "")
+    assert (await admin_client.get("/api/system/status")).json()["bki_configured"] is False
+
+    monkeypatch.setattr(settings, "spectrum_user", "api@domain")
+    monkeypatch.setattr(settings, "spectrum_password", "secret")
+    assert (await admin_client.get("/api/system/status")).json()["bki_configured"] is True

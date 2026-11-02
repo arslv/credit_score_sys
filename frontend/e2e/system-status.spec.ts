@@ -52,4 +52,6 @@ test("экран: итог сверху, плитки по узлам систе
   await expect(page.getByRole("heading", { name: "Узлы системы" })).toBeVisible();
   await expect(page.getByText(/платных запросов за месяц: \d+/)).toBeVisible();
   await expect(page.locator(".sys-tile", { hasText: "Перечень Росфинмониторинга" })).toBeVisible();
+  // Паспорта — через БКИ (реестр МВД отменён): на e2e-стенде БКИ не подключено.
+  await expect(page.locator(".sys-tile", { hasText: "Недействительные паспорта" })).toContainText("не проверяются");
 });

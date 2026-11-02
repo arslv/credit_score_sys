@@ -137,15 +137,31 @@ export function SystemStatusPage() {
           hint="долг нашёлся уже после решения по заявке"
           tone={s.fssp_results_after_decision === 0 ? "ok" : "warn"}
         />
-        {s.registries.map((r) => (
-          <Tile
-            key={r.registry}
-            title={registryLabel(r.registry)}
-            value={r.registry === "mvd_invalid_passports" ? "не используется" : r.stale ? "устарел" : "свежий"}
-            hint={r.registry === "mvd_invalid_passports" ? "реестр отменён в 2023 году" : "обновляется планировщиком"}
-            tone={r.registry === "mvd_invalid_passports" ? "mute" : r.stale ? "warn" : "ok"}
-          />
-        ))}
+        {s.registries.map((r) =>
+          // Реестр МВД отменён в 2023 — недействительный паспорт проверяет
+          // бюро (блок P.0308 в «Подробном» отчёте Спектрум Даты).
+          r.registry === "mvd_invalid_passports" ? (
+            <Tile
+              key={r.registry}
+              title="Недействительные паспорта"
+              value={s.bki_configured ? "проверяются через БКИ" : "не проверяются"}
+              hint={
+                s.bki_configured
+                  ? "запрос КИ по кнопке — паспорт проверяется вместе с «Подробным» отчётом; формат, даты и код подразделения — всегда, на стадии А"
+                  : "реестр МВД отменён в 2023 году — паспорт проверяет бюро, подключите БКИ"
+              }
+              tone={s.bki_configured ? "ok" : "warn"}
+            />
+          ) : (
+            <Tile
+              key={r.registry}
+              title={registryLabel(r.registry)}
+              value={r.stale ? "устарел" : "свежий"}
+              hint="обновляется планировщиком"
+              tone={r.stale ? "warn" : "ok"}
+            />
+          ),
+        )}
       </div>
     </section>
   );
@@ -153,6 +169,5 @@ export function SystemStatusPage() {
 
 function registryLabel(registry: string): string {
   if (registry === "rosfinmon_sanctions") return "Перечень Росфинмониторинга";
-  if (registry === "mvd_invalid_passports") return "Недействительные паспорта МВД";
   return registry;
 }

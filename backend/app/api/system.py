@@ -53,6 +53,7 @@ from app.models import (
 from app.engine.fssp_alerts import active_alert_condition
 from app.registries.sync import is_registry_stale
 from app.security.deps import require_roles
+from app.sources.factory import build_bki_provider
 
 logger = structlog.get_logger()
 
@@ -197,7 +198,9 @@ async def get_system_status(
         ruleset_active_version=ruleset_active_version,
         ruleset_matches_file=ruleset_matches_file,
         fssp_results_after_decision=fssp_results_after_decision,
-        bki_configured=settings.bki_provider_mode != "not_configured",
+        # Тем же способом, что и стадия Б: spectrum без логина/пароля — тоже
+        # «не подключено» (app/sources/factory.py).
+        bki_configured=build_bki_provider(settings).is_configured,
         bki_paid_requests_this_month=bki_paid_requests_this_month,
         partner_integration_errors_last_24h=partner_errors,
         stuck_applications_over_1h=stuck,
