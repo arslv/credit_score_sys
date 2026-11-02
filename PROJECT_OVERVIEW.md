@@ -183,8 +183,12 @@ docs/             spec.md (ТЗ), TASKS.md, integration_contract.md, crm_api.yml
     расширения сверх их схемы: `employment`, `contacts`, `applicant`, `goodsName`,
     `tariff`, `monthlyPayment`, паспорт поручителя.
 - Выход (`integrations/partner_notifier.py`, база `PARTNER_OUTBOUND_URL`):
-  `/v1/integration/scoring/passport-result` и `/v1/integration/scoring/result`
-  (`orderId, status, score, reason`). Неудача — `partner_outbox_events`,
+  `/v1/integration/scoring/result` (`orderId, status, score, reason`);
+  `/v1/integration/scoring/passport-result` — только при
+  `PARTNER_SEND_PASSPORT_RESULT=true` (по умолчанию выкл., 02.11.2026).
+- Правила по шариату (`sharia_goods`) и «телефон → поручитель»
+  (`client_rating.guarantor_product_rules`) сняты в dev.yaml (02.11.2026),
+  механизмы в коде остались. Неудача — `partner_outbox_events`,
   повтор задачей `partner_outbox.drain`. 409 с `current_status` (на будущее) →
   `manual_overrides`.
 - Занятость не обязательна (`stage_b_completeness`), тарифа CRM не шлёт —

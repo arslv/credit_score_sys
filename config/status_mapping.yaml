@@ -35,7 +35,7 @@ gray_zone:
 
 approved:
   partner_status: approved
-  comment_template: "Одобрено: сумма {approved_amount}, срок {approved_term} мес., тариф {offered_tariff}, первый взнос {required_down_pay}."
+  comment_template: "Одобрено: сумма {approved_amount}, срок {approved_term} мес., первый взнос {required_down_pay}."
 
 # Тексты оператору по коду причины (T09, расширено в T11) — build_operator_comment
 # берёт шаблон по reason (или id, если reason не задан) сработавшего правила из

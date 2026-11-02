@@ -15,7 +15,7 @@ import yaml
 
 from app.config import get_settings
 from app.engine.client_rating import compute_client_rating
-from app.engine.schema import load_ruleset_from_yaml, parse_ruleset
+from app.engine.schema import RatingGuarantorProductRule, load_ruleset_from_yaml, parse_ruleset
 from app.engine.versions import save_ruleset_version
 from app.models import Application, ExternalSnapshot, OcrResult
 from tests._crm import SCORING_PATH, crm_headers, new_order_id, scoring_body
@@ -154,9 +154,17 @@ def test_other_region_not_counted(config):
 
 def test_young_client_expensive_phone_requests_guarantor(config):
     phone = _stage_b(relations=("parent",), category="phones")
-    assert any("телефон" in r.reason for r in _rate(config, age=23, stage_b=phone, financed=Decimal("55000")).guarantor_reasons)
-    assert not _rate(config, age=23, stage_b=phone, financed=Decimal("30000")).guarantor_reasons
-    assert not any("телефон" in r.reason for r in _rate(config, age=30, stage_b=phone, financed=Decimal("55000")).guarantor_reasons)
+    # В dev.yaml правило снято (решение владельца 02.11.2026).
+    assert not _rate(config, age=23, stage_b=phone, financed=Decimal("55000")).guarantor_reasons
+
+    # Механизм остался — правило можно вернуть в конфиге.
+    with_rule = config.model_copy(update={"guarantor_product_rules": [RatingGuarantorProductRule(
+        label="телефон от 50 000 ₽ в рассрочку, клиенту 24 года или меньше",
+        goods_category_codes=["phones"], financed_amount_min=Decimal("50000"), age_max=24,
+    )]})
+    assert any("телефон" in r.reason for r in _rate(with_rule, age=23, stage_b=phone, financed=Decimal("55000")).guarantor_reasons)
+    assert not _rate(with_rule, age=23, stage_b=phone, financed=Decimal("30000")).guarantor_reasons
+    assert not any("телефон" in r.reason for r in _rate(with_rule, age=30, stage_b=phone, financed=Decimal("55000")).guarantor_reasons)
 
 
 def test_points_sum_and_missing_do_not_count(config):

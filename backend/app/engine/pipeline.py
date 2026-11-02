@@ -354,11 +354,13 @@ async def run_stage_a(
         # T18: распознанные паспортные поля — сразу после OCR, не дожидаясь
         # решения стадии А (ТЗ: «после OCR — распознанные паспортные поля»).
         # Отправляем даже при below_threshold ниже — оператору видно то же,
-        # что и нам, вне зависимости от исхода уверенности.
-        await send_ocr_result(
-            session_factory, partner_client,
-            application_id=application.id, external_id=application.external_id, fields=ocr_outcome.fields,
-        )
+        # что и нам, вне зависимости от исхода уверенности. Пока выключено
+        # (PARTNER_SEND_PASSPORT_RESULT, решение владельца 02.11.2026).
+        if get_settings().partner_send_passport_result:
+            await send_ocr_result(
+                session_factory, partner_client,
+                application_id=application.id, external_id=application.external_id, fields=ocr_outcome.fields,
+            )
 
         if ocr_outcome.below_threshold:
             # Уходит оператору без проверок (ТЗ, «Стадия А, шаг 1. OCR»).

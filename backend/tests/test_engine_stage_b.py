@@ -303,25 +303,24 @@ async def test_stage_b_run_ten_times_on_incomplete_snapshot_writes_comment_once(
     assert "income" in comment and "employment" not in comment
 
 
-async def test_sharia_forbidden_category_rejects_without_bki(
+async def test_sharia_forbidden_category_is_not_checked(
     partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
+    """Решение владельца 02.11.2026: проверки по шариату нет — запрещённые
+    товары к нам не приходят; категория из справочника с sharia_allowed=false
+    отказа больше не даёт (правило убрано из dev.yaml, механизм остался)."""
     payload = {**_DEFAULT_STAGE_B_PAYLOAD, "deal": {"goods_category_code": "alcohol"}}
-    external_id, application_id = await _prepare_application_at_stage_b(
+    _external_id, application_id = await _prepare_application_at_stage_b(
         partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
     )
 
-    final_status = await run_stage_b(session_factory, application_id, partner_client=partner_client)
-
-    assert final_status == "rejected_b"
+    await run_stage_b(session_factory, application_id, partner_client=partner_client)
 
     async with session_factory() as session:
-        decision = (
-            await session.execute(select(Decision).where(Decision.application_id == application_id))
-        ).scalar_one()
-        assert decision.outcome == "reject"
-        assert decision.reason_code == "GOODS_NOT_ALLOWED"
-        assert decision.stage == "B"
+        reasons = (
+            await session.execute(select(Decision.reason_code).where(Decision.application_id == application_id))
+        ).scalars().all()
+    assert "GOODS_NOT_ALLOWED" not in reasons
 
 
 async def test_unknown_goods_category_code_does_not_auto_reject(
@@ -509,13 +508,14 @@ async def test_manual_override_recorded_when_operator_disagrees(
     partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
     """T10 п.5: оператор меняет статус вручную в системе заказчика с причиной —
-    расхождение с нашим решением пишется в manual_overrides."""
-    payload = {**_DEFAULT_STAGE_B_PAYLOAD, "deal": {"goods_category_code": "alcohol"}}
+    расхождение с нашим решением пишется в manual_overrides. Наше решение —
+    серая зона (БКИ не подключено; раньше здесь был отказ по шариату, правило
+    снято 02.11.2026)."""
     external_id, application_id = await _prepare_application_at_stage_b(
-        partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
+        partner_admin, partner_client, storage, session_factory,
     )
 
-    # Оператор вручную одобряет вопреки нашему (будущему) отказу — раньше, чем
+    # Оператор вручную одобряет вопреки нашему (будущему) решению — раньше, чем
     # наш write-back успеет пройти: T18, их эндпоинт (fake_partner) отвечает
     # 409 с current_status/reason — настраиваем заглушку на этот ответ.
     (await partner_admin.post(
@@ -527,7 +527,7 @@ async def test_manual_override_recorded_when_operator_disagrees(
     )).raise_for_status()
 
     final_status = await run_stage_b(session_factory, application_id, partner_client=partner_client)
-    assert final_status == "rejected_b"  # наш внутренний статус меняется независимо от партнёра
+    assert final_status == "gray_zone"  # наш внутренний статус меняется независимо от партнёра
 
     async with session_factory() as session:
         override = (

@@ -153,6 +153,23 @@ async def test_stage_a_rejects_underage_applicant(
     assert "AGE_BELOW_MIN" not in decision["reason"]
 
 
+async def test_passport_result_not_sent_by_default(
+    monkeypatch, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Решение владельца 02.11.2026: распознанный паспорт в CRM пока не шлём
+    (PARTNER_SEND_PASSPORT_RESULT по умолчанию выключен) — только решения."""
+    monkeypatch.setattr(get_settings(), "partner_send_passport_result", False)
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+
+    await run_stage_a(
+        session_factory, application_id, ocr_provider=FakeOcrProvider(build_ocr_result(overrides=_age_overrides(19))),
+        partner_client=partner_client, storage=storage,
+    )
+
+    kinds = [item["type"] for item in await _all_received(partner_admin, external_id)]
+    assert kinds == ["decision"]
+
+
 async def test_stage_a_does_not_reprocess_after_decision(
     partner_admin, partner_client, storage, session_factory, active_ruleset
 ):

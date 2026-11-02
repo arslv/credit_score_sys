@@ -48,6 +48,9 @@ os.environ["BKI_REQUEST_MODE"] = "auto"
 # приходят в api/worker из docker-compose.yml) тестам недоступно — каждый
 # запрос платный. Провайдер БКИ в тестах подменяется явно.
 os.environ["BKI_PROVIDER_MODE"] = "not_configured"
+# Отправку паспорта в CRM тесты проверяют включённой (по умолчанию выключена —
+# отдельный тест test_passport_result_not_sent_by_default).
+os.environ["PARTNER_SEND_PASSPORT_RESULT"] = "true"
 os.environ["SPECTRUM_USER"] = ""
 os.environ["SPECTRUM_PASSWORD"] = ""
 

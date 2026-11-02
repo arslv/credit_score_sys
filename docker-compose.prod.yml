@@ -56,6 +56,7 @@ services:
       PARTNER_IP_ALLOWLIST: ${PARTNER_IP_ALLOWLIST:?IP серверов заказчика через запятую, см. docs/deployment.md}
       PARTNER_OUTBOUND_URL: ${PARTNER_OUTBOUND_URL:?адрес эндпоинта заказчика, см. docs/deployment.md}
       PARTNER_OUTBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:?см. docs/deployment.md}
+      PARTNER_SEND_PASSPORT_RESULT: ${PARTNER_SEND_PASSPORT_RESULT:-false}
       # T21: фото по ссылке — только https и только с этих хостов (пусто —
       # принимаем только base64); лимиты — docs/integration_contract.md.
       PARTNER_PHOTO_HOSTS: ${PARTNER_PHOTO_HOSTS:-}
@@ -97,6 +98,7 @@ services:
       PARTNER_IP_ALLOWLIST: ${PARTNER_IP_ALLOWLIST:?IP серверов заказчика через запятую, см. docs/deployment.md}
       PARTNER_OUTBOUND_URL: ${PARTNER_OUTBOUND_URL:?см. docs/deployment.md}
       PARTNER_OUTBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:?см. docs/deployment.md}
+      PARTNER_SEND_PASSPORT_RESULT: ${PARTNER_SEND_PASSPORT_RESULT:-false}
       STORAGE_DIR: /data/storage
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?см. docs/deployment.md}
       OCR_MODEL: ${OCR_MODEL:-claude-sonnet-5}
@@ -135,6 +137,7 @@ services:
       PARTNER_IP_ALLOWLIST: ${PARTNER_IP_ALLOWLIST:?IP серверов заказчика через запятую, см. docs/deployment.md}
       PARTNER_OUTBOUND_URL: ${PARTNER_OUTBOUND_URL:?см. docs/deployment.md}
       PARTNER_OUTBOUND_TOKEN: ${PARTNER_OUTBOUND_TOKEN:?см. docs/deployment.md}
+      PARTNER_SEND_PASSPORT_RESULT: ${PARTNER_SEND_PASSPORT_RESULT:-false}
       OCR_PROVIDER_MODE: ${OCR_PROVIDER_MODE:-anthropic}
       BKI_PROVIDER_MODE: ${BKI_PROVIDER_MODE:-not_configured}
       SPECTRUM_USER: ${SPECTRUM_USER:-}

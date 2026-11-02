@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # (тот — для входов CRM, этот — для её собственных /_test/*).
     fake_partner_test_token: str = "dev-token"
     partner_ip_allowlist: str = ""
+    # Распознанный паспорт в CRM (/v1/integration/scoring/passport-result) —
+    # пока не шлём (решение владельца 02.11.2026), CRM получает только решения.
+    partner_send_passport_result: bool = False
     # T21: фото паспорта по ссылке (POST .../new-order, passportPhotos) —
     # только с этих хостов (через запятую, точное имя); пусто — url-вариант
     # не принимаем вовсе, только base64. Только https: http — исключительно

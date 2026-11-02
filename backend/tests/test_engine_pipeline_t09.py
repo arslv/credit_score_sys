@@ -261,7 +261,6 @@ async def test_repeat_application_of_frozen_passport_is_rejected_without_any_che
 # id по мере реализации соответствующей задачи — если тест ниже начнёт падать
 # на оставленном здесь id, значит поле уже появилось и исключение устарело.
 _NOT_YET_IMPLEMENTED_RULE_IDS = {
-    "sharia_goods",  # stage_b_pre_bki -> goods.sharia_allowed, T10
     "declared_pti_too_high",  # stage_b_pre_bki -> declared_pti_exceeds_max, T11 (стадия Б, не А)
     "pti_high",  # soft_rules -> features.pti, T11 (после запроса в БКИ)
 }
