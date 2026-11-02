@@ -16,8 +16,9 @@
 отчёта) — SpectrumTransport; HTTP-реализация — когда будет описание API из
 кабинета. До того провайдер не собирается фабрикой (app/sources/factory.py).
 
-Проверки подробного пакета — по BUREAU_BLOCKS: ФССП (P.0035) и банкротство
-(P.0124) разобраны по описаниям блоков, остальные — когда будут описания.
+Проверки подробного пакета — по BUREAU_BLOCKS (по описаниям блоков): ФССП
+(P.0035), банкротство (P.0124), недействительный паспорт (P.0308), ИНН
+(P.0031), самозанятый (P.0247), перечень террористов (P.0043).
 
 Правило 4: провайдер никогда не бросает исключение наружу."""
 
@@ -226,6 +227,79 @@ def _parse_bankruptcy(block: dict) -> tuple[str, dict]:
     return ("hit" if found else "ok"), parsed
 
 
+def _parse_passport(block: dict) -> tuple[str, dict]:
+    """P.0308.PAS.BAS-TRU — реестр недействительных паспортов."""
+    passport_status = block.get("passport_status")
+    parsed = {
+        "passport_status": passport_status,
+        "details": block.get("details") or None,
+        "date_first_appearance": block.get("date_first_appearance"),
+    }
+    if block.get("expired") is True or passport_status == "INVALID":
+        reason = f": {block['details']}" if block.get("details") else ""
+        parsed["summary"] = f"паспорт в реестре недействительных{reason}"
+        return "hit", parsed
+    if passport_status == "VALID":
+        parsed["summary"] = "паспорт действителен"
+        return "ok", parsed
+    parsed["summary"] = "паспорт не найден в базе"
+    return "no_data", parsed
+
+
+def _parse_inn(block: dict) -> tuple[str, dict]:
+    """P.0031.INN.BAS — ИНН по паспорту (ФНС)."""
+    inn = block.get("value") or None
+    if block.get("status") == "FOUND" and inn:
+        return "ok", {"inn": inn, "summary": f"ИНН {inn}"}
+    return "no_data", {"inn": None, "summary": "ИНН не найден"}
+
+
+def _parse_npd(block: dict) -> tuple[str, dict]:
+    """P.0247.NPD.ACT — статус самозанятого (по ИНН) на дату запроса."""
+    parsed = {"request_date": block.get("request_date"), "message": block.get("message")}
+    if block.get("status") is True:
+        parsed["summary"] = "самозанятый"
+        return "ok", parsed
+    parsed["summary"] = "не самозанятый"
+    return "no_data", parsed
+
+
+def _parse_extremists(block: dict) -> tuple[str, dict]:
+    """P.0043.TER.HIS — перечень террористов и экстремистов (Росфинмониторинг).
+    Поиск по ФИО (и дате рождения) с релевантностью 0–100: совпадение может
+    быть однофамильцем — показываем релевантность и с чем совпало, решает
+    человек (у нас — своя проверка по перечню)."""
+    on_list = block.get("beOnTheList")
+    found = block.get("found") is True
+    active = on_list == "IS_ON_THE_LIST" or (found and block.get("isActive") is True)
+    parsed = {
+        "on_list": on_list,
+        "relevance": block.get("relevance"),
+        "relevance_description": block.get("relevance_description"),
+        "matches": [
+            {
+                "relevance": i.get("relevance"),
+                "relevance_description": i.get("relevance_description"),
+                "matched_middle_name": i.get("matched_middle_name"),
+                "matched_birth_date": i.get("matched_birth_date"),
+                "is_active": i.get("isActive"),
+                "raw": (i.get("item") or {}).get("rawString"),
+            }
+            for i in block.get("items") or []
+            if isinstance(i, dict)
+        ],
+    }
+    why = f" ({parsed['relevance_description'].lower()})" if parsed["relevance_description"] else ""
+    if active:
+        parsed["summary"] = f"есть совпадение в перечне, релевантность {parsed['relevance']}%{why}"
+        return "hit", parsed
+    if on_list == "WAS_ON_THE_LIST":
+        parsed["summary"] = f"был в перечне, исключён{why}"
+        return "ok", parsed
+    parsed["summary"] = "в перечне нет"
+    return "ok", parsed
+
+
 @dataclass(frozen=True)
 class BureauBlock:
     path: tuple[str, ...]  # путь от content («Структура отчёта» в описании блока)
@@ -234,9 +308,8 @@ class BureauBlock:
     parse: Callable[[dict], tuple[str, dict]]
 
 
-# Блоки подробного отчёта, описания которых уже есть (кабинет → Документация →
-# блок → «Структура отчёта»). Остальные (паспорт, ИНН, НПД, перечни) — по мере
-# появления описаний; без описания блок просто не показывается.
+# Блоки подробного отчёта по их описаниям (кабинет → Документация → блок →
+# «Структура отчёта»). Блок, которого здесь нет, в карточке не показывается.
 BUREAU_BLOCKS: list[BureauBlock] = [
     BureauBlock(
         path=("check_person", "proceeding_v2", "executive_v2"), source="fssp",
@@ -245,6 +318,22 @@ BUREAU_BLOCKS: list[BureauBlock] = [
     BureauBlock(
         path=("check_person", "bankruptcy_short"), source="fedresurs",
         source_ids=("check_person/fedresurs_short",), parse=_parse_bankruptcy,
+    ),
+    BureauBlock(
+        path=("check_person", "expired_passport_v2"), source="mvd",
+        source_ids=("check_person/expired_passport_v2",), parse=_parse_passport,
+    ),
+    BureauBlock(
+        path=("check_person", "inn"), source="fns_inn",
+        source_ids=("check_person/person_inn",), parse=_parse_inn,
+    ),
+    BureauBlock(
+        path=("check_person", "statusnpd_nalog"), source="fns_npd",
+        source_ids=("check_person/statusnpd_nalog",), parse=_parse_npd,
+    ),
+    BureauBlock(
+        path=("check_person", "extremists"), source="rosfinmon",
+        source_ids=("check_person/extremist_list",), parse=_parse_extremists,
     ),
 ]
 

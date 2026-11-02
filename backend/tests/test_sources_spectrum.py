@@ -215,6 +215,67 @@ def test_bureau_nothing_found_unavailable_and_not_in_package():
     assert spectrum.extract_bureau_checks(REPORT) == []
 
 
+def _one(content: dict, source_id: str):
+    (check,) = spectrum.extract_bureau_checks(_premium(content, {source_id: "OK"}))
+    return check
+
+
+# Примеры из описаний блоков P.0308, P.0031, P.0247, P.0043 (кабинет).
+@pytest.mark.parametrize(("block", "status", "summary"), [
+    ({"series": "1234", "number": "123456", "passport_status": "VALID", "status": "OK", "expired": False,
+      "details": ""}, "ok", "паспорт действителен"),
+    ({"series": "1234", "number": "123456", "passport_status": "INVALID", "status": "OK", "expired": True,
+      "details": "Выдан с нарушением", "date_first_appearance": "2017-05-24"},
+     "hit", "паспорт в реестре недействительных: Выдан с нарушением"),
+    ({"series": "1234", "number": "123456", "passport_status": "NOT_FOUND", "status": "NOT_FOUND",
+      "expired": False, "details": ""}, "no_data", "паспорт не найден в базе"),
+])
+def test_bureau_passport(block, status, summary):
+    check = _one({"expired_passport_v2": block}, "check_person/expired_passport_v2")
+    assert (check.source, check.status, check.parsed["summary"]) == ("mvd", status, summary)
+
+
+def test_bureau_inn_and_self_employed():
+    found = _one({"inn": {"status": "FOUND", "value": "123456789012"}}, "check_person/person_inn")
+    assert (found.source, found.status, found.parsed["inn"]) == ("fns_inn", "ok", "123456789012")
+    missing = _one({"inn": {"status": "NOT_FOUND", "value": ""}}, "check_person/person_inn")
+    assert (missing.status, missing.parsed["inn"]) == ("no_data", None)
+
+    npd = {"status": True, "request_date": "2023-03-01",
+           "message": "123456789012 является плательщиком налога на профессиональный доход"}
+    assert _one({"statusnpd_nalog": npd}, "check_person/statusnpd_nalog").status == "ok"
+    not_npd = _one({"statusnpd_nalog": {**npd, "status": False}}, "check_person/statusnpd_nalog")
+    assert (not_npd.source, not_npd.status, not_npd.parsed["summary"]) == ("fns_npd", "no_data", "не самозанятый")
+
+
+EXTREMISTS = {
+    "found": True, "isActive": True, "score": 0.63, "relevance": 63,
+    "relevance_description": "Совпадение по фамилии, имени",
+    "items": [{
+        "key": "ИВАНОВ_ИВАН_ИВАНОВИЧ_ACTIVE", "isMean": True, "matched_middle_name": False,
+        "matched_birth_date": False, "score": 0.63, "relevance": 63,
+        "relevance_description": "Совпадение по фамилии, имени", "isActive": True, "isAdded": False,
+        "isDeleted": False,
+        "item": {"rawString": "0000. ИВАНОВ ИВАН ИВАНОВИЧ*, 11.02.1991 г.р.", "last_name": "ИВАНОВ"},
+    }],
+    "beOnTheList": "IS_ON_THE_LIST",
+}
+
+
+def test_bureau_extremists_shows_relevance_and_was_on_list_is_not_a_hit():
+    hit = _one({"extremists": EXTREMISTS}, "check_person/extremist_list")
+    assert (hit.source, hit.status) == ("rosfinmon", "hit")
+    assert hit.parsed["relevance"] == 63
+    assert "63%" in hit.parsed["summary"] and "по фамилии, имени" in hit.parsed["summary"]
+    assert hit.parsed["matches"][0]["matched_birth_date"] is False
+
+    was = {**EXTREMISTS, "isActive": False, "beOnTheList": "WAS_ON_THE_LIST"}
+    assert _one({"extremists": was}, "check_person/extremist_list").status == "ok"
+    clean = {"found": False, "isActive": False, "items": [], "beOnTheList": "IS_NOT_ON_THE_LIST"}
+    none = _one({"extremists": clean}, "check_person/extremist_list")
+    assert (none.status, none.parsed["summary"]) == ("ok", "в перечне нет")
+
+
 class _ProviderWithBureauChecks:
     is_configured = True
 

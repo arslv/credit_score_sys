@@ -396,7 +396,11 @@ export function ApplicationDetailPage() {
   // дата рождения — чтобы сверить найденного однофамильца.
   const innOf = (subjectType: "applicant" | "guarantor", subjectId: string | null) => {
     const inn = findLatestCheck("fns_inn", subjectType, subjectId)?.parsed?.inn;
-    return typeof inn === "string" && inn ? inn : null;
+    if (typeof inn === "string" && inn) return inn;
+    // Наш ФНС ИНН не нашёл — берём из подробного отчёта бюро (только заявитель).
+    if (subjectType !== "applicant") return null;
+    const fromBureau = bureauFor("fns_inn")[0]?.parsed?.inn;
+    return typeof fromBureau === "string" && fromBureau ? fromBureau : null;
   };
   const birthText = (birth: string | null | undefined) => (birth ? formatDate(birth) : null);
   const guarantorName = app.guarantor_profile
@@ -940,7 +944,10 @@ export function ApplicationDetailPage() {
                       <SourceBadge source={b.source} /> <BkiTag />
                     </td>
                     <td className="muted">{subjectTypeLabel(b.subject_type)}</td>
-                    <td>{checkResultLabel(b.source, b.status)}</td>
+                    <td>
+                      {checkResultLabel(b.source, b.status)}
+                      {typeof b.parsed?.summary === "string" && <span className="muted"> — {b.parsed.summary}</span>}
+                    </td>
                     <td className="muted">{formatDateTime(b.created_at)}</td>
                     <td className="muted">—</td>
                   </tr>
