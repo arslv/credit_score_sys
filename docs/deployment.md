@@ -261,3 +261,46 @@ docker compose -f docker-compose.prod.yml up -d --build
 резолвились нормально (см. `docs/reports/T16.md`). Если не резолвится —
 это настройка DNS/сети на стороне инфраструктуры сервера, не задача этого
 сервиса подставлять свой резолвер.
+
+## 12. Сервер общий с CRM: порты 80/443 заняты, HTTPS — у внешнего прокси
+
+Если на сервере уже работает чужой nginx (или перед сервером стоит отдельный
+прокси-сервер), наш nginx на 80/443 не встаёт. Тогда запуск с дополнением
+`docker-compose.behind-proxy.yml`:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.behind-proxy.yml up -d --build
+```
+
+Наш nginx — без HTTPS, слушает `NGINX_BIND` (в `.env`):
+
+- прокси на этом же сервере — по умолчанию `127.0.0.1:8088`;
+- прокси на другой машине — `NGINX_BIND=<внутренний IP сервера>:8088`, порт
+  закрыть фаерволом для всех, кроме прокси, и `NGINX_TRUSTED_PROXY=<IP
+  прокси, каким его видит сервер>` (иначе в логах и в проверке
+  `PARTNER_IP_ALLOWLIST` вместо адреса CRM будет адрес прокси).
+
+`DOMAIN` всё равно задать (наш поддомен). Сертификат (certbot) выпускается
+там, где HTTPS, — на внешнем прокси. Кусок конфига для внешнего nginx:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name scoring.<домен>;
+    ssl_certificate     /etc/letsencrypt/live/scoring.<домен>/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/scoring.<домен>/privkey.pem;
+
+    client_max_body_size 25m;   # фото паспортов в теле запроса (REQUEST_BODY_MAX_MB)
+
+    location / {
+        proxy_pass http://<NGINX_BIND>;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+`PARTNER_IP_ALLOWLIST` — адрес, с которого CRM приходит на прокси (если CRM
+зовёт нас по домену с соседнего сервера — его внешний IP). Не тот адрес —
+в логе api событие `partner_webhook_ip_rejected` с настоящим адресом.

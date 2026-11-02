@@ -1,0 +1,21 @@
+# Дополнение к docker-compose.prod.yml, когда порты 80/443 на сервере уже
+# заняты другим nginx (сервер общий с CRM). Запуск:
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.behind-proxy.yml up -d --build
+#
+# Наш nginx слушает только NGINX_BIND (по умолчанию 127.0.0.1:8088, снаружи
+# сервера недоступен) и без HTTPS; HTTPS и сертификат на наш поддомен — у
+# внешнего nginx, который проксирует поддомен сюда. Прокси на другой машине —
+# NGINX_BIND=<внутренний IP этого сервера>:8088 (порт закрыть фаерволом для
+# всех, кроме прокси) и NGINX_TRUSTED_PROXY=<IP прокси, каким его видит сервер>. Готовый кусок конфига для
+# внешнего nginx — docs/deployment.md, «Сервер общий с CRM».
+# Нужен Docker Compose 2.24.4+ (тег !override).
+
+services:
+  nginx:
+    environment:
+      NGINX_TRUSTED_PROXY: ${NGINX_TRUSTED_PROXY:-127.0.0.1}
+    volumes:
+      - ./deploy/nginx/nginx.behind-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports: !override
+      - "${NGINX_BIND:-127.0.0.1:8088}:80"
