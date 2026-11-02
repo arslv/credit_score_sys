@@ -72,6 +72,9 @@ services:
       SPECTRUM_PASSWORD: ${SPECTRUM_PASSWORD:-}
       EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-http}
       REGISTRIES_DOWNLOADER: ${REGISTRIES_DOWNLOADER:-local}
+      # Перечень террористов — ежедневно с открытой страницы Росфинмониторинга
+      # (нужен российский IP), docs/registries.md.
+      ROSFINMON_SOURCE: ${ROSFINMON_SOURCE:-fedsfm_page}
       MVD_REGISTRY_URL: ${MVD_REGISTRY_URL:-}
       ROSFINMON_REGISTRY_URL: ${ROSFINMON_REGISTRY_URL:-}
     volumes:
@@ -108,6 +111,9 @@ services:
       SPECTRUM_PASSWORD: ${SPECTRUM_PASSWORD:-}
       EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-http}
       REGISTRIES_DOWNLOADER: ${REGISTRIES_DOWNLOADER:-local}
+      # Перечень террористов — ежедневно с открытой страницы Росфинмониторинга
+      # (нужен российский IP), docs/registries.md.
+      ROSFINMON_SOURCE: ${ROSFINMON_SOURCE:-fedsfm_page}
       MVD_REGISTRY_URL: ${MVD_REGISTRY_URL:-}
       ROSFINMON_REGISTRY_URL: ${ROSFINMON_REGISTRY_URL:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}

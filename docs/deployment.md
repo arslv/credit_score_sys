@@ -41,8 +41,8 @@
 | `POSTGRES_PASSWORD` | пароль боевой базы |
 | `DOMAIN` | домен заказчика (HTTPS, nginx) |
 | `ANTHROPIC_API_KEY` | распознавание паспорта (T05) |
-| `PARTNER_INBOUND_TOKEN` | токен, которым заказчик подписывает вызовы к нам (`docs/integration_contract.md`) |
-| `PARTNER_OUTBOUND_URL`, `PARTNER_OUTBOUND_TOKEN` | адрес и токен ИХ эндпоинта, куда мы шлём ответы |
+| `PARTNER_INBOUND_TOKEN` | токен, которым CRM подписывает вызовы к нам (`docs/integration_contract.md`). Генерируем сами (см. «Токены» ниже) и отдаём разработчикам CRM |
+| `PARTNER_OUTBOUND_URL`, `PARTNER_OUTBOUND_TOKEN` | адрес и токен ИХ API, куда мы шлём решения. CRM на том же сервере — `http://<IP сервера>:<порт их API>` (не `localhost`: для контейнера это он сам). Токен — их, либо генерируем сами и отдаём им |
 | `PARTNER_IP_ALLOWLIST` | IP серверов заказчика через запятую; можно подсеть (`172.16.0.0/12` — CRM в Docker на том же сервере, адрес контейнера меняется). CRM на том же сервере ходит к нам через nginx — её адрес: публичный IP сервера (если зовёт по домену) или шлюз Docker. T21: обязателен — с пустым списком `docker compose` не соберёт конфиг, а сам сервис при `APP_ENV=production` не стартует |
 
 Необязательные, но важные:
@@ -57,9 +57,15 @@
   (`client_max_body_size`) и приложения; больше — понятный JSON-`413`.
   Значения согласованы с `docs/integration_contract.md` — меняете здесь,
   поправьте и там.
-- `BKI_PROVIDER_MODE` — остаётся `not_configured`, пока нет договора с бюро
-  (без него одобрение недостижимо в принципе, только серая зона — это
-  ожидаемо на старте, не баг).
+- `BKI_PROVIDER_MODE=spectrum` + `SPECTRUM_USER` / `SPECTRUM_PASSWORD` —
+  кредитная история через Спектрум Дату (`docs/bki_spectrum.md`). Проверка
+  доступа (бесплатно): `docker compose -f docker-compose.prod.yml exec api
+  python -m app.cli.spectrum check`. Без них — `not_configured`: одобрение
+  недостижимо, только серая зона.
+- `PARTNER_SEND_PASSPORT_RESULT` — слать ли CRM распознанный паспорт; по
+  умолчанию нет, CRM получает только решения.
+- `ROSFINMON_SOURCE` — в бою по умолчанию `fedsfm_page`: перечень террористов
+  раз в сутки с открытой страницы Росфинмониторинга (нужен российский IP).
 - `EXTERNAL_SOURCES_MODE=http` (по умолчанию в `docker-compose.prod.yml`) —
   настоящие ФНС/ФССП/МВД/Росфинмониторинг/чёрный список.
 - `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` — см. раздел 7 ниже; пусто — без
@@ -123,8 +129,24 @@ docker compose -f docker-compose.prod.yml exec api python -m app.cli.create_admi
 
 Пароль вводится через `getpass` (не эхается, не остаётся в истории шелла).
 Дальше новые сотрудники заводятся уже из самой админки (роль `admin`) —
-или той же командой с флагом `--role` (`risk_manager`, `operator`,
-`compliance`, `viewer`; по умолчанию `admin`).
+или той же командой с флагом `--role` (`operator`, `viewer`; по умолчанию
+`admin`).
+
+## Токены для CRM
+
+Два случайных токена (по одному на направление), сгенерировать на сервере:
+
+```bash
+openssl rand -hex 32   # -> PARTNER_INBOUND_TOKEN: CRM шлёт его нам
+openssl rand -hex 32   # -> PARTNER_OUTBOUND_TOKEN: мы шлём его CRM
+```
+
+Оба вписать в `.env`, передать разработчикам CRM по защищённому каналу (не
+в общий чат) вместе с адресами: наш — `https://<DOMAIN>/api/v1/crm/`
+(`new-order`, `scoring`), их — то, что стоит в `PARTNER_OUTBOUND_URL`. Каждый
+запрос в обе стороны — с заголовком `Authorization: Bearer <токен>`.
+Сменить токен — новое значение в `.env` у нас и у них, затем
+`docker compose -f docker-compose.prod.yml up -d api worker beat`.
 
 ## 6. Бэкап и восстановление Postgres
 
