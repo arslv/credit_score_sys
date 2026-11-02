@@ -3698,28 +3698,12 @@ mark {
 .decision-stub__btn {
   min-width: 96px;
   justify-content: center;
-  color: #ffffff;
 }
 
-.decision-stub__btn--accept,
-.decision-stub__btn--accept:hover {
-  border-color: var(--status-ok);
-  background: var(--status-ok);
-}
-
-.decision-stub__btn--reject,
-.decision-stub__btn--reject:hover {
-  border-color: var(--status-bad);
-  background: var(--status-bad);
-}
-
-/* Общий .btn:hover красит фон в светлый — у цветных кнопок только чуть светлее. */
-.decision-stub__btn:hover {
-  filter: brightness(1.1);
-}
-
-.decision-stub__btn[aria-pressed="true"] {
-  box-shadow: 0 0 0 3px var(--color-accent-soft);
+/* Пока недоступно — серые и не нажимаются. */
+.decision-stub__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .decision-stub__note {

@@ -21,6 +21,7 @@ tariff), — необязательные расширения, см. контр
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -47,6 +48,24 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/crm", tags=["crm"])
 
 
+def _ip_allowed(client_ip: str | None, allowlist: list[str]) -> bool:
+    """Адрес или подсеть (172.16.0.0/12 — CRM в Docker на том же сервере:
+    адрес контейнера меняется, подсеть — нет)."""
+    if client_ip is None:
+        return False
+    try:
+        address = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False
+    for entry in allowlist:
+        try:
+            if address in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 async def verify_partner_webhook(request: Request) -> None:
     """Статичный токен в заголовке (разный для test/prod — значение из env,
     не код) + опциональный allowlist IP (ТЗ T18). Пустой allowlist — проверка
@@ -63,7 +82,7 @@ async def verify_partner_webhook(request: Request) -> None:
     allowlist = [ip.strip() for ip in settings.partner_ip_allowlist.split(",") if ip.strip()]
     if allowlist:
         client_ip = request.client.host if request.client else None
-        if client_ip not in allowlist:
+        if not _ip_allowed(client_ip, allowlist):
             logger.warning("partner_webhook_ip_rejected", client_ip=client_ip)
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="ip not allowed")
 

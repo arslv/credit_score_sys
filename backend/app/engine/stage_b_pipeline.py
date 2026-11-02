@@ -78,7 +78,7 @@ def _installment_payment(application, deal: dict, config) -> tuple[Decimal | Non
     return compute_installment_payment(
         partner_monthly_payment=deal.get("monthly_payment"), goods_price=application.goods_price,
         down_payment=application.down_payment, term_months=application.term_months,
-        tariff=application.tariff, tariffs=config.tariffs,
+        tariff=config.tariff_for(application.tariff), tariffs=config.tariffs,
     )
 
 
@@ -417,7 +417,7 @@ async def run_stage_b(
         client_history = await _client_history_snapshot(session, application)
         is_repeat = bool(client_history.get("is_repeat", False))
         limits_outcome = evaluate_deal_limits(
-            requested_tariff=application.tariff, goods_price=application.goods_price,
+            requested_tariff=config.tariff_for(application.tariff), goods_price=application.goods_price,
             down_payment=application.down_payment, term_months=application.term_months,
             is_repeat=is_repeat, limits=config.limits, tariffs=config.tariffs,
         )
@@ -532,7 +532,7 @@ async def finalize_stage_b(
         # пропустил заявку дальше (limits_outcome.passed), здесь пересчитываем
         # самодостаточно для финального снапшота и комментария оператору.
         limits_outcome = evaluate_deal_limits(
-            requested_tariff=application.tariff, goods_price=application.goods_price,
+            requested_tariff=config.tariff_for(application.tariff), goods_price=application.goods_price,
             down_payment=application.down_payment, term_months=application.term_months,
             is_repeat=is_repeat, limits=config.limits, tariffs=config.tariffs,
         )
@@ -542,10 +542,11 @@ async def finalize_stage_b(
                 "tariff": limits_outcome.tariff,
                 "required_down_pay": float(limits_outcome.required_down_pay),
             }
+            # Без названия тарифа: тарифами не пользуемся (решение владельца
+            # 02.11.2026), для оператора CRM важен только нужный взнос.
             tariff_offer_comment = (
-                f"По запрошенному тарифу заявка не проходит по лимитам. Предложение: "
-                f"тариф «{limits_outcome.tariff}», первый взнос от "
-                f"{limits_outcome.required_down_pay}. Обсудить с клиентом."
+                f"С таким первым взносом сумма не проходит по лимитам. Предложение: "
+                f"первый взнос от {limits_outcome.required_down_pay}. Обсудить с клиентом."
             )
 
         guarantor_payload = stage_b_payload.get("guarantor")

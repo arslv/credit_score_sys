@@ -5,7 +5,7 @@
 // сырых кодов здесь нет: их видно только в «Подробностях».
 
 import { formatAmount, formatDate } from "./format";
-import { employmentLabel, genderLabel, tariffLabel } from "./labels";
+import { employmentLabel, genderLabel } from "./labels";
 
 export interface CardRow {
   label: string;
@@ -89,21 +89,20 @@ export function dealRows(input: {
     { label: "Товар", value: dealKnown ? `${input.goodsName}, ${formatAmount(input.goodsPrice)} ₽` : "" },
     { label: "Категория товара", value: input.goodsCategory ?? "" },
     { label: "Первый взнос", value: dealKnown ? `${formatAmount(input.downPayment)} ₽` : "" },
-    { label: "Срок и тариф", value: dealKnown ? `${input.termMonths} мес., тариф «${tariffLabel(input.tariff)}»` : "" },
+    // Тарифами не пользуемся (решение владельца 02.11.2026) — только срок.
+    { label: "Срок", value: dealKnown ? `${input.termMonths} мес.` : "" },
     {
       label: "Платёж в месяц",
       value: input.installmentPayment
         ? `${formatAmount(input.installmentPayment)} ₽${
-            input.installmentSource === "tariff" ? " (рассчитан по тарифу, не из CRM)" : ""
+            input.installmentSource === "tariff" ? " (рассчитан нами, не из CRM)" : ""
           }`
         : "",
     },
     input.approvedAmount
       ? {
           label: "Одобрено",
-          value: `${formatAmount(input.approvedAmount)} ₽ на ${input.approvedTerm ?? "—"} мес.${
-            input.approvedTariff ? `, тариф «${tariffLabel(input.approvedTariff)}»` : ""
-          }${input.approvedDownPay ? `, первый взнос от ${formatAmount(input.approvedDownPay)} ₽` : ""}`,
+          value: `${formatAmount(input.approvedAmount)} ₽ на ${input.approvedTerm ?? "—"} мес.${input.approvedDownPay ? `, первый взнос от ${formatAmount(input.approvedDownPay)} ₽` : ""}`,
         }
       : { label: "Одобрено", value: "" },
   ]);

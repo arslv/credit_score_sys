@@ -149,11 +149,11 @@ test("карточка серой зоны: «В норме» отдельно, 
   const passed = page.getByTestId("decision-passed");
   await expect(passed).toContainText("Балл БКИ 760 — не ниже порога одобрения 700");
   await expect(passed).toContainText(`ПДН 42% (с учётом платежа по рассрочке ${formatAmount("4500")} ₽) — порог отказа 60%`);
-  await expect(passed).not.toContainText("рассчитан по тарифу");
+  await expect(passed).not.toContainText("рассчитан нами");
 
   // T22: платёж по рассрочке — в «Сделке», с пометкой, что рассчитан по тарифу.
   await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toContainText(
-    `${formatAmount("4500")} ₽ (рассчитан по тарифу, не из CRM)`,
+    `${formatAmount("4500")} ₽ (рассчитан нами, не из CRM)`,
   );
 
   // T23: отдельного списка дел нет — раздел ФССП сам помечен «требуется действие».

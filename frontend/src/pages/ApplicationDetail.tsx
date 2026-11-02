@@ -232,7 +232,6 @@ export function ApplicationDetailPage() {
   const { employee } = useAuth();
   const queryClient = useQueryClient();
   const [openDocumentId, setOpenDocumentId] = useState<string | null>(null);
-  const [decisionStub, setDecisionStub] = useState<"accept" | "reject" | null>(null);
 
   const query = useQuery({
     queryKey: ["application", id],
@@ -624,6 +623,17 @@ export function ApplicationDetailPage() {
         : latestDecision?.outcome === "reject" ? "bad" : latestB?.outcome === "approve" ? "done" : grayStageB ? "current" : "pending",
     },
   ];
+  // Оператор CRM уже решил по последнему решению системы (одобрил / отказал)
+  // — сверху показываем его итог и цвет, решение системы — строкой ниже.
+  const operatorFinal: "approve" | "reject" | null =
+    lastOverride && (!latestDecision || lastOverride.created_at >= latestDecision.created_at)
+      ? ["approved", "approve"].includes(lastOverride.to_outcome)
+        ? "approve"
+        : ["rejected", "reject"].includes(lastOverride.to_outcome)
+          ? "reject"
+          : null
+      : null;
+  const headerOutcome = operatorFinal ?? latestDecision?.outcome;
   const ratingTone =
     app.client_rating == null ? "" : app.client_rating.total > 0 ? "ah-metric__value--ok" : app.client_rating.total < 0 ? "ah-metric__value--bad" : "";
 
@@ -633,12 +643,12 @@ export function ApplicationDetailPage() {
   // руками, ход заявки и ручные проверки. Анкета, сделка, проверки таблицей,
   // документы и история — свёрнутыми разделами в самом низу.
   return (
-    <div className={latestDecision?.outcome === "manual_review" ? "ac2 ac2--gray" : "ac2"}>
+    <div className={headerOutcome === "manual_review" ? "ac2 ac2--gray" : "ac2"}>
       <p className="back-link">
         <Link to="/applications">← Заявки</Link>
       </p>
 
-      <section className={`ah ${verdictTone(latestDecision?.outcome)}`} aria-label="Главное по заявке">
+      <section className={`ah ${verdictTone(headerOutcome)}`} aria-label="Главное по заявке">
         <div className="ah__top">
           <div className="ah__who">
             <div className="ah__avatar" aria-hidden="true">
@@ -671,12 +681,24 @@ export function ApplicationDetailPage() {
 
           <div className="ah__verdict">
             <div className="pf-kicker">
-              {latestDecision ? `Решение системы · стадия ${stageLabel(latestDecision.stage)}` : "Решения пока нет"}
+              {operatorFinal
+                ? `Решение оператора CRM · ${formatDateTime(lastOverride!.created_at)}`
+                : latestDecision
+                  ? `Решение системы · стадия ${stageLabel(latestDecision.stage)}`
+                  : "Решения пока нет"}
             </div>
             <div className="pf-verdict__title">
               <VerdictTitle
-                title={latestDecision ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome) : "В обработке"}
-                help={explanation?.help ?? null}
+                title={
+                  operatorFinal === "approve"
+                    ? "Одобрено оператором"
+                    : operatorFinal === "reject"
+                      ? "Отказ оператора"
+                      : latestDecision
+                        ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome)
+                        : "В обработке"
+                }
+                help={operatorFinal ? null : (explanation?.help ?? null)}
               />
               {/* Статус дублирует решение («Серая зона» дважды) — показываем,
                   только когда он говорит что-то своё (истекла, идёт стадия Б…). */}
@@ -686,7 +708,13 @@ export function ApplicationDetailPage() {
             </div>
             {/* Причина — на момент решения. ФССП с тех пор пройдена — так и
                 пишем, а не «не пройдена», как было тогда. */}
-            {fsspDoneAfterGray ? (
+            {operatorFinal && latestDecision ? (
+              <p className="pf-verdict__reason">
+                Система, стадия {stageLabel(latestDecision.stage)}:{" "}
+                {decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome).toLowerCase()}
+                {explanation?.reason ? ` — ${explanation.reason}` : ""}
+              </p>
+            ) : fsspDoneAfterGray ? (
               <p className="pf-verdict__reason">
                 На момент решения ФССП не была пройдена. Сейчас пройдена — новое решение будет, когда оператор
                 CRM нажмёт «Рассмотреть» ещё раз.
@@ -694,7 +722,7 @@ export function ApplicationDetailPage() {
             ) : (
               explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>
             )}
-            {grayInCrm && <p className="verdict-action">Решение принимает оператор в CRM.</p>}
+            {grayInCrm && !operatorFinal && <p className="verdict-action">Решение принимает оператор в CRM.</p>}
             {latestDecision?.freeze && (
               <p className="verdict-action">
                 Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.
@@ -706,34 +734,19 @@ export function ApplicationDetailPage() {
           </div>
 
           {/* «Принять» / «Отказать» — будущая отправка решения в CRM по API.
-              Пока заглушки: ничего не отправляют, только объясняют. */}
+              Пока недоступны: серые, не нажимаются. */}
           {canOperateFssp && (
-            <div className="ah__actions decision-stub">
+            <div className="ah__actions decision-stub" aria-disabled="true">
               <div className="decision-stub__row">
-                <button
-                  type="button"
-                  className="btn decision-stub__btn decision-stub__btn--accept"
-                  aria-pressed={decisionStub === "accept"}
-                  aria-describedby="decision-stub-note"
-                  onClick={() => setDecisionStub((v) => (v === "accept" ? null : "accept"))}
-                >
+                <button type="button" className="btn decision-stub__btn" disabled aria-describedby="decision-stub-note">
                   Принять
                 </button>
-                <button
-                  type="button"
-                  className="btn decision-stub__btn decision-stub__btn--reject"
-                  aria-pressed={decisionStub === "reject"}
-                  aria-describedby="decision-stub-note"
-                  onClick={() => setDecisionStub((v) => (v === "reject" ? null : "reject"))}
-                >
+                <button type="button" className="btn decision-stub__btn" disabled aria-describedby="decision-stub-note">
                   Отказать
                 </button>
-                <span className="soon-tag">в разработке</span>
               </div>
               <p id="decision-stub-note" className="decision-stub__note">
-                {decisionStub === null
-                  ? "Решение по заявке уйдёт в CRM отсюда — скоро."
-                  : `«${decisionStub === "accept" ? "Принять" : "Отказать"}» пока ничего не отправляет: передача решения в CRM по API в разработке.`}
+                Пока недоступно — появится позже: решение будет уходить в CRM отсюда.
               </p>
             </div>
           )}

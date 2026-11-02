@@ -364,6 +364,10 @@ class RulesetConfig(BaseModel):
     soft_rules: list[RuleDef] = Field(default_factory=list)
     limits: LimitsConfig
     tariffs: dict[str, TariffConfig]
+    # Тариф, если CRM его не прислала (в их анкете тарифа нет — решение
+    # владельца: тарифами не пользуемся). Без него такая заявка на стадии Б
+    # получала отказ UNKNOWN_TARIFF. None — как раньше.
+    default_tariff: str | None = None
     stage_b_completeness: StageBCompletenessConfig
     bki: BkiConfig
     score_thresholds: ScoreThresholdsConfig
@@ -379,6 +383,20 @@ class RulesetConfig(BaseModel):
     # T23: рейтинг клиента — информационно, см. ClientRatingConfig. Необязателен:
     # версии правил до T23 его не содержат.
     client_rating: ClientRatingConfig | None = None
+
+
+    @model_validator(mode="after")
+    def _default_tariff_known(self) -> "RulesetConfig":
+        if self.default_tariff is not None and self.default_tariff not in self.tariffs:
+            raise ValueError(f"default_tariff «{self.default_tariff}» нет среди tariffs")
+        return self
+
+    def tariff_for(self, requested: str | None) -> str | None:
+        """Тариф заявки для расчётов: присланный CRM, если он есть в правилах,
+        иначе default_tariff (если задан), иначе присланный как есть."""
+        if requested in self.tariffs:
+            return requested
+        return self.default_tariff or requested
 
 
 def parse_ruleset(raw: dict[str, Any]) -> RulesetConfig:

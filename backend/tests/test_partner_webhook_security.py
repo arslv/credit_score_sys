@@ -219,3 +219,15 @@ async def test_inbound_token_compared_with_hmac_compare_digest(monkeypatch):
 
     # Пустой/отсутствующий токен — 401 тоже.
     assert (await _post_applications(b"{}", {"Content-Type": "application/json"})).status_code == 401
+
+
+def test_ip_allowlist_accepts_addresses_and_subnets():
+    """CRM на том же сервере в Docker: адрес контейнера меняется — в
+    allowlist можно указать подсеть."""
+    allowlist = ["203.0.113.10", "172.16.0.0/12", "not-an-ip"]
+    assert partner_webhooks._ip_allowed("203.0.113.10", allowlist)
+    assert partner_webhooks._ip_allowed("172.18.0.5", allowlist)
+    assert not partner_webhooks._ip_allowed("203.0.113.11", allowlist)
+    assert not partner_webhooks._ip_allowed("10.0.0.1", allowlist)
+    assert not partner_webhooks._ip_allowed(None, allowlist)
+    assert not partner_webhooks._ip_allowed("garbage", allowlist)

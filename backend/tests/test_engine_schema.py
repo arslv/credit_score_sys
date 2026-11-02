@@ -234,3 +234,14 @@ def test_yaml_with_typo_key_raises_validation_error(tmp_path):
         load_ruleset_from_yaml(path)
 
     assert "fielld" in str(exc_info.value) or "field" in str(exc_info.value)
+
+
+def test_default_tariff_must_be_known_and_fills_missing_tariff():
+    raw = yaml.safe_load(DEV_RULESET_PATH.read_text(encoding="utf-8"))
+    config = parse_ruleset(raw)
+    assert config.tariff_for("unknown") == config.default_tariff == "standard"  # CRM тариф не прислала
+    assert config.tariff_for("advantageous") == "advantageous"  # присланный и известный — как есть
+
+    with pytest.raises(ValidationError, match="default_tariff"):
+        parse_ruleset({**raw, "default_tariff": "no_such_tariff"})
+    assert parse_ruleset({**raw, "default_tariff": None}).tariff_for("unknown") == "unknown"

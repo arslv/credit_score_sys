@@ -298,9 +298,9 @@ async def test_stage_b_run_ten_times_on_incomplete_snapshot_writes_comment_once(
     assert len(sent) == 1
 
     comment = sent[-1]["reason"]
-    # T18: "address" убран из required_sections (адрес заявителя уже есть из
-    # OCR) — только employment/income остаются обязательными в этом сценарии.
-    assert "employment" in comment and "income" in comment
+    # Обязателен только income (address убран в T18, employment — решением
+    # владельца 02.11.2026: в анкете CRM занятости нет).
+    assert "income" in comment and "employment" not in comment
 
 
 async def test_sharia_forbidden_category_rejects_without_bki(
@@ -370,8 +370,9 @@ async def test_limits_exceeded_on_requested_tariff_offers_alternative(
         ).scalar_one()
         assert snapshot.features["tariff_offer"]["tariff"] == "advantageous"
 
+    # В тексте для CRM — нужный взнос, без названия тарифа (тарифами не пользуемся).
     comments = await _all_sent_texts(partner_admin, external_id)
-    assert "advantageous" in comments
+    assert "первый взнос от" in comments and "advantageous" not in comments
 
 
 async def test_limits_exceeded_for_every_tariff_rejects(
@@ -1161,11 +1162,12 @@ async def test_partner_monthly_payment_from_review_is_used_in_pti(
     assert card["installment_payment_source"] == "partner"
 
 
-async def test_pti_not_computable_without_partner_payment_and_tariff_markup(
+async def test_unknown_tariff_counts_by_default_tariff(
     admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
-    """T21: «не вычислимо» — только если нет ни поля от заказчика, ни наценки
-    тарифа (тариф неизвестен правилам). Заниженного ПДН без рассрочки нет."""
+    """CRM тариф не присылает (решение владельца 02.11.2026 — тарифами не
+    пользуемся): платёж по рассрочке считается по default_tariff из правил,
+    а не «не вычислимо», и заявка не получает отказ «неизвестный тариф»."""
     payload = {**_DEFAULT_STAGE_B_PAYLOAD, "deal": {**_DEFAULT_STAGE_B_PAYLOAD["deal"], "tariff": "no_such_tariff"}}
     _external_id, application_id = await _prepare_application_at_stage_b(
         partner_admin, partner_client, storage, session_factory, stage_b_payload=payload,
@@ -1173,9 +1175,10 @@ async def test_pti_not_computable_without_partner_payment_and_tariff_markup(
     await run_stage_b(session_factory, application_id, partner_client=partner_client)
 
     card = await _card_decision(admin_client, session_factory, application_id, "rm_pti_noinst@example.com")
-    assert card["pti"] is None
-    assert card["pti_status"] == "no_installment"
-    assert card["installment_payment"] is None
+    assert card["reason_code"] != "UNKNOWN_TARIFF"
+    assert card["installment_payment"] is not None
+    assert card["installment_payment_source"] == "tariff"
+    assert card["pti_status"] != "no_installment"
 
 
 async def test_card_pti_not_computable_without_income(
