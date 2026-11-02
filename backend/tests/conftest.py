@@ -44,6 +44,12 @@ os.environ["EXTERNAL_SOURCES_MODE"] = "fake"
 # Запрос в БКИ: тесты стадии Б — про решение после БКИ, сразу (auto);
 # ручной запрос по кнопке проверяют отдельные тесты (test_bki_manual_request.py).
 os.environ["BKI_REQUEST_MODE"] = "auto"
+# Правило 10: настоящее бюро (BKI_PROVIDER_MODE=spectrum и логин из .env
+# приходят в api/worker из docker-compose.yml) тестам недоступно — каждый
+# запрос платный. Провайдер БКИ в тестах подменяется явно.
+os.environ["BKI_PROVIDER_MODE"] = "not_configured"
+os.environ["SPECTRUM_USER"] = ""
+os.environ["SPECTRUM_PASSWORD"] = ""
 
 import asyncpg
 import pytest

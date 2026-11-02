@@ -47,6 +47,14 @@ function BkiTag() {
   );
 }
 
+// Итог запроса в БКИ одной фразой (bki_reports.status).
+function bkiResultText(result: { status: string; score?: string | number | null }): string {
+  if (result.status === "ok") return result.score != null ? `получен, балл ${Number(result.score)}` : "получен";
+  if (result.status === "no_data") return "кредитной истории в бюро нет";
+  if (result.status === "source_unavailable") return "бюро не ответило";
+  return "ошибка запроса";
+}
+
 const capitalize = (text: string) => (text ? text[0]!.toUpperCase() + text.slice(1) : text);
 
 // Строки «по данным БКИ» под нашей ручной проверкой того же источника.
@@ -237,7 +245,9 @@ export function ApplicationDetailPage() {
     },
     enabled: Boolean(id),
     // Отчёт БКИ заказан — решение придёт фоновой задачей, обновляем карточку.
-    refetchInterval: (q) => (q.state.data?.status === "awaiting_bki" && q.state.data?.bki_order?.pending ? 5000 : false),
+    // Заказан отчёт БКИ — опрашиваем, пока не придёт итог (заявка при этом
+    // успевает побыть и в awaiting_bki, и в stage_b — pending учитывает оба).
+    refetchInterval: (q) => (q.state.data?.bki_order?.pending ? 3000 : false),
   });
 
   const retryMutation = useMutation({
@@ -827,7 +837,7 @@ export function ApplicationDetailPage() {
       </section>
 
       {/* Кредитная история — отдельным блоком: запрос в БКИ платный, по кнопке. */}
-      {(bkiWaiting || bkiRetry) && (
+      {(bkiWaiting || bkiRetry || app.bki_order?.pending) && (
         <BkiRequestPanel
           applicationId={app.id}
           types={app.bki_report_types ?? []}
@@ -835,6 +845,17 @@ export function ApplicationDetailPage() {
           canOperate={canOperateFssp}
           retryReason={bkiRetry ? reasonCodeLabel(latestDecision?.reason_code ?? "") : null}
         />
+      )}
+      {!(bkiWaiting || bkiRetry || app.bki_order?.pending) && app.bki_result && (
+        <section className="pf-card bki-request" data-testid="bki-result" aria-labelledby="bki-result-title">
+          <h2 id="bki-result-title" className="pf-section-title bki-request__title">
+            Кредитная история (БКИ)
+          </h2>
+          <p className="bki-request__status">
+            {app.bki_result.label ? `${app.bki_result.label} отчёт` : "Отчёт"} ·{" "}
+            {formatDateTime(app.bki_result.requested_at)} — {bkiResultText(app.bki_result)}
+          </p>
+        </section>
       )}
 
       {showManual && (

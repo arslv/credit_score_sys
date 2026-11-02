@@ -731,6 +731,17 @@ class BkiOrderOut(BaseModel):
     pending: bool
 
 
+class BkiResultOut(BaseModel):
+    """Итог последнего запроса в БКИ по заявке — одной строкой в карточке.
+    Сам отчёт — /credit-report (с записью просмотра в audit_log)."""
+
+    status: str  # ok | no_data | source_unavailable | error (bki_reports.status)
+    report_type: str | None
+    label: str | None
+    score: Decimal | None
+    requested_at: datetime
+
+
 class ApplicationDetail(BaseModel):
     id: UUID
     number: int
@@ -786,6 +797,7 @@ class ApplicationDetail(BaseModel):
     # Кнопки запроса в БКИ: waiting — ждём первого заказа; retry — отчёт не
     # получен, можно повторить; None — кнопок нет (app/api/bki.py).
     bki_request_state: str | None = None
+    bki_result: BkiResultOut | None = None
     # Проверки из подробного отчёта бюро (ФССП, банкротство…) — рядом с
     # нашими, с пометкой «от БКИ»; в решение не входят.
     bureau_checks: list[BureauCheckOut] = []
@@ -825,13 +837,45 @@ async def _bki_request_info(
                 .limit(1)
             )
         ).scalar_one_or_none()
+        ordered_now = waiting_since is not None and row[0].created_at >= waiting_since
+        # После заказа заявка сразу уходит awaiting_bki -> stage_b и там ждёт
+        # бюро (секунды): это тоже «ждём ответа», пока стадия Б не закончилась.
+        waiting_bureau = application.status == "awaiting_bki"
+        if application.status == "stage_b" and ordered_now:
+            last = (
+                await session.execute(
+                    select(StatusHistory.from_status, StatusHistory.created_at)
+                    .where(StatusHistory.application_id == application.id)
+                    .order_by(StatusHistory.created_at.desc())
+                    .limit(1)
+                )
+            ).first()
+            waiting_bureau = last is not None and last[0] == "awaiting_bki" and last[1] >= row[0].created_at
         order = BkiOrderOut(
             report_type=row[0].report_type, label=labels.get(row[0].report_type, row[0].report_type),
             employee_name=row[1], created_at=row[0].created_at,
-            pending=application.status == "awaiting_bki" and waiting_since is not None
-            and row[0].created_at >= waiting_since,
+            pending=waiting_bureau and ordered_now,
         )
     return types, order
+
+
+async def _bki_result(
+    session: AsyncSession, application: Application, types: list[BkiReportTypeOut],
+) -> BkiResultOut | None:
+    report = (
+        await session.execute(
+            select(BkiReport).where(BkiReport.application_id == application.id)
+            .order_by(BkiReport.requested_at.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+    if report is None:
+        return None
+    labels = {t.code: t.label for t in types}
+    return BkiResultOut(
+        status=report.status, report_type=report.report_type,
+        label=labels.get(report.report_type or "", report.report_type), score=report.score,
+        requested_at=report.requested_at,
+    )
 
 
 async def _client_rating(session: AsyncSession, application: Application, *, full_pii: bool) -> ClientRatingOut | None:
@@ -1164,6 +1208,7 @@ async def get_application(
         bki_report_types=bki_types,
         bki_order=bki_order,
         bki_request_state=request_state,
+        bki_result=await _bki_result(session, application, bki_types),
         bureau_checks=[
             BureauCheckOut(
                 id=b.id, subject_type=b.subject_type, source=b.source, block=b.block, status=b.status,

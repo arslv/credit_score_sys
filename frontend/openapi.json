@@ -2963,6 +2963,16 @@
             ],
             "title": "Bki Request State"
           },
+          "bki_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BkiResultOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "bureau_checks": {
             "items": {
               "$ref": "#/components/schemas/BureauCheckOut"
@@ -3350,6 +3360,62 @@
           "report_type"
         ],
         "title": "BkiRequestOut"
+      },
+      "BkiResultOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "report_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Type"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "requested_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requested At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "report_type",
+          "label",
+          "score",
+          "requested_at"
+        ],
+        "title": "BkiResultOut",
+        "description": "Итог последнего запроса в БКИ по заявке — одной строкой в карточке.\nСам отчёт — /credit-report (с записью просмотра в audit_log)."
       },
       "BlacklistImportOut": {
         "properties": {

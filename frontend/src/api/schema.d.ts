@@ -995,6 +995,7 @@ export interface components {
             bki_order?: components["schemas"]["BkiOrderOut"] | null;
             /** Bki Request State */
             bki_request_state?: string | null;
+            bki_result?: components["schemas"]["BkiResultOut"] | null;
             /**
              * Bureau Checks
              * @default []
@@ -1111,6 +1112,26 @@ export interface components {
             status: string;
             /** Report Type */
             report_type: string;
+        };
+        /**
+         * BkiResultOut
+         * @description Итог последнего запроса в БКИ по заявке — одной строкой в карточке.
+         *     Сам отчёт — /credit-report (с записью просмотра в audit_log).
+         */
+        BkiResultOut: {
+            /** Status */
+            status: string;
+            /** Report Type */
+            report_type: string | null;
+            /** Label */
+            label: string | null;
+            /** Score */
+            score: string | null;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
         };
         /** BlacklistImportOut */
         BlacklistImportOut: {

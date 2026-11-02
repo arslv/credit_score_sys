@@ -126,6 +126,35 @@ async def test_detailed_order_requests_full_report_and_approves(
     sent = await _all_decisions(partner_admin, external_id)
     assert [d["status"] for d in sent] == ["approved"]
 
+    # Карточка: ожидания больше нет, итог запроса — одной строкой.
+    detail = (await admin_client.get(f"/api/applications/{application_id}")).json()
+    assert detail["bki_order"]["pending"] is False
+    assert detail["bki_result"]["status"] == "ok" and detail["bki_result"]["label"] == "Подробный"
+
+
+async def test_order_stays_pending_while_stage_b_waits_for_bureau(
+    manual_mode, queued, admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """После заказа заявка сразу уходит awaiting_bki -> stage_b и ждёт бюро
+    секунды — карточка всё это время показывает «ждём ответа» и опрашивает."""
+    _external_id, application_id = await _ready_application(partner_admin, partner_client, storage, session_factory)
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(good_history_report()))
+    await run_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=provider)
+    assert (await _order(admin_client, session_factory, application_id, "basic", email="bki-wait@example.com")).status_code == 202
+
+    async with session_factory() as session:
+        application = await session.get(Application, application_id)
+        application.status = "stage_b"
+        session.add(StatusHistory(
+            application_id=application_id, from_status="awaiting_bki", to_status="stage_b", actor_type="system",
+        ))
+        await session.commit()
+
+    detail = (await admin_client.get(f"/api/applications/{application_id}")).json()
+    assert detail["status"] == "stage_b"
+    assert detail["bki_order"]["pending"] is True
+    assert detail["bki_result"] is None
+
 
 @pytest_asyncio.fixture
 async def basic_without_approval(active_ruleset, session_factory):
