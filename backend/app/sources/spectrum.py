@@ -13,8 +13,9 @@
 
 Ответ отчёта: data[].content.check_person.<блок> (структура — из описания
 блока в кабинете). Транспорт (адрес API, авторизация, заказ и получение
-отчёта) — SpectrumTransport; HTTP-реализация — когда будет описание API из
-кабинета. До того провайдер не собирается фабрикой (app/sources/factory.py).
+отчёта) — SpectrumTransport, HTTP-реализация — app/sources/spectrum_http.py;
+фабрика собирает провайдер при BKI_PROVIDER_MODE=spectrum и заданных
+SPECTRUM_USER/SPECTRUM_PASSWORD (docs/bki_spectrum.md).
 
 Проверки подробного пакета — по BUREAU_BLOCKS (по описаниям блоков): ФССП
 (P.0035), банкротство (P.0124), недействительный паспорт (P.0308), ИНН

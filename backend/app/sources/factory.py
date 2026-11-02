@@ -20,6 +20,8 @@ from app.sources.fns import (
     FnsNpdHttpSource,
 )
 from app.sources.fssp import DevFsspCaptchaSource, FsspCaptchaHttpSource, FsspCaptchaSource
+from app.sources.spectrum import SpectrumDataBkiProvider
+from app.sources.spectrum_http import SpectrumHttpTransport
 
 
 def build_fns_inn_source(settings: Settings):
@@ -77,4 +79,19 @@ def build_bki_provider(settings: Settings) -> BkiProvider:
             raw = json.loads(Path(settings.bki_fixture_path).read_text(encoding="utf-8"))
             reports = {key: deserialize_report(value) for key, value in raw.items()}
         return FakeBkiProvider(reports=reports)
+    if settings.bki_provider_mode == "spectrum" and settings.spectrum_user and settings.spectrum_password:
+        return SpectrumDataBkiProvider(build_spectrum_transport(settings))
     return NotConfiguredBkiProvider()
+
+
+def build_spectrum_transport(settings: Settings) -> SpectrumHttpTransport:
+    return SpectrumHttpTransport(
+        base_url=settings.spectrum_api_url,
+        user=settings.spectrum_user,
+        password=settings.spectrum_password,
+        pending=get_redis(),
+        token_age_seconds=settings.spectrum_token_age_seconds,
+        request_timeout_seconds=settings.spectrum_request_timeout_seconds,
+        poll_interval_seconds=settings.spectrum_poll_interval_seconds,
+        poll_timeout_seconds=settings.spectrum_poll_timeout_seconds,
+    )

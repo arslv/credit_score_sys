@@ -60,6 +60,9 @@ services:
       EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-fake}
       BKI_REQUEST_MODE: ${BKI_REQUEST_MODE:-manual}
       FSSP_SOURCE_MODE: ${FSSP_SOURCE_MODE:-}
+      BKI_PROVIDER_MODE: ${BKI_PROVIDER_MODE:-not_configured}
+      SPECTRUM_USER: ${SPECTRUM_USER:-}
+      SPECTRUM_PASSWORD: ${SPECTRUM_PASSWORD:-}
     volumes:
       - storage_data:/data/storage
       - ./config:/app/config:ro
@@ -106,6 +109,9 @@ services:
       EXTERNAL_SOURCES_MODE: ${EXTERNAL_SOURCES_MODE:-fake}
       BKI_REQUEST_MODE: ${BKI_REQUEST_MODE:-manual}
       FSSP_SOURCE_MODE: ${FSSP_SOURCE_MODE:-}
+      BKI_PROVIDER_MODE: ${BKI_PROVIDER_MODE:-not_configured}
+      SPECTRUM_USER: ${SPECTRUM_USER:-}
+      SPECTRUM_PASSWORD: ${SPECTRUM_PASSWORD:-}
     volumes:
       - storage_data:/data/storage
       - ./config:/app/config:ro

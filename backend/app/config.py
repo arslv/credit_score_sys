@@ -204,7 +204,19 @@ class Settings(BaseSettings):
     # отдельная настройка от external_sources_mode (у ФССП/ФНС хотя бы есть
     # гипотетический URL, у БКИ нет и этого). not_configured — единственный
     # безопасный дефолт; fake — для дев/тестов с синтетическими отчётами.
-    bki_provider_mode: str = "not_configured"  # not_configured (по умолчанию) | fake
+    bki_provider_mode: str = "not_configured"  # not_configured (по умолчанию) | fake | spectrum
+    # Спектрум Дата (bki_provider_mode=spectrum, app/sources/spectrum_http.py):
+    # адрес B2B-API, логин и пароль пользователя API. Пусто — БКИ «не подключено».
+    spectrum_api_url: str = "https://b2b-api.spectrumdata.ru"
+    spectrum_user: str = ""
+    spectrum_password: str = ""
+    spectrum_token_age_seconds: int = 300
+    spectrum_request_timeout_seconds: float = 20.0
+    # Сколько ждём готовности отчёта (по описанию блоков — до ~10 с); не
+    # успел — заявка в «серую зону» с кнопкой повтора, повтор заберёт тот же
+    # отчёт без повторного списания.
+    spectrum_poll_interval_seconds: float = 2.0
+    spectrum_poll_timeout_seconds: float = 60.0
     # Отчёты для FakeBkiProvider по сценарию — JSON {"Фамилия|Имя|ГГГГ-ММ-ДД": {...}}
     # в формате app.sources.bki.serialize_report. Пусто -> пустой FakeBkiProvider
     # (как раньше), см. app/sources/factory.py. Для scripts/e2e_check.py.
