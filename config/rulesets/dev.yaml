@@ -168,11 +168,11 @@ bki:
   report_types:
     basic:
       label: Обычный
-      provider_code: ""
+      provider_code: report_credit_history@ip_aliev_b_a  # «Кредитный рейтинг»
       allows_approval: true
     detailed:
       label: Подробный
-      provider_code: ""
+      provider_code: report_check_applicant_premium@ip_aliev_b_a  # «Проверка соискателя — Премиум»
       allows_approval: true
   # Суммы и количества у бюро — диапазонами: для ПДН берём верхнюю границу
   # (осторожнее). lower | middle | upper.

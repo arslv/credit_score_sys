@@ -64,6 +64,20 @@ def _error_text(response: httpx.Response) -> str:
     return f"HTTP {response.status_code}"
 
 
+def _body(response: httpx.Response) -> dict:
+    """Тело успешного ответа. Ошибка бывает и при HTTP 200 — тогда в теле
+    {"status": 500, "error": {...}} вместо {"state": "ok", ...}."""
+    if response.status_code != 200:
+        raise SpectrumApiError(_error_text(response))
+    body = response.json()
+    if not isinstance(body, dict):
+        raise SpectrumApiError("неожиданный ответ API")
+    if body.get("error"):
+        error = body["error"] if isinstance(body["error"], dict) else {}
+        raise SpectrumApiError(f"API: {error.get('message') or body.get('status_desc') or 'ошибка'}")
+    return body
+
+
 def _pending_key(report_type_uid: str, data: dict[str, str]) -> str:
     digest = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
     return f"spectrum:pending:{report_type_uid}:{digest}"
@@ -78,6 +92,7 @@ class SpectrumHttpTransport:
         password: str,
         pending: PendingStore,
         token_age_seconds: int = 300,
+        clock_skew_seconds: int = 60,
         request_timeout_seconds: float = 20.0,
         poll_interval_seconds: float = 2.0,
         poll_timeout_seconds: float = 60.0,
@@ -88,6 +103,7 @@ class SpectrumHttpTransport:
         self._password = password
         self._pending = pending
         self._token_age = token_age_seconds
+        self._clock_skew = clock_skew_seconds
         self._timeout = request_timeout_seconds
         self._poll_interval = poll_interval_seconds
         self._poll_timeout = poll_timeout_seconds
@@ -97,16 +113,17 @@ class SpectrumHttpTransport:
         return httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout, transport=self._transport)
 
     def _headers(self) -> dict[str, str]:
+        # Метка «из будущего» хоть на секунду — 403 S111 (часы их сервера
+        # отстают от наших на секунды): ставим её чуть в прошлое, срок
+        # действия токена это перекрывает.
+        stamp = int(time.time()) - self._clock_skew
         return {
-            "Authorization": auth_header(self._user, self._password, stamp=int(time.time()), age=self._token_age),
+            "Authorization": auth_header(self._user, self._password, stamp=stamp, age=self._token_age),
             "Accept": "application/json",
         }
 
     async def _get(self, client: httpx.AsyncClient, path: str, params: dict | None = None) -> dict:
-        response = await client.get(f"{_API}{path}", params=params, headers=self._headers())
-        if response.status_code != 200:
-            raise SpectrumApiError(_error_text(response))
-        return response.json()
+        return _body(await client.get(f"{_API}{path}", params=params, headers=self._headers()))
 
     async def user_info(self) -> dict:
         async with self._client() as client:
@@ -114,7 +131,7 @@ class SpectrumHttpTransport:
 
     async def report_types(self) -> list[dict]:
         async with self._client() as client:
-            body = await self._get(client, "/user/report_types", {"_can_generate": "true", "_size": 200})
+            body = await self._get(client, "/user/report_types", {"_can_generate": "true", "_size": 100})
         return body.get("data") or []
 
     async def _make(self, client: httpx.AsyncClient, report_type_uid: str, data: dict[str, str]) -> str:
@@ -123,9 +140,7 @@ class SpectrumHttpTransport:
             json={"queryType": "MULTIPART", "query": " ", "data": data},
             headers=self._headers(),
         )
-        if response.status_code != 200:
-            raise SpectrumApiError(_error_text(response))
-        items = response.json().get("data") or []
+        items = _body(response).get("data") or []
         uid = items[0].get("uid") if items and isinstance(items[0], dict) else None
         if not uid:
             raise SpectrumApiError("в ответе на заказ нет uid отчёта")
@@ -151,9 +166,7 @@ class SpectrumHttpTransport:
                 if response.status_code == 404:
                     await self._pending.delete(key)  # отчёта больше нет — в следующий раз закажем заново
                     raise SpectrumApiError(_error_text(response))
-                if response.status_code != 200:
-                    raise SpectrumApiError(_error_text(response))
-                body = response.json()
+                body = _body(response)
                 items = body.get("data") or []
                 if items and isinstance(items[0], dict) and items[0].get("progress_wait", 0) == 0:
                     await self._pending.delete(key)

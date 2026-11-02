@@ -91,6 +91,7 @@ def build_spectrum_transport(settings: Settings) -> SpectrumHttpTransport:
         password=settings.spectrum_password,
         pending=get_redis(),
         token_age_seconds=settings.spectrum_token_age_seconds,
+        clock_skew_seconds=settings.spectrum_clock_skew_seconds,
         request_timeout_seconds=settings.spectrum_request_timeout_seconds,
         poll_interval_seconds=settings.spectrum_poll_interval_seconds,
         poll_timeout_seconds=settings.spectrum_poll_timeout_seconds,

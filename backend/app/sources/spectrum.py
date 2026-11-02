@@ -318,7 +318,9 @@ BUREAU_BLOCKS: list[BureauBlock] = [
     ),
     BureauBlock(
         path=("check_person", "bankruptcy_short"), source="fedresurs",
-        source_ids=("check_person/fedresurs_short",), parse=_parse_bankruptcy,
+        # В пакете «Премиум» источник называется fedresurs_short_inn (список
+        # источников пакета из /domain/balance), в описании блока — fedresurs_short.
+        source_ids=("check_person/fedresurs_short", "check_person/fedresurs_short_inn"), parse=_parse_bankruptcy,
     ),
     BureauBlock(
         path=("check_person", "expired_passport_v2"), source="mvd",

@@ -211,6 +211,9 @@ class Settings(BaseSettings):
     spectrum_user: str = ""
     spectrum_password: str = ""
     spectrum_token_age_seconds: int = 300
+    # Метка времени токена — на столько секунд в прошлое: их сервер отвергает
+    # метку «из будущего» (403 S111), а часы расходятся на секунды.
+    spectrum_clock_skew_seconds: int = 60
     spectrum_request_timeout_seconds: float = 20.0
     # Сколько ждём готовности отчёта (по описанию блоков — до ~10 с); не
     # успел — заявка в «серую зону» с кнопкой повтора, повтор заберёт тот же

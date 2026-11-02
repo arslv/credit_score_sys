@@ -5,6 +5,7 @@ b2b-api.spectrumdata.ru): токен AR-REST, заказ → ожидание �
 
 import base64
 import hashlib
+import time
 
 import httpx
 import pytest
@@ -75,6 +76,10 @@ async def test_make_then_poll_until_ready():
     assert make.call_count == 1 and get.call_count == 2
     sent = make.calls[0].request
     assert sent.headers["Authorization"].startswith("AR-REST ")
+    _user, stamp, _age, _salted = base64.b64decode(
+        sent.headers["Authorization"].removeprefix("AR-REST "),
+    ).decode().split(":", 3)
+    assert int(stamp) < time.time() - 30  # метка в прошлом — не «из будущего» для их часов
     assert b'"queryType": "MULTIPART"' in sent.content or b'"queryType":"MULTIPART"' in sent.content
     assert get.calls[0].request.url.params["_content"] == "true"
     assert pending.data == {}  # отчёт забран — в следующий раз закажем новый
@@ -121,4 +126,16 @@ async def test_report_types_lists_packages():
 def test_factory_builds_spectrum_only_with_credentials():
     with_creds = Settings(bki_provider_mode="spectrum", spectrum_user="api@our_domain", spectrum_password="secret")
     assert isinstance(build_bki_provider(with_creds), SpectrumDataBkiProvider)
-    assert isinstance(build_bki_provider(Settings(bki_provider_mode="spectrum")), NotConfiguredBkiProvider)
+    no_creds = Settings(bki_provider_mode="spectrum", spectrum_user="", spectrum_password="")
+    assert isinstance(build_bki_provider(no_creds), NotConfiguredBkiProvider)
+
+
+@respx.mock
+async def test_error_inside_http_200_is_an_error():
+    # Так API отвечает, например, на _size больше 100.
+    respx.get(f"{BASE}/b2b/api/v1/user/report_types").mock(return_value=httpx.Response(200, json={
+        "status": 500, "status_desc": "Internal Server Error",
+        "error": {"message": "Запрошено слишком много элементов:200, максимально возможно:100"},
+    }))
+    with pytest.raises(SpectrumApiError, match="слишком много"):
+        await _transport().report_types()

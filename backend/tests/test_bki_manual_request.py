@@ -101,7 +101,7 @@ async def test_detailed_order_requests_full_report_and_approves(
     status = await finalize_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=provider)
 
     assert status == "approved"
-    assert provider.requested_codes == [None]  # пакет бюро ещё не задан в правилах
+    assert provider.requested_codes == ["report_check_applicant_premium@ip_aliev_b_a"]  # пакет из правил
     async with session_factory() as session:
         report = (await session.execute(select(BkiReport).where(BkiReport.application_id == application_id))).scalar_one()
         assert report.report_type == "detailed"

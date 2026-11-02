@@ -34,6 +34,21 @@ https://b2b-api.spectrumdata.ru/swagger-ui/index.html
 - вход — заголовок `AR-REST base64(user:stamp:age:base64(md5(stamp:age:base64(md5(пароль)))))`;
 - не дождались — заявка в «серую зону» с кнопкой повтора; uid отчёта лежит в
   Redis (сутки), повтор забирает тот же отчёт, а не заказывает новый.
+- метка времени токена ставится на `SPECTRUM_CLOCK_SKEW_SECONDS` (60) в
+  прошлое: их часы отстают на несколько секунд, а метку «из будущего» API
+  отвергает (`403 S111`);
+- ошибка бывает и при HTTP 200 (`{"status": 500, "error": {...}}`), размер
+  страницы списков — не больше 100.
+
+Пакеты нашего аккаунта (домен `ip_aliev_b_a`, пользователь API
+`user_integration@ip_aliev_b_a`, проверено 02.11.2026):
+
+| Кнопка | uid пакета | Квота |
+| --- | --- | --- |
+| Обычный | `report_credit_history@ip_aliev_b_a` | 1000 всего |
+| Подробный | `report_check_applicant_premium@ip_aliev_b_a` | 100 всего, 30 источников |
+
+Остаток — `GET /b2b/api/v1/domain/balance` (бесплатно).
 
 ## Как включить
 
@@ -42,10 +57,9 @@ https://b2b-api.spectrumdata.ru/swagger-ui/index.html
    `SPECTRUM_USER=...`, `SPECTRUM_PASSWORD=...`.
 2. Проверить доступ (ничего не списывает):
    `docker compose exec api python -m app.cli.spectrum check`.
-3. Узнать идентификаторы пакетов:
-   `docker compose exec api python -m app.cli.spectrum report-types` — uid
-   «Кредитного рейтинга» и «Премиума» вписать в правила:
-   `bki.report_types.basic.provider_code` и `.detailed.provider_code`.
+3. Идентификаторы пакетов уже в правилах (`config/rulesets/dev.yaml`,
+   `bki.report_types.*.provider_code`); список —
+   `docker compose exec api python -m app.cli.spectrum report-types`.
 4. `BKI_PROVIDER_MODE=spectrum` в `.env`, перезапустить api и worker.
 5. Одна живая заявка (спишется одна проверка): сверить, что блоки приходят по
    путям из описаний, и проверить допущение про «средний платёж».
