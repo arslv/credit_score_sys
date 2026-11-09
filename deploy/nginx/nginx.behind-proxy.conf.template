@@ -21,6 +21,12 @@ map $http_x_forwarded_proto $forwarded_proto {
     ""      $scheme;
 }
 
+# Адрес api — у DNS Docker на каждый запрос (valid=10s): после пересборки
+# api получает новый внутренний IP, а статический proxy_pass держал старый —
+# все запросы к /api отвечали 502 (вход «не пускал» никого), пока nginx не
+# перезапустить. С переменной в proxy_pass nginx спрашивает адрес заново.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
 server {
     listen 80;
     server_name _;
@@ -35,7 +41,8 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://api:8000;
+        set $api_upstream http://api:8000;
+        proxy_pass $api_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $forwarded_proto;
