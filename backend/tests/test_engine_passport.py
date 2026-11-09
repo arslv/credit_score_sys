@@ -2,6 +2,9 @@ from datetime import date, timedelta
 
 import pytest
 
+from app.config import get_settings
+from app.engine.department_codes import load_passport_series_regions
+
 from app.engine.passport import (
     check_department_code_region,
     compute_blank_year,
@@ -92,23 +95,38 @@ def test_validate_passport_format(series, number, expected):
     assert validate_passport_format(series, number) is expected
 
 
-# --- код подразделения против региона (синтетический справочник, T08 п.3) -------
+# --- код подразделения против региона серии -----------------------------------
+# Серия начинается с ОКАТО региона (Москва — 45, Дагестан — 82), код
+# подразделения — с номера региона (Москва — 77, Дагестан — 05): сверка через
+# таблицу config/reference/passport_series_regions.csv.
 
-_KNOWN_CODES = frozenset({"770-001", "010-001"})  # Москва, Адыгея — см. config/reference/fms_unit.csv
-
-
-def test_department_code_region_match():
-    assert check_department_code_region("7712", "770-001", _KNOWN_CODES) is True
-
-
-def test_department_code_region_mismatch():
-    assert check_department_code_region("7712", "010-001", _KNOWN_CODES) is False
+_KNOWN_CODES = frozenset({"770-001", "010-001", "050-050", "050-024", "050-004"})
 
 
-def test_department_code_not_in_reference_returns_none():
-    """Код отсутствует в справочнике — не флаг несовпадения, отдельная отметка
-    "код не найден" (features.passport_department_code_not_found)."""
-    assert check_department_code_region("7712", "999-999", _KNOWN_CODES) is None
+@pytest.fixture(scope="module")
+def series_regions():
+    return load_passport_series_regions(get_settings().passport_series_regions_path)
+
+
+@pytest.mark.parametrize(("series", "code"), [
+    ("4512", "770-001"),  # Москва
+    ("8215", "050-050"),  # Дагестан — у всех таких паспортов раньше было «замечание»
+    ("8207", "050-024"),
+    ("8219", "050-004"),
+])
+def test_department_code_region_match(series_regions, series, code):
+    assert check_department_code_region(series, code, _KNOWN_CODES, series_regions) is True
+
+
+def test_department_code_region_mismatch(series_regions):
+    assert check_department_code_region("8215", "770-001", _KNOWN_CODES, series_regions) is False  # Дагестан vs Москва
+
+
+def test_department_code_not_in_reference_or_unknown_series_returns_none(series_regions):
+    """Код отсутствует в справочнике или серии нет в таблице регионов — сверить
+    не с чем, это не флаг несовпадения."""
+    assert check_department_code_region("4512", "999-999", _KNOWN_CODES, series_regions) is None
+    assert check_department_code_region("0212", "770-001", _KNOWN_CODES, series_regions) is None
 
 
 # --- год бланка: цифры 3-4 серии --------------------------------------------

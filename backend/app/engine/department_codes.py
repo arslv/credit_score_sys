@@ -14,3 +14,14 @@ from pathlib import Path
 def load_department_codes(path: str) -> frozenset[str]:
     with Path(path).open(encoding="utf-8") as f:
         return frozenset(row["code"] for row in csv.DictReader(f))
+
+
+@lru_cache(maxsize=4)
+def load_passport_series_regions(path: str) -> dict[str, frozenset[str]]:
+    """Первые 2 цифры серии (ОКАТО региона) → допустимые первые 2 цифры кода
+    подразделения (номер региона), config/reference/passport_series_regions.csv."""
+    with Path(path).open(encoding="utf-8") as f:
+        return {
+            row["series"]: frozenset(code.strip() for code in row["department"].split(";") if code.strip())
+            for row in csv.DictReader(f)
+        }

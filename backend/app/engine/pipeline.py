@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.config import get_settings
 from app.engine.clients import compute_client_history_features, find_or_create_client
 from app.engine.compliance_overrides import suppress_reviewed_false_positive
-from app.engine.department_codes import load_department_codes
+from app.engine.department_codes import load_department_codes, load_passport_series_regions
 from app.engine.duplicates import is_passport_reused_with_different_identity
 from app.engine.external_checks import queue_fns_checks
 from app.engine.features import STAGE_A_FEATURE_SET_VERSION, compute_stage_a_features
@@ -167,6 +167,11 @@ async def _compute_local_features(
         ocr_fields,
         department_code_check_enabled=department_code_check_enabled,
         known_department_codes=known_department_codes,
+        passport_series_regions=(
+            load_passport_series_regions(get_settings().passport_series_regions_path)
+            if department_code_check_enabled
+            else None
+        ),
         blank_year_max_issue_offset_years=config.sources.passport.blank_year_max_issue_offset_years,
     )
 
@@ -585,6 +590,11 @@ async def finalize_stage_a(
             ocr_fields,
             department_code_check_enabled=department_code_check_enabled,
             known_department_codes=known_department_codes,
+            passport_series_regions=(
+                load_passport_series_regions(get_settings().passport_series_regions_path)
+                if department_code_check_enabled
+                else None
+            ),
             blank_year_max_issue_offset_years=config.sources.passport.blank_year_max_issue_offset_years,
         )
 

@@ -667,8 +667,8 @@ async def test_stage_a_department_code_region_mismatch_is_flag_only(
         build_ocr_result(
             overrides={
                 **_age_overrides(30),
-                # серия по умолчанию "7700" (регион 77), код — реальный код другого
-                # региона (010-001, Адыгея, см. config/reference/fms_unit.csv) -> расхождение
+                # серия по умолчанию "7700" (ОКАТО 77 — Чукотский АО, коды 87x-xxx),
+                # код — реальный код другого региона (010-001, Адыгея) -> расхождение
                 "department_code": "010-001",
             }
         )

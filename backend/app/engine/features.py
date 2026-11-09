@@ -26,6 +26,7 @@ def compute_stage_a_features(
     as_of: date | None = None,
     department_code_check_enabled: bool = False,
     known_department_codes: frozenset[str] = frozenset(),
+    passport_series_regions: dict[str, frozenset[str]] | None = None,
     blank_year_max_issue_offset_years: int = 3,
 ) -> dict[str, Any]:
     """Признаки стадии А из распознанных полей паспорта (T07 + T08): возраст,
@@ -70,9 +71,12 @@ def compute_stage_a_features(
     if department_code_check_enabled:
         department_code = value("department_code")
         if series and department_code:
-            region_match = check_department_code_region(series, department_code, known_department_codes)
+            region_match = check_department_code_region(
+                series, department_code, known_department_codes, passport_series_regions or {},
+            )
             if region_match is None:
-                features["passport_department_code_not_found"] = True
+                if department_code not in known_department_codes:
+                    features["passport_department_code_not_found"] = True
             else:
                 features["passport_department_code_flag"] = not region_match
 

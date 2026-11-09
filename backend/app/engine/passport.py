@@ -1,6 +1,7 @@
 """Валидация паспорта — чистые функции, без БД и сети (ТЗ, «Стадия А, шаг 2»)."""
 
 import re
+from collections.abc import Mapping
 from datetime import date
 
 from app.engine.dates import compute_age
@@ -69,14 +70,26 @@ def is_issue_date_blank_year_mismatch(issue_date: date, blank_year: int, max_yea
 
 
 def check_department_code_region(
-    passport_series: str, department_code: str, known_codes: frozenset[str] | set[str]
+    passport_series: str,
+    department_code: str,
+    known_codes: frozenset[str] | set[str],
+    series_regions: Mapping[str, frozenset[str]],
 ) -> bool | None:
     """Код подразделения — формат RRR-NNN, где RRR — регион (справочник
     hflabs/fms-unit, см. app.engine.department_codes и docs/registries.md).
-    True — первые 2 цифры кода совпадают с регионом выдачи серии; False — не
-    совпадают (флаг оператору, не автоотказ); None — код отсутствует в
-    справочнике (features.passport_department_code_not_found, а не флаг
-    несовпадения — с несуществующим кодом не с чем сравнивать)."""
+
+    Первые 2 цифры серии — код региона по ОКАТО (Дагестан — 82), первые 2
+    цифры кода подразделения — номер региона (Дагестан — 05): напрямую их не
+    сравнить (раньше сравнивали — замечание выходило почти у всех), сверяем
+    через series_regions (config/reference/passport_series_regions.csv).
+
+    True — регион кода подходит к серии; False — не подходит (флаг
+    оператору, не автоотказ); None — сверить нельзя: кода нет в справочнике
+    (features.passport_department_code_not_found) или серии нет в таблице
+    регионов (новые регионы и т. п.)."""
     if department_code not in known_codes:
         return None
-    return department_code[:2] == passport_series[:2]
+    allowed = series_regions.get(passport_series[:2])
+    if not allowed:
+        return None
+    return department_code[:2] in allowed

@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     # Справочник кодов подразделений (T08) — hflabs/fms-unit, статичный файл,
     # не синхронизируется периодически (см. docs/registries.md).
     department_codes_path: str = "config/reference/fms_unit.csv"
+    # Серия паспорта (ОКАТО) → номер региона в коде подразделения, для сверки
+    # «код подразделения соответствует серии».
+    passport_series_regions_path: str = "config/reference/passport_series_regions.csv"
 
     # ФНС/ФССП (T16, заменяет старый блок T09 — Федресурс убран, ФССП больше
     # не опрашивается автоматически): таймауты/интервалы — технические
