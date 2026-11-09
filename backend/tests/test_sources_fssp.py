@@ -1,5 +1,6 @@
 import base64
 from datetime import date
+from pathlib import Path
 
 import httpx
 import respx
@@ -69,6 +70,30 @@ def test_parse_fssp_result_html_extracts_productions():
     assert len(productions) == 2
     assert productions[0]["subject"] == "Взыскание по кредитному договору"
     assert productions[0]["amount"] == "50000"
+
+
+def test_parse_live_results_table_counts_only_open_proceedings():
+    """Живой формат is.fssp.gov.ru (сверено по первому реальному ответу с
+    найденным производством, 09.11.2026; фикстура обезличена): таблица
+    class="list", строка на производство; исполнительский сбор — отдельной
+    строкой; оконченное производство — не долг."""
+    html = (Path(__file__).parent / "fixtures" / "fssp_live_found.html").read_text(encoding="utf-8")
+
+    productions = parse_fssp_result_html(html)
+
+    assert [(p["subject"], p["amount"]) for p in productions] == [
+        ("Задолженность по кредитным платежам (кроме ипотеки)", "3841.59"),
+        ("Исполнительский сбор", "3023.56"),
+    ]
+    assert productions[0]["raw"]["number"] == "111111/25/05030-ИП от 16.07.2025"
+
+
+def test_parse_unknown_structure_is_none_and_only_ended_is_empty():
+    assert parse_fssp_result_html("<div>что-то другое</div>") is None
+    html = (Path(__file__).parent / "fixtures" / "fssp_live_found.html").read_text(encoding="utf-8")
+    # Первая пустая ячейка — «дата окончания» открытого производства.
+    only_ended = html.replace('<td class=""></td>', '<td class="">01.01.2026</td>', 1)
+    assert parse_fssp_result_html(only_ended) == []  # таблица есть, открытых нет — не ошибка
 
 
 # --- FakeFsspCaptchaSource ------------------------------------------------------

@@ -129,10 +129,60 @@ def _unwrap_jsonp(raw: str) -> dict[str, Any]:
     return json.loads(match.group(1))
 
 
-def parse_fssp_result_html(body_html: str) -> list[dict[str, Any]]:
+_RESULTS_TABLE_RE = re.compile(r'<table[^>]*class="[^"]*\blist\b[^"]*"[^>]*>(.*?)</table>', re.S)
+_ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S)
+_CELL_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.S)
+_AMOUNT_LINE_RE = re.compile(r"^(?P<subject>.+?):\s*(?P<amount>\d[\d\s]*(?:[.,]\d+)?)\s*руб", re.I)
+
+
+def _cell_text(cell_html: str) -> str:
+    """Текст ячейки: <br> — перенос строки, скрипты и теги долой."""
+    text = re.sub(r"<script.*?</script>", "", cell_html, flags=re.S | re.I)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
+    text = html_module.unescape(re.sub(r"<[^>]+>", "", text))
+    return "\n".join(line.strip() for line in text.splitlines() if line.strip())
+
+
+def _parse_results_table(table_html: str) -> list[dict[str, Any]]:
+    """Живой формат is.fssp.gov.ru (сверено по первому реальному ответу с
+    найденным производством, 09.11.2026): таблица class="list …", строка на
+    производство, 8 колонок — должник; номер и дата ИП; реквизиты ИД; дата и
+    причина окончания; оплата; предмет исполнения и сумма непогашенной
+    задолженности; отдел; пристав. Предмет и сумма — строками «предмет: N
+    руб.» (исполнительский сбор — отдельной строкой, отдельным производством).
+    Оконченные производства (колонка 4 заполнена) — не долг, пропускаем."""
+    productions: list[dict[str, Any]] = []
+    for row in _ROW_RE.findall(table_html):
+        cells = [_cell_text(c) for c in _CELL_RE.findall(row)]
+        if len(cells) < 6:
+            continue  # заголовок (th) или чужая строка
+        number = cells[1].splitlines()[0] if cells[1] else ""
+        if cells[3]:
+            continue  # окончено — дата и основание окончания
+        lines = cells[5].splitlines()
+        matched = [m for m in (_AMOUNT_LINE_RE.match(line) for line in lines) if m]
+        if not matched:
+            productions.append({"subject": cells[5].replace("\n", " "), "amount": "0", "raw": {"number": number}})
+            continue
+        for m in matched:
+            productions.append({
+                "subject": m.group("subject").strip(),
+                "amount": re.sub(r"\s", "", m.group("amount")).replace(",", "."),
+                "raw": {"number": number},
+            })
+    return productions
+
+
+def parse_fssp_result_html(body_html: str) -> list[dict[str, Any]] | None:
     """Разбирает HTML-фрагмент результата (внутри payload["data"]) в список
-    производств [{"subject": str, "amount": str}] — тот же вид, что уже
-    потребляет app.engine.fssp.summarize_productions.
+    открытых производств [{"subject": str, "amount": str}] — тот же вид, что
+    потребляет app.engine.fssp.summarize_productions. None — структура не
+    узнана (тогда error с сырым ответом); [] — таблица есть, но открытых
+    производств нет (все окончены).
+
+    Живой формат — _parse_results_table. Ниже — прежний разбор по
+    синтетической фикстуре (оговорка T16 далее), оставлен на случай, если
+    сайт вернёт ту разметку.
 
     ВАЖНАЯ ОГОВОРКА (T16): оба живых теста на разведке дали «ничего не
     найдено» — реального образца HTML с НАЙДЕННЫМ производством нет. Парсер
@@ -146,10 +196,16 @@ def parse_fssp_result_html(body_html: str) -> list[dict[str, Any]]:
     момента "не разобрали" уходит в error с сырым HTML, оператор видит его
     сам (ваше явное указание), автоотказа отсюда не бывает ни при каком
     исходе разбора."""
+    table = _RESULTS_TABLE_RE.search(body_html)
+    if table is not None:
+        return _parse_results_table(table.group(1))
+
     # Не балансируем вложенные <div> регуляркой (ненадёжно) — вместо этого
     # идём по полям в порядке документа и группируем каждые predmet+summa в
     # одно производство (фиксированный порядок полей в своей же фикстуре).
     field_matches = re.findall(r'<div class="field" data-name="([^"]+)">([^<]*)</div>', body_html)
+    if not field_matches:
+        return None
 
     productions: list[dict[str, Any]] = []
     current: dict[str, str] = {}
@@ -432,12 +488,20 @@ class FsspCaptchaHttpSource:
                 ),
             )
 
-        if not productions:
+        if productions is None:
             return FsspSubmitOutcome(
                 kind="ok",
                 check_result=CheckResult(
                     status=CheckStatus.ERROR, response_raw={"html": body},
                     error_text="непустой ответ, но не похож ни на «не найдено», ни на известную структуру таблицы",
+                ),
+            )
+        if not productions:
+            # Нашлись только оконченные производства — открытых долгов нет.
+            return FsspSubmitOutcome(
+                kind="ok",
+                check_result=CheckResult(
+                    status=CheckStatus.OK, response_raw={"html": body}, parsed={"productions": []},
                 ),
             )
 
