@@ -33,7 +33,9 @@ APPLICATION_STATUSES = (
 # снимков признаков, импортирована для базового уровня дефолтности и reject
 # inference, ТЗ «Логирование под будущую модель»). "live" — всё, что прошло
 # (или ещё проходит) обычный путь приёма через систему заказчика.
-APPLICATION_SOURCES = ("live", "historical_import")
+# manual — заведена сотрудником в админке (app/api/manual_applications.py):
+# в CRM её нет, решения туда не отправляются.
+APPLICATION_SOURCES = ("live", "historical_import", "manual")
 
 
 class Application(Base):

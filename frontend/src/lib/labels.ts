@@ -413,6 +413,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   fedresurs_manual_check: "Федресурс: отметка проверки",
   import_data: "Импорт файла",
   link_contract: "Привязка договора к заявке",
+  change_setting: "Изменение настройки",
+  request_bki_report: "Запрос отчёта БКИ",
+  create_application: "Заявка заведена вручную",
 };
 
 export function auditActionLabel(action: string): string {

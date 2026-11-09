@@ -16,6 +16,7 @@ from app.api.fedresurs import router as fedresurs_router
 from app.api.fssp import router as fssp_router
 from app.api.imports import router as imports_router
 from app.api.bki import router as bki_router
+from app.api.manual_applications import router as manual_applications_router
 from app.api.partner_webhooks import router as partner_webhooks_router
 from app.api.references import router as references_router
 from app.api.rulesets import router as rulesets_router
@@ -84,6 +85,7 @@ app.include_router(imports_router)
 app.include_router(fssp_router)
 app.include_router(fedresurs_router)
 app.include_router(bki_router)
+app.include_router(manual_applications_router)
 app.include_router(partner_webhooks_router)
 
 

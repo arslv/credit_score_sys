@@ -14,7 +14,7 @@ from app.integrations.base import (
     PartnerUnavailableError,
 )
 from app.integrations.partner_notifier import PartnerNotifier
-from app.models import Decision, IntegrationEvent, ManualOverride, PartnerOutboxEvent
+from app.models import Application, Decision, IntegrationEvent, ManualOverride, PartnerOutboxEvent
 
 logger = structlog.get_logger()
 
@@ -130,6 +130,19 @@ async def _fallback_to_outbox(
     )
 
 
+async def _not_in_crm(session_factory: async_sessionmaker, application_id) -> bool:
+    """Заявка заведена вручную в админке — в CRM её нет, отправлять туда
+    нечего (решение видно только у нас)."""
+    async with session_factory() as session:
+        source = (
+            await session.execute(select(Application.source).where(Application.id == application_id))
+        ).scalar_one_or_none()
+    if source == "manual":
+        logger.info("partner_outbound_skipped_manual_application", application_id=str(application_id))
+        return True
+    return False
+
+
 async def write_decision_status(
     session_factory: async_sessionmaker,
     notifier: PartnerNotifier,
@@ -145,6 +158,8 @@ async def write_decision_status(
     с prev_status (оператор сменил вручную), запись отменяется — событие
     conflict (правило 12 CLAUDE.md); current_status/reason — из тела ИХ
     409-ответа (PartnerConflictError), не из отдельного запроса."""
+    if await _not_in_crm(session_factory, application_id):
+        return "skipped"
     try:
         await _call_with_retry(
             session_factory,
@@ -233,6 +248,8 @@ async def send_ocr_result(
 ) -> None:
     """T18: распознанные паспортные поля — сразу после OCR, не дожидаясь
     решения стадии А."""
+    if await _not_in_crm(session_factory, application_id):
+        return
     try:
         await _call_with_retry(
             session_factory,

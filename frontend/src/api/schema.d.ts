@@ -825,6 +825,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/manual-applications/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Manual Application Options
+         * @description Справочник категорий для формы — оператору справочники недоступны
+         *     целиком (app/api/references.py), здесь только код и название.
+         */
+        get: operations["manual_application_options_api_manual_applications_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/manual-applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Manual Application */
+        post: operations["create_manual_application_api_manual_applications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/crm/new-order": {
         parameters: {
             query?: never;
@@ -931,6 +969,8 @@ export interface components {
             number: number;
             /** External Id */
             external_id: string;
+            /** Source */
+            source: string;
             /** Status */
             status: string;
             /** Client Name */
@@ -1013,6 +1053,8 @@ export interface components {
             number: number;
             /** External Id */
             external_id: string;
+            /** Source */
+            source: string;
             /**
              * Submitted At
              * Format: date-time
@@ -1174,6 +1216,18 @@ export interface components {
             reason: string;
             /** Active */
             active: boolean;
+        };
+        /** Body_create_manual_application_api_manual_applications_post */
+        Body_create_manual_application_api_manual_applications_post: {
+            /**
+             * Data
+             * @description анкета — JSON по схеме ManualApplicationIn
+             */
+            data: string;
+            /** Passport Main */
+            passport_main?: string | null;
+            /** Passport Reg */
+            passport_reg?: string | null;
         };
         /** Body_import_blacklist_api_references_blacklist_import_post */
         Body_import_blacklist_api_references_blacklist_import_post: {
@@ -1803,6 +1857,13 @@ export interface components {
              */
             active: boolean;
         };
+        /** GoodsCategoryOption */
+        GoodsCategoryOption: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        };
         /** GoodsCategoryOut */
         GoodsCategoryOut: {
             /**
@@ -1852,6 +1913,21 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** ManualApplicationOut */
+        ManualApplicationOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Number */
+            number: number;
+        };
+        /** ManualOptionsOut */
+        ManualOptionsOut: {
+            /** Goods Categories */
+            goods_categories: components["schemas"]["GoodsCategoryOption"][];
         };
         /** ManualOverrideOut */
         ManualOverrideOut: {
@@ -3929,6 +4005,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BkiRequestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    manual_application_options_api_manual_applications_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualOptionsOut"];
+                };
+            };
+        };
+    };
+    create_manual_application_api_manual_applications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_create_manual_application_api_manual_applications_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualApplicationOut"];
                 };
             };
             /** @description Validation Error */

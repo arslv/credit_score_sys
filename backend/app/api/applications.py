@@ -90,6 +90,8 @@ class ApplicationListItem(BaseModel):
     id: UUID
     number: int
     external_id: str
+    # live — из CRM; manual — заведена вручную в админке (в CRM её нет).
+    source: str
     submitted_at: datetime
     client_name: str | None
     goods_price: Decimal
@@ -438,6 +440,7 @@ async def list_applications(
 
         item = ApplicationListItem(
             id=application.id, number=application.number, external_id=application.external_id,
+            source=application.source,
             submitted_at=application.submitted_at, client_name=client_name,
             goods_price=application.goods_price, goods_name=application.goods_name,
             requested_amount=application.requested_amount, term_months=application.term_months,
@@ -746,6 +749,7 @@ class ApplicationDetail(BaseModel):
     id: UUID
     number: int
     external_id: str
+    source: str  # live — из CRM; manual — заведена вручную (решения в CRM не уходят)
     status: str
     client_name: str | None
     goods_name: str
@@ -1160,6 +1164,7 @@ async def get_application(
     ).scalars().all()
     return ApplicationDetail(
         id=application.id, number=application.number, external_id=application.external_id,
+        source=application.source,
         status=application.status, client_name=client_name, goods_name=application.goods_name,
         goods_price=application.goods_price, down_payment=application.down_payment,
         term_months=application.term_months, tariff=application.tariff,

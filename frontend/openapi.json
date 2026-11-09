@@ -2498,6 +2498,69 @@
         }
       }
     },
+    "/api/manual-applications/options": {
+      "get": {
+        "tags": [
+          "manual-applications"
+        ],
+        "summary": "Manual Application Options",
+        "description": "Справочник категорий для формы — оператору справочники недоступны\nцеликом (app/api/references.py), здесь только код и название.",
+        "operationId": "manual_application_options_api_manual_applications_options_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualOptionsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/manual-applications": {
+      "post": {
+        "tags": [
+          "manual-applications"
+        ],
+        "summary": "Create Manual Application",
+        "operationId": "create_manual_application_api_manual_applications_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_manual_application_api_manual_applications_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualApplicationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/crm/new-order": {
       "post": {
         "tags": [
@@ -2762,6 +2825,10 @@
             "type": "string",
             "title": "External Id"
           },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -2987,6 +3054,7 @@
           "id",
           "number",
           "external_id",
+          "source",
           "status",
           "client_name",
           "goods_name",
@@ -3026,6 +3094,10 @@
           "external_id": {
             "type": "string",
             "title": "External Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
           },
           "submitted_at": {
             "type": "string",
@@ -3151,6 +3223,7 @@
           "id",
           "number",
           "external_id",
+          "source",
           "submitted_at",
           "client_name",
           "goods_price",
@@ -3573,6 +3646,44 @@
           "active"
         ],
         "title": "BlacklistOut"
+      },
+      "Body_create_manual_application_api_manual_applications_post": {
+        "properties": {
+          "data": {
+            "type": "string",
+            "title": "Data",
+            "description": "анкета — JSON по схеме ManualApplicationIn"
+          },
+          "passport_main": {
+            "anyOf": [
+              {
+                "type": "string",
+                "contentMediaType": "application/octet-stream"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Main"
+          },
+          "passport_reg": {
+            "anyOf": [
+              {
+                "type": "string",
+                "contentMediaType": "application/octet-stream"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Reg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Body_create_manual_application_api_manual_applications_post"
       },
       "Body_import_blacklist_api_references_blacklist_import_post": {
         "properties": {
@@ -5412,6 +5523,24 @@
         ],
         "title": "GoodsCategoryIn"
       },
+      "GoodsCategoryOption": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "GoodsCategoryOption"
+      },
       "GoodsCategoryOut": {
         "properties": {
           "id": {
@@ -5520,6 +5649,41 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "ManualApplicationOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "number"
+        ],
+        "title": "ManualApplicationOut"
+      },
+      "ManualOptionsOut": {
+        "properties": {
+          "goods_categories": {
+            "items": {
+              "$ref": "#/components/schemas/GoodsCategoryOption"
+            },
+            "type": "array",
+            "title": "Goods Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "goods_categories"
+        ],
+        "title": "ManualOptionsOut"
       },
       "ManualOverrideOut": {
         "properties": {

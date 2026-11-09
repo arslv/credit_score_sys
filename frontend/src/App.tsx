@@ -3,6 +3,7 @@ import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { LoginPage } from "./pages/Login";
 import { ApplicationsListPage } from "./pages/ApplicationsList";
+import { NewApplicationPage } from "./pages/NewApplication";
 import { ApplicationDetailPage } from "./pages/ApplicationDetail";
 import { ClientsListPage } from "./pages/ClientsList";
 import { ClientDetailPage } from "./pages/ClientDetail";
@@ -28,6 +29,7 @@ export function App() {
           <Route path="/" element={<Navigate to="/applications" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/applications" element={<ApplicationsListPage />} />
+          <Route path="/applications/new" element={<NewApplicationPage />} />
           <Route path="/applications/:id" element={<ApplicationDetailPage />} />
           <Route path="/clients" element={<ClientsListPage />} />
           <Route path="/clients/:id" element={<ClientDetailPage />} />

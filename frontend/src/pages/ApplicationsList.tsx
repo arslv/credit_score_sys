@@ -53,6 +53,9 @@ const EMPTY_FILTERS: Filters = {
   sourceUnavailableOnly: false,
 };
 
+// Заявку без CRM заводят admin и operator (app/api/manual_applications.py).
+const CREATE_ROLES = ["admin", "operator"];
+
 export function ApplicationsListPage() {
   const { employee } = useAuth();
   const hasQueue = QUEUE_ROLES.includes(employee?.role ?? "");
@@ -121,6 +124,13 @@ export function ApplicationsListPage() {
     <section>
       <PageHeader
         title="Заявки"
+        actions={
+          CREATE_ROLES.includes(employee?.role ?? "") ? (
+            <Link className="btn btn-primary" to="/applications/new">
+              Новая заявка
+            </Link>
+          ) : undefined
+        }
         description={
           hasQueue
             ? "«Требуют действия» — ваша очередь: то, что ждёт именно вашей роли. Остальные вкладки — вся картина."
@@ -226,7 +236,7 @@ export function ApplicationsListPage() {
             {query.data.items.map((item) => (
               <tr key={item.id}>
                 <td className="muted cell-ellipsis cell-id" title={`Заявка №${item.number}`}>
-                  {item.external_id}
+                  {item.source === "manual" ? "вручную" : item.external_id}
                 </td>
                 <td className="cell-ellipsis">
                   <Link to={`/applications/${item.id}`}>{item.client_name ?? "—"}</Link>

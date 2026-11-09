@@ -31,6 +31,8 @@ AUDIT_LOG_ACTIONS = (
     # Изменение настройки сервиса в админке (system_settings), app/api/settings.py.
     "change_setting",
     "request_bki_report",
+    # Заявка заведена вручную в админке, app/api/manual_applications.py.
+    "create_application",
 )
 STATUS_HISTORY_ACTOR_TYPES = ("system", "employee", "client")
 

@@ -4878,3 +4878,33 @@ mark {
   background: var(--status-gray-soft);
   font-size: var(--font-sm);
 }
+
+/* Новая заявка без CRM (pages/NewApplication.tsx). */
+.new-app {
+  max-width: 880px;
+}
+
+.new-app__section {
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+}
+
+.new-app__section > .field--check {
+  margin-top: 0;
+}
+
+.new-app__section .pf-section-title {
+  margin-bottom: var(--space-1);
+}
+
+.new-app__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .new-app .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

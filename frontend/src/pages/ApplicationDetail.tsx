@@ -339,6 +339,8 @@ export function ApplicationDetailPage() {
   const fsspLeft = manualState.filter((s) => !s.fsspDone).map((s) => s.label);
   const fedLeft = manualState.filter((s) => !s.fedDone).map((s) => s.label);
   const grayStageB = latestDecision?.outcome === "manual_review" && latestDecision.stage === "B";
+  // Заведена вручную в админке — в CRM её нет, решения туда не уходят.
+  const manual = app.source === "manual";
   // Серая зона «ФССП не пройдена» — действие нужно, пока ФССП у кого-то не
   // пройдена; прошли — решение не пересчитывается само (новое — после
   // повторного «Рассмотреть» в CRM), «требуется действие» снимаем.
@@ -614,10 +616,10 @@ export function ApplicationDetailPage() {
       state: manualHit ? "bad" : !manualLeft ? "done" : latestDecision?.outcome === "reject" ? "skipped" : actionCount > 0 ? "warn" : "pending",
     },
     {
-      label: "Решение в CRM",
+      label: manual ? "Решение" : "Решение в CRM",
       note: lastOverride
         ? `оператор: ${overrideOutcomeLabel(lastOverride.decision_stage, lastOverride.to_outcome).toLowerCase()}`
-        : latestDecision?.outcome === "reject" ? "отказ" : latestB?.outcome === "approve" ? "одобрено" : grayStageB ? "за оператором CRM" : "впереди",
+        : latestDecision?.outcome === "reject" ? "отказ" : latestB?.outcome === "approve" ? "одобрено" : grayStageB ? (manual ? "за сотрудником" : "за оператором CRM") : "впереди",
       state: lastOverride
         ? "done"
         : latestDecision?.outcome === "reject" ? "bad" : latestB?.outcome === "approve" ? "done" : grayStageB ? "current" : "pending",
@@ -662,7 +664,8 @@ export function ApplicationDetailPage() {
                   .join(" · ") || "паспортных данных нет"}
               </p>
               <p className="ah__line ah__line--muted">
-                Заявка №{app.number} · подана {formatDateTime(app.submitted_at)} · в CRM {app.external_id}
+                Заявка №{app.number} · подана {formatDateTime(app.submitted_at)} ·{" "}
+                {manual ? "заведена вручную, в CRM её нет" : `в CRM ${app.external_id}`}
               </p>
               <p className="ah__line">
                 {app.goods_name && app.goods_name !== "—" ? app.goods_name : "товар уточняется"}
@@ -722,7 +725,11 @@ export function ApplicationDetailPage() {
             ) : (
               explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>
             )}
-            {grayInCrm && !operatorFinal && <p className="verdict-action">Решение принимает оператор в CRM.</p>}
+            {grayInCrm && !operatorFinal && (
+              <p className="verdict-action">
+                {manual ? "Решение — за сотрудником: заявки нет в CRM." : "Решение принимает оператор в CRM."}
+              </p>
+            )}
             {latestDecision?.freeze && (
               <p className="verdict-action">
                 Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.
