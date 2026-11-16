@@ -11,6 +11,8 @@ import { checkResultLabel } from "../lib/labels";
 
 // Сайт ФССП временно ограничил поиск («попробуйте позже») — когда можно
 // снова и сколько блокировка длилась в прошлые разы (app/sources/fssp_cooldown.py).
+const ALL_REGIONS = "-1";
+
 interface FsspBlock {
   retryAt: Date;
   typicalMinutes: number | null;
@@ -120,7 +122,9 @@ export function FsspPanel({
     },
     onSuccess: (data) => {
       setRegions(data.regions);
-      setRegionCode(data.suggested_region_code ?? "");
+      // По умолчанию — «Все регионы» (-1): производство могли завести не по
+      // месту прописки, по одному региону сайт его не покажет.
+      setRegionCode(ALL_REGIONS);
       setMessage(null);
       setError(null);
       setOpen(true);

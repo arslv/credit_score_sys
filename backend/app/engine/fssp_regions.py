@@ -15,6 +15,10 @@ _GENERIC_WORDS = {
 }
 
 
+# «Все регионы» в форме поиска ФССП (config/fssp_regions.yaml).
+ALL_REGIONS_CODE = "-1"
+
+
 @lru_cache
 def load_fssp_regions(path: str) -> dict[str, str]:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
@@ -41,6 +45,8 @@ def match_region_code(address: str | None, regions: dict[str, str]) -> str | Non
     best_code: str | None = None
     best_score = 0
     for code, label in regions.items():
+        if code == ALL_REGIONS_CODE:
+            continue  # «Все регионы» — не регион, по адресу не подсказывается
         label_words = _significant_words(label)
         if label_words and label_words <= address_words and len(label_words) > best_score:
             best_score = len(label_words)

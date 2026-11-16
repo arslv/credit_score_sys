@@ -66,6 +66,32 @@ async def test_fssp_regions_endpoint_lists_regions_and_suggests_by_address(
     # Регион не подставляется молча (ваше явное указание) — поле suggested_region_code
     # может быть None, но его наличие/отсутствие не блокирует получение списка.
     assert "suggested_region_code" in body
+    # «Все регионы» — как на сайте ФССП (is[region_id][0]=-1), первым в списке.
+    assert body["regions"][0] == {"code": "-1", "label": "Все регионы"}
+
+
+async def test_fssp_regions_without_passport_data_still_lists_regions(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """Заявка ждёт паспортные данные от CRM — подсказки нет, но список есть
+    (раньше 4xx и «Не удалось получить список регионов» в карточке)."""
+    from app.system_settings import set_ocr_enabled
+    from tests.test_engine_pipeline import _ingest
+
+    async with session_factory() as session:
+        await set_ocr_enabled(session, False, employee_id=None)
+        await session.commit()
+    _external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    await create_employee(session_factory, email="op-regions-nodata@example.com", role="operator")
+    await login(admin_client, "op-regions-nodata@example.com")
+
+    response = await admin_client.get(
+        "/api/fssp/regions", params={"application_id": str(application_id), "subject_type": "applicant"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["suggested_region_code"] is None
+    assert len(response.json()["regions"]) > 10
 
 
 async def test_fssp_search_and_submit_code_happy_path(

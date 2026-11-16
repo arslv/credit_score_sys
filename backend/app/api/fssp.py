@@ -120,8 +120,14 @@ async def list_fssp_regions(
     if application_id is not None:
         application = await session.get(Application, application_id)
         if application is not None:
-            subject = await _resolve_subject(session, application, subject_type, subject_id)
-            suggested_region_code = match_region_code(subject.registration_address, regions)
+            # Паспорта ещё нет (заявка ждёт данных) — без подсказки, но список
+            # отдаём: раньше здесь падало «Не удалось получить список регионов».
+            try:
+                subject = await _resolve_subject(session, application, subject_type, subject_id)
+            except HTTPException:
+                subject = None
+            if subject is not None:
+                suggested_region_code = match_region_code(subject.registration_address, regions)
 
     return FsspRegionsResponse(
         regions=[FsspRegionOut(code=code, label=label) for code, label in regions.items()],
