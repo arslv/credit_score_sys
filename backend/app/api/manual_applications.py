@@ -91,7 +91,9 @@ class ManualApplicationIn(BaseModel):
 
     income: Decimal = Field(ge=0)
     other_credit_payments: Decimal = Field(default=Decimal("0"), ge=0)
-    bki_consent: bool
+    # Согласие на запрос КИ есть у всех клиентов (решение владельца
+    # 16.11.2026) — в форме его нет, по умолчанию да.
+    bki_consent: bool = True
     employment: ManualEmploymentIn | None = None
     guarantor: ManualGuarantorIn | None = None
 

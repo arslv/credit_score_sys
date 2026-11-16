@@ -25,7 +25,6 @@ test("оператор заводит заявку вручную с фото п
   await page.getByLabel("Цена, ₽").fill("45000");
   await page.getByLabel("Срок, мес.").fill("10");
   await page.getByLabel("Доход в месяц, ₽", { exact: true }).fill("70000");
-  await page.getByLabel(/согласие на запрос кредитной истории/).check();
   await page.getByRole("button", { name: "Создать заявку" }).click();
 
   await expect(page).toHaveURL(/\/applications\/[0-9a-f-]{36}$/);

@@ -19,7 +19,7 @@ const EMPTY = {
   birth_date: "", passport_series: "", passport_number: "", issue_date: "", issued_by: "", department_code: "",
   registration_address: "",
   goods_name: "", goods_category_code: "", goods_price: "", down_payment: "0", term_months: "",
-  income: "", other_credit_payments: "0", bki_consent: false,
+  income: "", other_credit_payments: "0",
   employment_type: "", employer: "", position: "",
   has_guarantor: false,
   g_last_name: "", g_first_name: "", g_middle_name: "", g_phone: "", g_birth_date: "",
@@ -52,7 +52,6 @@ function formOf(d: ServerForm): FormState {
     goods_name: str(d.goods_name), goods_category_code: str(d.goods_category_code),
     goods_price: num(d.goods_price), down_payment: str(d.down_payment) || "0", term_months: num(d.term_months),
     income: num(d.income), other_credit_payments: str(d.other_credit_payments) || "0",
-    bki_consent: Boolean(d.bki_consent),
     employment_type: str(e.type), employer: str(e.employer), position: str(e.position),
     has_guarantor: g !== null,
     g_last_name: str(g?.last_name), g_first_name: str(g?.first_name), g_middle_name: str(g?.middle_name),
@@ -84,7 +83,8 @@ function payloadOf(f: FormState) {
     term_months: Number(f.term_months),
     income: f.income,
     other_credit_payments: f.other_credit_payments || "0",
-    bki_consent: f.bki_consent,
+    // Согласие на КИ есть у всех клиентов (решение владельца 16.11.2026).
+    bki_consent: true,
     employment:
       f.employment_type || f.employer || f.position
         ? { type: orNull(f.employment_type), employer: orNull(f.employer), position: orNull(f.position) }
@@ -312,17 +312,6 @@ export function NewApplicationPage() {
         )}
       </section>
 
-      <section className="pf-card new-app__section">
-        <label className="field field--check">
-          <input
-            type="checkbox"
-            checked={form.bki_consent}
-            onChange={(e) => setForm({ ...form, bki_consent: e.target.checked })}
-          />
-          Клиент дал согласие на запрос кредитной истории
-        </label>
-        <span className="field-hint">Без согласия запрос в БКИ невозможен — решение будет за сотрудником.</span>
-      </section>
 
       {error && (
         <p className="alert" role="alert">
