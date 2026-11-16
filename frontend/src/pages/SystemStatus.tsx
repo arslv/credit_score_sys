@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { components } from "../api/schema";
 import { StatusIcon, type Tone } from "../components/ChecksOverview";
 import { ErrorState, LoadingState } from "../components/ui";
+import { formatDate } from "../lib/format";
 import { healthProblems } from "../lib/health";
 
 type SystemStatus = components["schemas"]["SystemStatus"];
@@ -105,56 +106,39 @@ function Nodes({ s }: { s: SystemStatus }) {
     <>
       <h2 className="sys-section">Узлы системы</h2>
       <div className="sys-grid">
+        {/* Коротко (решение владельца 16.11.2026): работает или нет, без
+            пояснений; у перечня — дата последней загрузки. */}
         <Tile
           title="Правила скоринга"
           value={s.ruleset_active_version != null ? `версия ${s.ruleset_active_version}` : "нет"}
-          hint={
-            s.ruleset_matches_file === null
-              ? "сверка с файлом неизвестна"
-              : s.ruleset_matches_file
-                ? "совпадает с файлом"
-                : "отличается от файла"
-          }
           tone={s.ruleset_active_version == null ? "bad" : s.ruleset_matches_file === false ? "warn" : "ok"}
         />
-        <Tile
-          title="БКИ"
-          value={s.bki_configured ? "подключено" : "не подключено"}
-          hint={`платных запросов за месяц: ${s.bki_paid_requests_this_month}`}
-          tone={s.bki_configured ? "ok" : "bad"}
-        />
+        <Tile title="БКИ" value={s.bki_configured ? "активно" : "не активно"} tone={s.bki_configured ? "ok" : "bad"} />
         <Tile
           title="Обмен с CRM"
-          value={s.partner_integration_errors_last_24h === 0 ? "без ошибок" : `${s.partner_integration_errors_last_24h} ошибок`}
-          hint="за сутки"
-          tone={s.partner_integration_errors_last_24h === 0 ? "ok" : "warn"}
+          value={s.partner_configured ? "активно" : "не активно"}
+          hint={
+            s.partner_configured && s.partner_integration_errors_last_24h > 0
+              ? `ошибок за сутки: ${s.partner_integration_errors_last_24h}`
+              : undefined
+          }
+          tone={!s.partner_configured ? "bad" : s.partner_integration_errors_last_24h > 0 ? "warn" : "ok"}
         />
-        <Tile
-          title="ФССП после решения"
-          value={s.fssp_results_after_decision === 0 ? "нет" : String(s.fssp_results_after_decision)}
-          hint="долг найден после решения"
-          tone={s.fssp_results_after_decision === 0 ? "ok" : "warn"}
-        />
-        {s.registries.map((r) =>
+        {s.registries
           // Реестр МВД отменён в 2023 — недействительный паспорт проверяет бюро.
-          r.registry === "mvd_invalid_passports" ? (
-            <Tile
-              key={r.registry}
-              title="Недействительные паспорта"
-              value={s.bki_configured ? "через БКИ" : "не проверяются"}
-              hint={s.bki_configured ? "в «Подробном» отчёте" : "подключите БКИ"}
-              tone={s.bki_configured ? "ok" : "warn"}
-            />
-          ) : (
-            <Tile
-              key={r.registry}
-              title={registryLabel(r.registry)}
-              value={r.stale ? "устарел" : "свежий"}
-              hint="обновляется сам"
-              tone={r.stale ? "warn" : "ok"}
-            />
-          ),
-        )}
+          .filter((r) => r.registry !== "mvd_invalid_passports")
+          .map((r) => {
+            const loaded = r.last_loaded_at ? new Date(r.last_loaded_at) : null;
+            const today = loaded != null && loaded.toDateString() === new Date().toDateString();
+            return (
+              <Tile
+                key={r.registry}
+                title={registryLabel(r.registry)}
+                value={loaded ? formatDate(r.last_loaded_at) : "не загружался"}
+                tone={today ? "ok" : r.stale || !loaded ? "warn" : "none"}
+              />
+            );
+          })}
       </div>
     </>
   );

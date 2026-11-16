@@ -51,7 +51,7 @@ from app.models import (
     StatusHistory,
 )
 from app.engine.fssp_alerts import active_alert_condition
-from app.registries.sync import is_registry_stale
+from app.registries.sync import is_registry_stale, registry_last_loaded_at
 from app.security.deps import require_roles
 from app.sources.factory import build_bki_provider
 
@@ -68,6 +68,8 @@ _TERMINAL_STATUSES = {status for status, targets in ALLOWED_TRANSITIONS.items() 
 class RegistryStatus(BaseModel):
     registry: str
     stale: bool
+    last_loaded_at: datetime | None = None
+    """Последняя успешная загрузка; None — ни разу не загружался."""
 
 
 class SystemStatus(BaseModel):
@@ -82,6 +84,8 @@ class SystemStatus(BaseModel):
     fssp_results_after_decision: int
     bki_configured: bool
     bki_paid_requests_this_month: int
+    partner_configured: bool
+    """Обмен с CRM настроен: адрес и токен для ответов CRM заданы."""
     partner_integration_errors_last_24h: int
     stuck_applications_over_1h: int
     stuck_in_ocr: int
@@ -121,7 +125,8 @@ async def get_system_status(
         max_staleness_days = load_config(ruleset_row).sources.registries.max_staleness_days
         for registry in _REGISTRIES:
             stale = await is_registry_stale(session_factory, registry=registry, max_staleness_days=max_staleness_days)
-            registries.append(RegistryStatus(registry=registry, stale=stale))
+            last_loaded_at = await registry_last_loaded_at(session_factory, registry=registry)
+            registries.append(RegistryStatus(registry=registry, stale=stale, last_loaded_at=last_loaded_at))
 
     fssp_results_after_decision = (
         await session.execute(select(func.count()).select_from(FsspPostDecisionAlert).where(active_alert_condition()))
@@ -195,6 +200,7 @@ async def get_system_status(
     return SystemStatus(
         status="degraded" if (stage_b_reprocessing_loop_applications or stuck_in_ocr) else "ok",
         registries=registries,
+        partner_configured=bool(settings.partner_outbound_url and settings.partner_outbound_token),
         ruleset_active_version=ruleset_active_version,
         ruleset_matches_file=ruleset_matches_file,
         fssp_results_after_decision=fssp_results_after_decision,

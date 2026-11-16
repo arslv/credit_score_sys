@@ -49,8 +49,11 @@ test("экран: итог сверху, плитки по узлам систе
   await expect(page.getByRole("heading", { name: "Состояние системы" })).toBeVisible();
   await expect(page.getByTestId("health-summary")).toHaveText(/^(Всё работает|Есть проблемы: \d+)$/);
   await expect(page.getByRole("heading", { name: "Узлы системы" })).toBeVisible();
-  await expect(page.getByText(/платных запросов за месяц: \d+/)).toBeVisible();
+  // Коротко: БКИ и CRM — «активно / не активно», у перечня — дата загрузки.
+  await expect(page.locator(".sys-tile", { hasText: "БКИ" })).toContainText(/активно/);
+  await expect(page.locator(".sys-tile", { hasText: "Обмен с CRM" })).toContainText(/активно/);
   await expect(page.locator(".sys-tile", { hasText: "Перечень Росфинмониторинга" })).toBeVisible();
-  // Паспорта — через БКИ (реестр МВД отменён): на e2e-стенде БКИ не подключено.
-  await expect(page.locator(".sys-tile", { hasText: "Недействительные паспорта" })).toContainText("не проверяются");
+  await expect(page.getByText(/платных запросов/)).toHaveCount(0);
+  await expect(page.locator(".sys-tile", { hasText: "Недействительные паспорта" })).toHaveCount(0);
+  await expect(page.locator(".sys-tile", { hasText: "ФССП после решения" })).toHaveCount(0);
 });

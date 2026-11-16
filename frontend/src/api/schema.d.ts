@@ -2248,6 +2248,8 @@ export interface components {
             registry: string;
             /** Stale */
             stale: boolean;
+            /** Last Loaded At */
+            last_loaded_at?: string | null;
         };
         /** RejectionReasonItem */
         RejectionReasonItem: {
@@ -2418,6 +2420,8 @@ export interface components {
             bki_configured: boolean;
             /** Bki Paid Requests This Month */
             bki_paid_requests_this_month: number;
+            /** Partner Configured */
+            partner_configured: boolean;
             /** Partner Integration Errors Last 24H */
             partner_integration_errors_last_24h: number;
             /** Stuck Applications Over 1H */

@@ -6563,6 +6563,18 @@
           "stale": {
             "type": "boolean",
             "title": "Stale"
+          },
+          "last_loaded_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Loaded At"
           }
         },
         "type": "object",
@@ -7167,6 +7179,10 @@
             "type": "integer",
             "title": "Bki Paid Requests This Month"
           },
+          "partner_configured": {
+            "type": "boolean",
+            "title": "Partner Configured"
+          },
           "partner_integration_errors_last_24h": {
             "type": "integer",
             "title": "Partner Integration Errors Last 24H"
@@ -7193,6 +7209,7 @@
           "fssp_results_after_decision",
           "bki_configured",
           "bki_paid_requests_this_month",
+          "partner_configured",
           "partner_integration_errors_last_24h",
           "stuck_applications_over_1h",
           "stuck_in_ocr",

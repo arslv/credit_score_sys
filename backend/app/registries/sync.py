@@ -86,6 +86,23 @@ async def atomic_registry_reload(
         return log_row
 
 
+async def registry_last_loaded_at(session_factory: async_sessionmaker, *, registry: str) -> datetime | None:
+    """Когда реестр последний раз успешно загружен — для экрана «Состояние
+    системы» (решение владельца 16.11.2026: показывать дату загрузки)."""
+    from sqlalchemy import select
+
+    async with session_factory() as session:
+        return (
+            await session.execute(
+                select(RegistrySyncLog.finished_at)
+                .where(RegistrySyncLog.registry_name == registry, RegistrySyncLog.status == "ok")
+                .where(RegistrySyncLog.finished_at.is_not(None))
+                .order_by(RegistrySyncLog.finished_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+
 async def is_registry_stale(session_factory: async_sessionmaker, *, registry: str, max_staleness_days: int) -> bool:
     """Алерт, если реестр старше N дней — здесь только вычисление факта; доставка
     алерта (почта/чат) не входит в рамки T08."""
