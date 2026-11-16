@@ -27,8 +27,6 @@ function Tile({ title, value, hint, tone }: { title: string; value: string; hint
 const PROBLEM_LINKS: Record<string, { to: string; label: string }> = {
   "ruleset-missing": { to: "/rulesets", label: "К правилам" },
   "ruleset-mismatch": { to: "/rulesets", label: "К правилам" },
-  stuck: { to: "/applications", label: "К заявкам" },
-  ocr: { to: "/applications", label: "К заявкам" },
   "fssp-late": { to: "/applications", label: "К заявкам" },
 };
 
@@ -103,7 +101,6 @@ export function SystemStatusPage() {
 }
 
 function Nodes({ s }: { s: SystemStatus }) {
-  const pipelineStuck = s.stuck_applications_over_1h + s.stuck_in_ocr + s.stage_b_reprocessing_loop_applications;
   return (
     <>
       <h2 className="sys-section">Узлы системы</h2>
@@ -131,22 +128,6 @@ function Nodes({ s }: { s: SystemStatus }) {
           value={s.partner_integration_errors_last_24h === 0 ? "без ошибок" : `${s.partner_integration_errors_last_24h} ошибок`}
           hint="за сутки"
           tone={s.partner_integration_errors_last_24h === 0 ? "ok" : "warn"}
-        />
-        <Tile
-          title="Конвейер заявок"
-          value={pipelineStuck === 0 ? "всё движется" : `${pipelineStuck} застряли`}
-          hint={
-            pipelineStuck === 0
-              ? undefined
-              : [
-                  s.stuck_applications_over_1h ? `без движения: ${s.stuck_applications_over_1h}` : null,
-                  s.stuck_in_ocr ? `в распознавании: ${s.stuck_in_ocr}` : null,
-                  s.stage_b_reprocessing_loop_applications ? `по кругу: ${s.stage_b_reprocessing_loop_applications}` : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")
-          }
-          tone={pipelineStuck === 0 ? "ok" : "bad"}
         />
         <Tile
           title="ФССП после решения"

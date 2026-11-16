@@ -269,14 +269,20 @@ def _queue_clause(role: str):
     """SQL-условие очереди роли (зеркало _queue_entry — держать в синхроне)."""
     # T23: роли compliance/risk_manager слиты — заморозки по перечню ждут и
     # оператора, и админа; серая зона и расхождения — админа.
+    # Заявка ждёт заказа отчёта БКИ (awaiting_bki) — действие сотрудника,
+    # в очереди обеих ролей (решение владельца 16.11.2026).
     if role == "operator":
         return or_(
-            Application.status == "ocr_failed",
+            Application.status.in_(("ocr_failed", "awaiting_bki")),
             and_(Application.status == "gray_zone", _fssp_unchecked_gray_clause()),
             _freeze_pending_clause(),
         )
     if role == "admin":
-        return or_(Application.status == "gray_zone", _latest_override_mismatch_clause(), _freeze_pending_clause())
+        return or_(
+            Application.status.in_(("gray_zone", "awaiting_bki")),
+            _latest_override_mismatch_clause(),
+            _freeze_pending_clause(),
+        )
     return None
 
 
@@ -309,12 +315,13 @@ def _queue_waiting_expr(role: str):
     # T23: заморозка по перечню — в очередях обеих ролей (бывшая очередь compliance).
     if role == "operator":
         expr = case(
-            (Application.status == "ocr_failed", status_since),
+            (Application.status.in_(("ocr_failed", "awaiting_bki")), status_since),
             (Application.status == "gray_zone", _latest_decision_at_expr("B")),
             else_=freeze_since,
         )
     elif role == "admin":
         expr = case(
+            (Application.status == "awaiting_bki", status_since),
             (Application.status == "gray_zone", _latest_decision_at_expr("B")),
             else_=func.coalesce(_latest_override_at_expr(), freeze_since),
         )
@@ -340,12 +347,16 @@ def _queue_entry(
         # заполняют в админке («Изменить анкету»).
         if status == "ocr_failed":
             return ("data", "Заполнить анкету", status_since)
+        if status == "awaiting_bki":
+            return ("bki", "Запросить КИ", status_since)
         if status == "gray_zone" and latest_b is not None and latest_b.reason_code == "FSSP_NOT_CHECKED":
             return ("fssp", "Проверить ФССП", latest_b.created_at)
         if freeze_at is not None:
             return ("compliance", "Проверить совпадение с перечнем", freeze_at)
         return None
     if role == "admin":
+        if status == "awaiting_bki":
+            return ("bki", "Запросить КИ", status_since)
         if status == "gray_zone":
             return ("gray", "Решение по серой зоне", latest_b.created_at if latest_b else status_since)
         if mismatch_override is not None:

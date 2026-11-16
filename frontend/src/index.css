@@ -51,17 +51,20 @@
   --page-pad-y: var(--space-5);
   --page-pad-x: var(--space-6);
 
-  /* Цвета: нейтральная шкала + один акцент. */
-  --color-bg: #ffffff;
-  --color-surface: #ffffff;
-  --color-subtle: #f6f7f9;
-  --color-border: #e6e8ec;
-  --color-border-strong: #cfd4dc;
-  --color-text: #1c2430;
-  --color-text-muted: #667085;
+  /* Цвета: нейтральная шкала + один акцент. Светлая тема (16.11.2026, по
+     отзыву «слишком бело»): страница — тонированный серый, карточки —
+     приглушённый белый, рамки и вторичный текст мягче. Тёмная тема — ниже,
+     своими значениями, эти её не задевают. */
+  --color-bg: #e9ecf1;
+  --color-surface: #f8f9fb;
+  --color-subtle: #edf0f4;
+  --color-border: #d9dee6;
+  --color-border-strong: #bfc7d2;
+  --color-text: #1e2632;
+  --color-text-muted: #5b6678;
   --color-accent: #2952e3;
   --color-accent-hover: #1f3fc0;
-  --color-accent-soft: rgba(41, 82, 227, 0.08);
+  --color-accent-soft: rgba(41, 82, 227, 0.1);
   --color-on-accent: #ffffff;
   --color-danger: #c4320a;
   --color-overlay: rgba(16, 24, 40, 0.4);
@@ -814,6 +817,10 @@ a:hover {
 
 .action-dot--override {
   background: var(--status-neutral);
+}
+
+.action-dot--bki {
+  background: var(--color-accent);
 }
 
 /* Справка */

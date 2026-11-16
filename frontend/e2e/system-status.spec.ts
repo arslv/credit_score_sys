@@ -33,9 +33,8 @@ test("каждая проблема — что случилось и что де
     stuck_applications_over_1h: 5,
     registries: [{ registry: "rosfinmon_sanctions", stale: true }],
   });
-  expect(problems.map((p) => p.key)).toEqual(["bki", "ocr", "stuck", "registry-rosfinmon_sanctions"]);
-  expect(problems[1]!.what).toBe("2 заявки зависли в распознавании паспорта.");
-  expect(problems[2]!.what).toBe("5 заявок больше часа без движения.");
+  // «Застряли» / «в распознавании» в проблемы не попадают (решение владельца 16.11.2026).
+  expect(problems.map((p) => p.key)).toEqual(["bki", "registry-rosfinmon_sanctions"]);
   for (const p of problems) {
     expect(p.todo.length).toBeGreaterThan(0);
     expect(`${p.what} ${p.todo}`).not.toMatch(/rosfinmon|stuck|_/);

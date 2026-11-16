@@ -53,27 +53,6 @@ export function healthProblems(s: HealthInput): HealthProblem[] {
       todo: "Нужны договор с бюро и ключи доступа на сервере.",
     });
   }
-  if (s.stuck_in_ocr > 0) {
-    problems.push({
-      key: "ocr",
-      what: `${applications(s.stuck_in_ocr)} зависли в распознавании паспорта.`,
-      todo: "Проверьте фоновый обработчик (worker) и сервис распознавания.",
-    });
-  }
-  if (s.stage_b_reprocessing_loop_applications > 0) {
-    problems.push({
-      key: "stage-b-loop",
-      what: `${applications(s.stage_b_reprocessing_loop_applications)} за последний час проверяются по кругу.`,
-      todo: "Сообщите разработчику — это сбой обработки, сам он не пройдёт.",
-    });
-  }
-  if (s.stuck_applications_over_1h > 0) {
-    problems.push({
-      key: "stuck",
-      what: `${applications(s.stuck_applications_over_1h)} больше часа без движения.`,
-      todo: "Посмотрите, где они стоят; если их много — проверьте фоновый обработчик (worker).",
-    });
-  }
   if (s.partner_integration_errors_last_24h > 0) {
     problems.push({
       key: "partner",
