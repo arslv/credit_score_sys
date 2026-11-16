@@ -562,3 +562,39 @@ async def test_list_status_filter_accepts_several_statuses(
     assert {str(a_id), str(b_id)} <= both
     only_a = ids(await admin_client.get("/api/applications", params={"view": "all", "status": "rejected_a", "page_size": 100}))
     assert str(a_id) in only_a and str(b_id) not in only_a
+
+
+async def test_retry_check_allowed_after_error(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """«Ошибка проверки» ФНС повторяется так же, как «источник недоступен»
+    (решение владельца 16.11.2026)."""
+    from datetime import datetime, timezone
+
+    application_id, _ = await _good_applicant(
+        partner_admin, partner_client, storage, session_factory, active_ruleset, fns_unavailable=True,
+    )
+    async with session_factory() as session:
+        first = (
+            await session.execute(
+                select(Check).where(Check.application_id == application_id, Check.source == "fns_inn")
+            )
+        ).scalars().first()
+        failed = Check(
+            application_id=application_id, subject_type=first.subject_type, subject_id=first.subject_id,
+            source="fns_inn", status="error", error_text="сбой", started_at=datetime.now(timezone.utc),
+        )
+        session.add(failed)
+        await session.commit()
+        failed_id = failed.id
+
+    await create_employee(session_factory, email="retry_err@example.com", role="admin")
+    await login(admin_client, "retry_err@example.com")
+    detail = await admin_client.get(f"/api/applications/{application_id}")
+    assert detail.status_code == 200, detail.text
+    assert next(c for c in detail.json()["checks"] if c["id"] == str(failed_id))["can_retry"] is True
+
+    with patch("app.api.applications.build_fns_inn_source", return_value=FakeFnsInnSource()):
+        response = await admin_client.post(f"/api/applications/{application_id}/checks/{failed_id}/retry")
+    assert response.status_code == 200, response.text
+    assert response.json()["check"]["status"] != "error"

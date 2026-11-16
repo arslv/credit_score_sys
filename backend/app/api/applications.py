@@ -117,6 +117,9 @@ _DETAIL_PII_ROLES = (*ROLES_WITH_FULL_PII, "operator")
 # через «Рассмотреть» оператором; ФССП (T16) — вообще не через эту кнопку,
 # у него свой экран с капчей (app/api/fssp.py).
 _RETRYABLE_SOURCES = ("fns_inn", "fns_npd", "fns_egrip")
+# Повтор — когда источник не дал ответа: недоступен или упал с ошибкой
+# (решение владельца 16.11.2026: «ошибка проверки» тоже повторяется).
+_RETRYABLE_STATUSES = ("source_unavailable", "error")
 
 
 def get_storage(request: Request) -> Storage:
@@ -1266,7 +1269,7 @@ async def get_application(
                 error_text=c.error_text,
                 parsed=c.parsed if full_pii else None,
                 response_raw=c.response_raw if full_pii else None,
-                can_retry=(c.source in _RETRYABLE_SOURCES and c.status == "source_unavailable"),
+                can_retry=(c.source in _RETRYABLE_SOURCES and c.status in _RETRYABLE_STATUSES),
             )
             for c in checks
         ],
@@ -1410,9 +1413,10 @@ async def retry_check(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="проверка не найдена")
     if check.source not in _RETRYABLE_SOURCES:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="повтор недоступен для этого источника")
-    if check.status != "source_unavailable":
+    if check.status not in _RETRYABLE_STATUSES:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="повтор возможен только для недоступного источника"
+            status_code=status.HTTP_409_CONFLICT,
+            detail="повтор возможен, только когда источник был недоступен или проверка упала с ошибкой",
         )
     # Check — append-only (правило 1 CLAUDE.md): у ИСХОДНОЙ строки status
     # никогда не поменяется, даже после успешного повтора (он пишет НОВУЮ
@@ -1510,6 +1514,6 @@ async def retry_check(
             source=new_check.source, status=new_check.status, started_at=new_check.started_at,
             finished_at=new_check.finished_at, duration_ms=new_check.duration_ms,
             error_text=new_check.error_text, parsed=new_check.parsed, response_raw=new_check.response_raw,
-            can_retry=(new_check.source in _RETRYABLE_SOURCES and new_check.status == "source_unavailable"),
+            can_retry=(new_check.source in _RETRYABLE_SOURCES and new_check.status in _RETRYABLE_STATUSES),
         )
     )

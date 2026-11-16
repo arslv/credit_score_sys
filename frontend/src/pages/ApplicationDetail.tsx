@@ -13,7 +13,7 @@ import { BkiRequestPanel } from "../components/BkiRequestPanel";
 import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
-import { ErrorState, LoadingState } from "../components/ui";
+import { ErrorState, LoadingState, RecheckButton } from "../components/ui";
 import { ageYears, clientRows, dealRows, latestStageBPayload, ocrValue } from "../lib/card";
 import { explainDecision } from "../lib/explain";
 import { formatAmount, formatDate, formatDateTime } from "../lib/format";
@@ -238,6 +238,23 @@ export function ApplicationDetailPage() {
           canOperate={canOperateFssp}
         />
       );
+    }
+  }
+
+  // Повтор автоматической проверки (ФНС), если источник не ответил или упал —
+  // значком в углу её строки в «Проверках» (решение владельца 16.11.2026).
+  if (canRetry) {
+    const latestCheck = new Map<string, CheckRow>();
+    for (const c of app.checks) latestCheck.set(subjectKey(c.source, c.subject_type, c.subject_id), c);
+    for (const [key, c] of latestCheck) {
+      if (c.can_retry && !rowActions[key]) {
+        rowActions[key] = (
+          <RecheckButton
+            busy={retryMutation.isPending && retryMutation.variables === c.id}
+            onClick={() => retry(c.id)}
+          />
+        );
+      }
     }
   }
 
