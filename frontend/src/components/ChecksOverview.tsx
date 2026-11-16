@@ -1,9 +1,11 @@
 import type { components } from "../api/schema";
+import { formatDateTime } from "../lib/format";
 import { checkResultLabel, passportCheckLabel, passportCheckStatusLabel, sourceMeta } from "../lib/labels";
 
 type CheckRow = components["schemas"]["CheckOut"];
 type BureauCheck = components["schemas"]["BureauCheckOut"];
 type PassportCheck = components["schemas"]["PassportCheckOut"];
+type BkiResult = components["schemas"]["BkiResultOut"];
 
 export type Tone = "ok" | "bad" | "warn" | "none";
 
@@ -78,7 +80,7 @@ export function ChecksOverview({
   checks: CheckRow[];
   bureau: BureauCheck[];
   guarantorId: string | null;
-  bki: { value: string; tone: Tone } | null;
+  bki: BkiResult | null;
 }) {
   // МВД (отменённый реестр) не показываем — паспорт ниже по пунктам.
   const current = latest(
@@ -129,16 +131,13 @@ export function ChecksOverview({
     sections.push({ title: group.title, rows });
   }
 
-  sections.push({
-    title: "Кредитная история",
-    rows: [{ key: "bki", name: "Отчёт бюро", value: bki?.value ?? "не запрашивался", tone: bki?.tone ?? "none" }],
-  });
 
   const known = new Set([...GROUPS.flatMap((g) => g.sources), "mvd"]);
   const other = current.filter((c) => !known.has(c.source)).map(rowOf);
   if (other.length > 0) sections.push({ title: "Прочее", rows: other });
 
-  const all = sections.flatMap((s) => s.rows);
+  const bkiTone: Tone = !bki ? "none" : bki.status === "ok" ? "ok" : bki.status === "no_data" ? "none" : "warn";
+  const all = [...sections.flatMap((s) => s.rows), { tone: bkiTone }];
   const count = (tone: Tone) => all.filter((r) => r.tone === tone).length;
 
   return (
@@ -161,6 +160,7 @@ export function ChecksOverview({
       </header>
 
       <div className="chk__grid">
+        <BkiTile result={bki} tone={bkiTone} />
         {sections.map((section) => (
           <section key={section.title} className="chk__group" aria-label={section.title}>
             <h3 className="chk__group-title">{section.title}</h3>
@@ -189,6 +189,42 @@ export function ChecksOverview({
             )}
           </section>
         ))}
+      </div>
+    </section>
+  );
+}
+
+// Кредитная история — не строка «отчёт: …», а плитка: крупный балл (или
+// прочерк) и под ним вид отчёта, дата и итог.
+function BkiTile({ result, tone }: { result: BkiResult | null; tone: Tone }) {
+  const score = result?.status === "ok" && result.score != null ? String(Math.round(Number(result.score))) : null;
+  const outcome = !result
+    ? "Отчёт ещё не запрашивался"
+    : result.status === "ok"
+      ? score
+        ? "Отчёт получен"
+        : "Отчёт получен, балла нет"
+      : result.status === "no_data"
+        ? "Кредитной истории в бюро нет"
+        : result.status === "source_unavailable"
+          ? "Бюро не ответило"
+          : "Ошибка запроса";
+  return (
+    <section className={`chk__group chk__bki chk__bki--${tone}`} aria-label="Кредитная история">
+      <h3 className="chk__group-title">Кредитная история</h3>
+      <div className="chk__bki-body">
+        <div className="chk__bki-score">
+          {score ?? "—"}
+          {score && <span className="chk__bki-unit">балл</span>}
+        </div>
+        <div className="chk__bki-text">
+          <div className="chk__bki-outcome">{outcome}</div>
+          {result && (
+            <div className="chk__bki-meta">
+              {result.label ? `${result.label} отчёт` : "Отчёт"} · {formatDateTime(result.requested_at)}
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

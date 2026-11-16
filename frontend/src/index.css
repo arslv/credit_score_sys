@@ -4997,7 +4997,8 @@ mark {
 
 .chk__row {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  /* Название не ужимается из-за длинного итога: ему минимум половина строки. */
+  grid-template-columns: 20px minmax(50%, 1fr) minmax(0, auto);
   align-items: start;
   column-gap: var(--space-2);
   padding: 7px 0;
@@ -5082,4 +5083,50 @@ mark {
   .chk__value {
     max-width: 150px;
   }
+}
+
+/* Кредитная история в «Проверках» — плитка с крупным баллом. */
+.chk__bki-body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-1) 0 var(--space-2);
+}
+
+.chk__bki-score {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 64px;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.chk__bki--warn .chk__bki-score {
+  color: var(--status-gray);
+}
+
+.chk__bki--none .chk__bki-score {
+  color: var(--status-neutral);
+}
+
+.chk__bki-unit {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.chk__bki-outcome {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.chk__bki-meta {
+  margin-top: 2px;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
 }

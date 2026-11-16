@@ -41,14 +41,6 @@ function BkiTag() {
   );
 }
 
-// Итог запроса в БКИ одной фразой (bki_reports.status).
-function bkiResultText(result: { status: string; score?: string | number | null }): string {
-  if (result.status === "ok") return result.score != null ? `получен, балл ${Number(result.score)}` : "получен";
-  if (result.status === "no_data") return "кредитной истории в бюро нет";
-  if (result.status === "source_unavailable") return "бюро не ответило";
-  return "ошибка запроса";
-}
-
 const capitalize = (text: string) => (text ? text[0]!.toUpperCase() + text.slice(1) : text);
 
 // Строки «по данным БКИ» под нашей ручной проверкой того же источника.
@@ -475,19 +467,7 @@ export function ApplicationDetailPage() {
         checks={app.checks}
         bureau={bureauChecks}
         guarantorId={app.guarantor_id ?? null}
-        bki={
-          app.bki_result
-            ? {
-                value: `${app.bki_result.label ? `${app.bki_result.label} · ` : ""}${bkiResultText(app.bki_result)}`,
-                tone:
-                  app.bki_result.status === "ok"
-                    ? "ok"
-                    : app.bki_result.status === "no_data"
-                      ? "none"
-                      : "warn",
-              }
-            : null
-        }
+        bki={app.bki_result ?? null}
       />
 
       {/* Кредитная история — отдельным блоком: запрос в БКИ платный, по кнопке. */}
@@ -499,17 +479,6 @@ export function ApplicationDetailPage() {
           canOperate={canOperateFssp}
           retryReason={bkiRetry ? reasonCodeLabel(latestDecision?.reason_code ?? "") : null}
         />
-      )}
-      {!(bkiWaiting || bkiRetry || app.bki_order?.pending) && app.bki_result && (
-        <section className="pf-card bki-request" data-testid="bki-result" aria-labelledby="bki-result-title">
-          <h2 id="bki-result-title" className="pf-section-title bki-request__title">
-            Кредитная история (БКИ)
-          </h2>
-          <p className="bki-request__status">
-            {app.bki_result.label ? `${app.bki_result.label} отчёт` : "Отчёт"} ·{" "}
-            {formatDateTime(app.bki_result.requested_at)} — {bkiResultText(app.bki_result)}
-          </p>
-        </section>
       )}
 
       {showManual && (
