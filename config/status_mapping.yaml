@@ -11,23 +11,23 @@
 
 rejected_a:
   partner_status: rejected
-  comment_template: "Отказ на стадии А. {reason_text}"
+  comment_template: "Отказ. {reason_text}"
 
 ocr_failed:
   partner_status: on_call
-  comment_template: "Не удалось распознать фото паспорта — нужно перефотографировать или внести данные вручную при звонке."
+  comment_template: "Не удалось распознать фото паспорта — нужно перефотографировать или внести данные вручную."
 
 to_operator:
   partner_status: on_call
-  comment_template: "Передано оператору на звонок. {summary}"
+  comment_template: "Проверки пройдены. {summary}"
 
 stage_b_incomplete:
   partner_status: on_call
-  comment_template: "Не хватает данных для стадии Б. Недостающие разделы анкеты: {summary}"
+  comment_template: "Не хватает данных для проверки. Недостающие разделы анкеты: {summary}"
 
 rejected_b:
   partner_status: rejected
-  comment_template: "Отказ на стадии Б. {reason_text}"
+  comment_template: "Отказ. {reason_text}"
 
 gray_zone:
   partner_status: manual_decision

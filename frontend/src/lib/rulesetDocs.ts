@@ -44,7 +44,7 @@ export const RULESET_DOCS: RulesetDocGroup[] = [
     entries: [
       {
         path: "hard_stops",
-        text: "Стадия А, сразу после подачи, без БКИ: жёсткие стоп-факторы. Сработало — отказ на стадии А.",
+        text: "Жёсткие стоп-факторы — проверяются сразу, без БКИ. Сработало — отказ.",
         note: "Порядок важен: причиной отказа становится первое сработавшее правило списка — держите самые серьёзные сверху.",
       },
       {
@@ -61,7 +61,7 @@ export const RULESET_DOCS: RulesetDocGroup[] = [
       },
       {
         path: "stage_b_completeness.required_sections",
-        text: "Какие разделы анкеты из CRM обязательны для запуска стадии Б: deal (сделка), employment (работа), income (доход) и т. п. Нет раздела — стадия Б не запускается.",
+        text: "Какие разделы анкеты из CRM обязательны для проверки: deal (сделка), employment (работа), income (доход) и т. п. Нет раздела — заявка ждёт данных.",
         example: "required_sections: [deal, employment, income]",
       },
     ],
@@ -91,7 +91,7 @@ export const RULESET_DOCS: RulesetDocGroup[] = [
   {
     title: "Лимиты и ПДН",
     entries: [
-      { path: "limits.amount_min / amount_max", text: "Минимальная и максимальная сумма рассрочки, ₽ — цена минус первый взнос. Если сделка не проходит ни по одному тарифу — отказ на стадии Б." },
+      { path: "limits.amount_min / amount_max", text: "Минимальная и максимальная сумма рассрочки, ₽ — цена минус первый взнос. Если сделка не проходит ни по одному тарифу — отказ." },
       { path: "limits.term_min / term_max", text: "Минимальный и максимальный срок рассрочки в месяцах." },
       { path: "limits.pti_max", text: "Порог отказа по ПДН — доля дохода, уходящая на платежи по долгам вместе с нашей рассрочкой. 0.6 = 60%." },
       { path: "limits.pti_max_applies_to_credit_history", text: "true — тот же порог отказа и для ПДН по кредитной истории, а не только для заявленного клиентом." },
@@ -156,7 +156,7 @@ export const RULESET_DOCS: RulesetDocGroup[] = [
   },
   {
     title: "Поля заявки для правил (field)",
-    intro: "Что можно сравнивать в правилах. Стадия А — паспорт и бесплатные проверки; стадия Б — анкета и кредитная история.",
+    intro: "Что можно сравнивать в правилах: паспорт и бесплатные проверки, анкета и кредитная история.",
     entries: [
       { path: "checks.<источник>.status", text: "Итог проверки источника: ok, hit (найдено), no_data, source_unavailable, error. Источники: rosfinmon, blacklist, mvd, fns_inn, fns_npd, fns_egrip.", example: "field: checks.blacklist.status" },
       { path: "age", text: "Возраст клиента в годах (из паспорта)." },

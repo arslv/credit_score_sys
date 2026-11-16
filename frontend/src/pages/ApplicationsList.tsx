@@ -166,8 +166,7 @@ export function ApplicationsListPage() {
             <select value={filters.status} onChange={(e) => updateFilters({ status: e.target.value })}>
               <option value="">любой</option>
               <option value="to_operator">{applicationStatusLabel("to_operator")}</option>
-              <option value="rejected_a">{applicationStatusLabel("rejected_a")}</option>
-              <option value="rejected_b">{applicationStatusLabel("rejected_b")}</option>
+              <option value="rejected_a,rejected_b">Отказ</option>
               <option value="gray_zone">{applicationStatusLabel("gray_zone")}</option>
               <option value="approved">{applicationStatusLabel("approved")}</option>
               <option value="ocr_failed">{applicationStatusLabel("ocr_failed")}</option>

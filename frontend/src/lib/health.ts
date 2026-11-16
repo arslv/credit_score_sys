@@ -49,7 +49,7 @@ export function healthProblems(s: HealthInput): HealthProblem[] {
   if (!s.bki_configured) {
     problems.push({
       key: "bki",
-      what: "БКИ не подключено — одобрить заявку нельзя, все заявки стадии Б уходят в серую зону.",
+      what: "БКИ не подключено — одобрить заявку нельзя, все заявки уходят в серую зону.",
       todo: "Нужен договор с бюро кредитных историй и ключи доступа в настройках сервера.",
     });
   }
@@ -63,7 +63,7 @@ export function healthProblems(s: HealthInput): HealthProblem[] {
   if (s.stage_b_reprocessing_loop_applications > 0) {
     problems.push({
       key: "stage-b-loop",
-      what: `${applications(s.stage_b_reprocessing_loop_applications)} за последний час обрабатываются стадией Б по кругу.`,
+      what: `${applications(s.stage_b_reprocessing_loop_applications)} за последний час проверяются по кругу.`,
       todo: "Сообщите разработчику — это сбой обработки, сам он не пройдёт.",
     });
   }

@@ -43,6 +43,6 @@ test("решение оператора заказчика — что решил
   const verdict = page.locator(".ah__verdict");
   await expect(verdict.getByRole("heading", { name: /Одобрено оператором/ })).toBeVisible();
   await expect(verdict).toContainText("Решение оператора CRM");
-  await expect(verdict).toContainText("Система: передано оператору");
+  await expect(verdict).toContainText("Система: проверки пройдены");
   await expect(verdict.getByText(/manual_|approve\b/)).toHaveCount(0);
 });

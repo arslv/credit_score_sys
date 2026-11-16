@@ -178,7 +178,7 @@ export function explainDecision(d: DecisionForExplain): Explanation {
     d.triggered_rules_text[0] ??
     d.reason_text ??
     (d.stage === "A" && d.outcome === "manual_review"
-      ? "Стоп-факторов нет — заявка передана оператору для звонка."
+      ? "Стоп-факторов нет — ждём сделку из CRM."
       : null);
 
   const causes = [
@@ -202,7 +202,7 @@ export function explainDecision(d: DecisionForExplain): Explanation {
       ? `${label}: ${joinPhrases(passedPhrases)}, стоп-факторов нет.`
       : `${label}: стоп-факторов нет, все обязательные проверки пройдены.`;
   } else if (d.stage === "A" && d.outcome === "manual_review") {
-    help = `${label}: на стадии А одобрения не бывает. Стоп-факторов не нашлось — оператор звонит клиенту и запускает стадию Б, там запрос в БКИ и итоговое решение.`;
+    help = `${label}: стоп-факторов не нашлось. Дальше — сделка из CRM, запрос в БКИ и итоговое решение.`;
   } else {
     const causeComparison = comparisons.find((c) => c.isDecisionReason);
     const cause = causeComparison

@@ -146,12 +146,12 @@ const APPLICATION_STATUS_LABELS: Record<string, string> = {
   awaiting_data: "Ждёт данных из CRM",
   ocr: "Распознавание паспорта",
   ocr_failed: "Паспорт не распознан",
-  stage_a: "Стадия А",
-  rejected_a: "Отказ на стадии А",
-  to_operator: "Передано оператору",
-  stage_b: "Стадия Б",
+  stage_a: "Проверяется",
+  rejected_a: "Отказ",
+  to_operator: "Ждёт сделку из CRM",
+  stage_b: "Проверяется",
   awaiting_bki: "Ждёт запроса КИ",
-  rejected_b: "Отказ на стадии Б",
+  rejected_b: "Отказ",
   gray_zone: "Серая зона",
   approved: "Одобрено",
   contracted: "Договор оформлен",
@@ -242,7 +242,7 @@ export function reasonCodeLabel(reasonCode: string): string {
 export function decisionOutcomeLabel(stage: string | null | undefined, outcome: string): string {
   if (outcome === "approve") return "Одобрено";
   if (outcome === "reject") return "Отказ";
-  if (outcome === "manual_review") return stage === "A" ? "Передано оператору" : "Серая зона";
+  if (outcome === "manual_review") return stage === "A" ? "Проверки пройдены" : "Серая зона";
   return outcome;
 }
 
@@ -251,7 +251,7 @@ export function decisionOutcomeLabel(stage: string | null | undefined, outcome: 
 // manual_overrides из/в пишутся именно они, когда оператор сменил статус у себя.
 const PARTNER_STATUS_LABELS: Record<string, string> = {
   new: "Новая",
-  on_call: "Передано оператору на звонок",
+  on_call: "Передано оператору",
   on_review: "На рассмотрении",
   rejected: "Отказ",
   manual_decision: "Серая зона — решение за оператором",
@@ -344,8 +344,8 @@ export function tariffLabel(value: string | null | undefined): string {
 // явное указание; «прошли стадию А» нет — на ней одобрения не бывает).
 const FUNNEL_STEP_LABELS: Record<string, string> = {
   submitted: "Поступило",
-  to_operator: "Передано оператору",
-  stage_b: "Рассмотрено (стадия Б)",
+  to_operator: "Прошли проверки",
+  stage_b: "Решение принято",
   approved: "Одобрено",
 };
 

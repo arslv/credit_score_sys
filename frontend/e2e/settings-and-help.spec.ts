@@ -83,7 +83,7 @@ test("справка: поиск по терминам и оглавление",
 
   // По словам, а не строкой целиком: «стоп ф» — это «Стоп-фактор».
   await search.fill("стоп ф");
-  await expect(page.getByText("Найдено: 1 из 8")).toBeVisible();
+  await expect(page.getByText("Найдено: 1 из 7")).toBeVisible();
   await expect(page.locator("dt").first()).toHaveText("Стоп-фактор");
 
   await page.getByRole("searchbox", { name: "Найти термин" }).fill("несуществующее слово");

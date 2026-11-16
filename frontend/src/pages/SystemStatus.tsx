@@ -128,7 +128,7 @@ export function SystemStatusPage() {
         <Tile
           title="Конвейер заявок"
           value={pipelineStuck === 0 ? "всё движется" : `${pipelineStuck} застряли`}
-          hint={`больше часа без движения: ${s.stuck_applications_over_1h} · в распознавании: ${s.stuck_in_ocr} · стадия Б по кругу: ${s.stage_b_reprocessing_loop_applications}`}
+          hint={`больше часа без движения: ${s.stuck_applications_over_1h} · в распознавании: ${s.stuck_in_ocr} · проверка по кругу: ${s.stage_b_reprocessing_loop_applications}`}
           tone={pipelineStuck === 0 ? "ok" : "bad"}
         />
         <Tile
@@ -147,7 +147,7 @@ export function SystemStatusPage() {
               value={s.bki_configured ? "проверяются через БКИ" : "не проверяются"}
               hint={
                 s.bki_configured
-                  ? "запрос КИ по кнопке — паспорт проверяется вместе с «Подробным» отчётом; формат, даты и код подразделения — всегда, на стадии А"
+                  ? "запрос КИ по кнопке — паспорт проверяется вместе с «Подробным» отчётом; формат, даты и код подразделения — всегда, сразу"
                   : "реестр МВД отменён в 2023 году — паспорт проверяет бюро, подключите БКИ"
               }
               tone={s.bki_configured ? "ok" : "warn"}

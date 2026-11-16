@@ -78,8 +78,8 @@ interface VersionsResponse {
 }
 
 const OUTCOME_LABELS: Record<string, string> = {
-  rejected_a: "отказ (стадия А)",
-  rejected_b: "отказ (стадия Б)",
+  rejected_a: "отказ",
+  rejected_b: "отказ",
   manual_review: "серая зона",
   approved: "одобрено",
   no_data: "нет данных",
@@ -346,14 +346,14 @@ function SimulationResult({ simulation }: { simulation: SimulateResponse }) {
           </li>
           {s.insufficient_data_count > 0 && (
             <li>
-              {s.insufficient_data_count} {countWord(s.insufficient_data_count)} ещё ждут звонка оператора — до
-              стадии Б не дошли, рано сравнивать.
+              {s.insufficient_data_count} {countWord(s.insufficient_data_count)} ещё ждут сделку из CRM — до
+              кредитной истории не дошли, рано сравнивать.
             </li>
           )}
           {s.unknown_after_stage_a_pass_total > 0 && (
             <li>
               {s.unknown_after_stage_a_pass_total} {countWord(s.unknown_after_stage_a_pass_total)} по новым правилам
-              прошли бы стадию А, но в реальности отклонены на ней — дальнейшее решение предсказать нельзя.
+              прошли бы первые проверки, но в реальности отклонены на них — дальнейшее решение предсказать нельзя.
             </li>
           )}
           {s.not_computable.map((r) => (
@@ -365,7 +365,7 @@ function SimulationResult({ simulation }: { simulation: SimulateResponse }) {
           {!defaults.available && <li>Плохие исходы: {defaults.note}</li>}
         </ul>
         {s.unknown_after_stage_a_pass.length > 0 && (
-          <ApplicationsTable title="Прошли бы стадию А" rows={s.unknown_after_stage_a_pass} />
+          <ApplicationsTable title="Прошли бы первые проверки" rows={s.unknown_after_stage_a_pass} />
         )}
       </details>
     </div>

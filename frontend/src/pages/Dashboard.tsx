@@ -98,14 +98,14 @@ function Funnel({ data }: { data: Summary }) {
 function WeeklyApproval({ data }: { data: Summary }) {
   const weeks = data.weekly_approval;
   if (weeks.length === 0) {
-    return <EmptyState title="Пока нет решений стадии Б" hint="Появятся после первых «Рассмотреть» оператора." />;
+    return <EmptyState title="Пока нет решений" hint="Появятся после первых проверок с кредитной историей." />;
   }
   const totalApproved = weeks.reduce((s, w) => s + w.approved, 0);
   const totalDecided = weeks.reduce((s, w) => s + w.total, 0);
   const average = totalDecided ? totalApproved / totalDecided : 0;
   return (
     <>
-      <div className="colchart" role="img" aria-label="Доля одобрений стадии Б по неделям">
+      <div className="colchart" role="img" aria-label="Доля одобрений по неделям">
         <div className="colchart__avg" style={{ bottom: `${average * 100}%` }}>
           <span>в среднем {pct(totalApproved, totalDecided)}</span>
         </div>
@@ -324,7 +324,7 @@ function DashboardBody({ d }: { d: Summary }) {
     <>
       {/* Договоры ведёт CRM — просрочки портфеля и когорт выдач здесь нет. */}
       <div className="dash-kpis dash-kpis--3">
-        <Kpi label="Заявок" value={String(submitted)} hint={`до решения стадии Б: ${weeklyDecided}`} />
+        <Kpi label="Заявок" value={String(submitted)} hint={`с решением: ${weeklyDecided}`} />
         <Kpi
           label="Одобрено"
           value={String(approved)}
@@ -339,14 +339,14 @@ function DashboardBody({ d }: { d: Summary }) {
           <Funnel data={d} />
         </Panel>
         <Panel
-          title={weeklyDecided === 0 ? "Одобрения по неделям" : `Одобряем ${pct(weeklyApproved, weeklyDecided)} решений стадии Б`}
+          title={weeklyDecided === 0 ? "Одобрения по неделям" : `Одобряем ${pct(weeklyApproved, weeklyDecided)} решений`}
         >
           <WeeklyApproval data={d} />
         </Panel>
         <Panel title={reasons[0] ? `Главная причина отказа — «${reasonCodeLabel(reasons[0].reason_code)}»` : "Причины отказов"}>
           <RejectionReasons data={d} />
         </Panel>
-        <Panel title="Балл БКИ по решениям стадии Б">
+        <Panel title="Балл БКИ по решениям">
           <ScoreHistogram data={d} />
         </Panel>
       </div>

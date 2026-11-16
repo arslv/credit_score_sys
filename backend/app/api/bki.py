@@ -79,7 +79,7 @@ async def request_bki_report(
     if request_state is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="заявка не ждёт запроса в БКИ — отчёт уже заказан, получен или стадия Б ещё не дошла до БКИ",
+            detail="заявка не ждёт запроса в БКИ — отчёт уже заказан, получен или проверки ещё не дошли до БКИ",
         )
 
     ruleset_row = await get_active_ruleset_version(session)

@@ -383,7 +383,7 @@ export function ApplicationDetailPage() {
                 help={operatorFinal ? null : (explanation?.help ?? null)}
               />
               {/* Статус дублирует решение («Серая зона» дважды) — показываем,
-                  только когда он говорит что-то своё (истекла, идёт стадия Б…). */}
+                  только когда он говорит что-то своё (истекла, проверяется…). */}
               {!STATUS_MIRRORS_DECISION.has(app.status) && (
                 <Badge value={app.status} label={applicationStatusLabel(app.status)} />
               )}
@@ -400,8 +400,8 @@ export function ApplicationDetailPage() {
               </>
             ) : fsspDoneAfterGray ? (
               <p className="pf-verdict__reason">
-                На момент решения ФССП не была пройдена. Сейчас пройдена — новое решение будет, когда оператор
-                CRM нажмёт «Рассмотреть» ещё раз.
+                На момент решения ФССП не была пройдена. Сейчас пройдена — новое решение будет при следующей
+                проверке заявки.
               </p>
             ) : (
               explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>
@@ -506,7 +506,7 @@ export function ApplicationDetailPage() {
           <summary>
             <h2 className="more__name">Условия сделки</h2>
             <span className="more__hint">
-              {dealBlock.length > 0 ? "товар, взнос, срок и тариф, платёж" : "появятся после «Рассмотреть»"}
+              {dealBlock.length > 0 ? "товар, взнос, срок и тариф, платёж" : "появятся, когда CRM пришлёт сделку"}
             </span>
           </summary>
           <div className="more__body">

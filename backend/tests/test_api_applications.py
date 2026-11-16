@@ -487,15 +487,13 @@ async def test_list_queues_are_per_role_and_sorted_by_waiting_time(
 
     await login(admin_client, "op_queue@example.com")
     operator = (await admin_client.get("/api/applications", params={"view": "action", "page_size": 50})).json()
-    assert str(waiting_id) in ids(operator)
+    # Этапа «звонок» нет: «передано оператору» в очередь не попадает.
+    assert str(waiting_id) not in ids(operator)
     # T23: разбор совпадений с перечнем (бывший комплаенс) — и в очереди оператора.
     assert str(frozen_id) in ids(operator)
     assert next(i for i in operator["items"] if i["id"] == str(frozen_id))["action_text"] == (
         "Проверить совпадение с перечнем"
     )
-    waiting_item = next(item for item in operator["items"] if item["id"] == str(waiting_id))
-    assert waiting_item["action_kind"] == "call"
-    assert waiting_item["action_text"] == "Позвонить"
     waits = [item["waiting_since"] for item in operator["items"]]
     assert waits == sorted(waits)  # дольше всех ждущие — сверху
     counts = (await admin_client.get("/api/applications/quick-counts")).json()
@@ -538,3 +536,29 @@ def test_reason_context_drops_empty_values_and_trailing_zeros():
     text = build_operator_comment(reason_code="SCORE_GRAY_ZONE", context=context)
     assert "629" in text and "450" in text and "720" in text
     assert " ." not in text
+
+
+async def test_list_status_filter_accepts_several_statuses(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Фильтр «Статус → Отказ» — один пункт на оба отказа: rejected_a и
+    rejected_b через запятую (этапов в интерфейсе нет, решение владельца 16.11.2026)."""
+    _, a_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    _, b_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    async with session_factory() as session:
+        for app_id, status in ((a_id, "rejected_a"), (b_id, "rejected_b")):
+            application = await session.get(Application, app_id)
+            application.status = status
+        await session.commit()
+
+    await create_employee(session_factory, email="status_filter@example.com", role="admin")
+    await login(admin_client, "status_filter@example.com")
+
+    def ids(response):
+        assert response.status_code == 200
+        return {item["id"] for item in response.json()["items"]}
+
+    both = ids(await admin_client.get("/api/applications", params={"view": "all", "status": "rejected_a,rejected_b", "page_size": 100}))
+    assert {str(a_id), str(b_id)} <= both
+    only_a = ids(await admin_client.get("/api/applications", params={"view": "all", "status": "rejected_a", "page_size": 100}))
+    assert str(a_id) in only_a and str(b_id) not in only_a

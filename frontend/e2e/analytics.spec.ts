@@ -14,9 +14,9 @@ test("аналитика: воронка с выводом в заголовке
   // Заголовок-вывод воронки — предложение с процентом, не просто «Воронка».
   await expect(page.getByText(/поданных заявок/)).toBeVisible();
   await expect(page.getByText("Поступило")).toBeVisible();
-  await expect(page.getByText("Передано оператору")).toBeVisible();
-  await expect(page.getByText("Рассмотрено (стадия Б)")).toBeVisible();
-  await expect(page.getByText("Прошли стадию А")).toHaveCount(0);
+  await expect(page.getByText("Прошли проверки")).toBeVisible();
+  await expect(page.getByText("Решение принято")).toBeVisible();
+  await expect(page.getByText(/стади/i)).toHaveCount(0);
   await expect(page.getByText(/^submitted$|^to_operator$|^stage_b$|^approved$/)).toHaveCount(0);
 });
 

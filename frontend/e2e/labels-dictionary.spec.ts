@@ -40,8 +40,8 @@ test("каждый статус каждого источника имеет ч�
   }
 });
 
-test("подписи решений зависят от стадии: «передано оператору» на А, «серая зона» на Б", () => {
-  expect(decisionOutcomeLabel("A", "manual_review")).toBe("Передано оператору");
+test("подписи решений: первые проверки пройдены — «проверки пройдены», после БКИ — «серая зона»", () => {
+  expect(decisionOutcomeLabel("A", "manual_review")).toBe("Проверки пройдены");
   expect(decisionOutcomeLabel("B", "manual_review")).toBe("Серая зона");
   expect(decisionOutcomeLabel("A", "approve")).toBe("Одобрено");
   expect(decisionOutcomeLabel("B", "reject")).toBe("Отказ");

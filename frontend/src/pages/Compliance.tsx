@@ -140,7 +140,7 @@ export function CompliancePage() {
       {query.data && items.length === 0 && (
         <EmptyState
           title={freezeFilter === "frozen" ? "Разбирать нечего — заморозок нет" : "Совпадений нет"}
-          hint="Новые совпадения появятся здесь автоматически после стадии А."
+          hint="Новые совпадения появятся здесь автоматически после проверки заявки."
         />
       )}
       {visible.length > 0 && (

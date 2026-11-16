@@ -243,7 +243,7 @@ def _queue_clause(role: str):
     # оператора, и админа; серая зона и расхождения — админа.
     if role == "operator":
         return or_(
-            Application.status.in_(("to_operator", "ocr_failed")),
+            Application.status == "ocr_failed",
             and_(Application.status == "gray_zone", _fssp_unchecked_gray_clause()),
             _freeze_pending_clause(),
         )
@@ -281,7 +281,7 @@ def _queue_waiting_expr(role: str):
     # T23: заморозка по перечню — в очередях обеих ролей (бывшая очередь compliance).
     if role == "operator":
         expr = case(
-            (Application.status.in_(("to_operator", "ocr_failed")), status_since),
+            (Application.status == "ocr_failed", status_since),
             (Application.status == "gray_zone", _latest_decision_at_expr("B")),
             else_=freeze_since,
         )
@@ -307,8 +307,11 @@ def _queue_entry(
     очереди этой роли, иначе None. Короткие тексты — для колонки списка; полные
     формулировки — в карточке."""
     if role == "operator":
-        if status in ("to_operator", "ocr_failed"):
-            return ("call", "Позвонить", status_since)
+        # Этапа «звонок» нет (решение владельца 16.11.2026): «передано
+        # оператору» в очередь не попадает; паспорт не распознан — анкету
+        # заполняют в админке («Изменить анкету»).
+        if status == "ocr_failed":
+            return ("data", "Заполнить анкету", status_since)
         if status == "gray_zone" and latest_b is not None and latest_b.reason_code == "FSSP_NOT_CHECKED":
             return ("fssp", "Проверить ФССП", latest_b.created_at)
         if freeze_at is not None:
@@ -391,7 +394,9 @@ async def list_applications(
     elif view == "today":
         stmt = stmt.where(Application.submitted_at >= _service_today_start_utc())
     if status_filter:
-        stmt = stmt.where(Application.status == status_filter)
+        # Несколько статусов через запятую — «Отказ» в фильтре это rejected_a и rejected_b.
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        stmt = stmt.where(Application.status.in_(statuses))
     if submitted_from:
         stmt = stmt.where(Application.submitted_at >= submitted_from)
     if submitted_to:
