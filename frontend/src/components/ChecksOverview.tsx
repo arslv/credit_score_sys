@@ -327,11 +327,13 @@ function BkiTile({ result, tone }: { result: BkiResult | null; tone: Tone }) {
         <h3 className="chk__group-title">Кредитная история</h3>
         {result?.label && <span className="chk__bki-kind">{result.label}</span>}
       </header>
-      <div className="chk__bki-score">
-        {score ?? "—"}
-        {score && <span className="chk__bki-unit">балл</span>}
-      </div>
-      <div className="chk__bki-outcome">
+      {score && (
+        <div className="chk__bki-score">
+          {score}
+          <span className="chk__bki-unit">балл</span>
+        </div>
+      )}
+      <div className={`chk__bki-outcome${score ? "" : " chk__bki-outcome--plain"}`}>
         <StatusIcon tone={tone} />
         {outcome}
       </div>

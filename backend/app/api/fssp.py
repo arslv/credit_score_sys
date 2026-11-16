@@ -200,24 +200,8 @@ async def fssp_search(
 
     subject = await _resolve_subject(session, application, body.subject_type, body.subject_id)
 
-    # Одна проверка на заявку (и субъекта) с обязательной причиной при
-    # повторе — ваше явное указание в постановке задачи. Проверяем по
-    # наличию УЖЕ ЗАВЕРШЁННОЙ строки checks(source=fssp), не по сессиям —
-    # сессии технические (см. докстринг модели), решённый факт только в checks.
-    existing_resolved = (
-        await session.execute(
-            select(Check.id)
-            .where(
-                Check.application_id == application_id, Check.subject_type == body.subject_type,
-                Check.subject_id == body.subject_id, Check.source == "fssp",
-            )
-            .limit(1)
-        )
-    ).first()
-    if existing_resolved is not None and not (body.reason or "").strip():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="повторная проверка ФССП по этой заявке требует причины"
-        )
+    # Повторная проверка — без причины (решение владельца 16.11.2026: «просто
+    # проверить»). reason по-прежнему принимается и пишется в аудит, если есть.
 
     block = await active_block(get_redis(), settings.fssp_block_cooldown_seconds)
     if block is not None:

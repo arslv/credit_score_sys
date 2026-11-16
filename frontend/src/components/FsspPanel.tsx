@@ -84,7 +84,6 @@ export function FsspPanel({
 }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState("");
   const [regions, setRegions] = useState<{ code: string; label: string }[]>([]);
   const [regionCode, setRegionCode] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -140,7 +139,6 @@ export function FsspPanel({
           subject_type: subjectType,
           subject_id: subjectId,
           region_code: regionCode,
-          reason: reason.trim() || null,
         },
       });
       if (err) throw err;
@@ -206,7 +204,6 @@ export function FsspPanel({
       setCaptchaBase64(null);
       setSessionId(null);
       setCode("");
-      setReason("");
       void refresh();
     },
     onError: (err: unknown) => {
@@ -259,17 +256,6 @@ export function FsspPanel({
 
       {canOperate && open && !captchaBase64 && (
         <div className="stack">
-          {latestCheck && (
-            <label className="field">
-              Причина повторной проверки
-              <input
-                type="text"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="например: оператор запросил актуальные данные"
-              />
-            </label>
-          )}
           <label className="field">
             Регион
             <select value={regionCode} onChange={(e) => setRegionCode(e.target.value)}>

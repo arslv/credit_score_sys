@@ -5418,7 +5418,7 @@ mark {
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-5);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 
 .chk__head .pf-section-title {
@@ -5506,7 +5506,7 @@ mark {
   grid-template-areas:
     "bki passport lists"
     "debts passport tax";
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .chk__area--bki { grid-area: bki; }
@@ -5533,16 +5533,17 @@ mark {
   }
 }
 
+/* Карточки разделов — лёгкие: полупрозрачный фон и мягкая рамка. */
 .chk__group {
   min-width: 0;
-  padding: var(--space-4) var(--space-5) var(--space-5);
-  border: var(--line);
-  border-radius: 14px;
-  background: var(--color-subtle);
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-subtle) 55%, transparent);
 }
 
 .chk__group--bad {
-  border-color: color-mix(in srgb, var(--chk-bad) 40%, var(--color-border));
+  border-color: color-mix(in srgb, var(--chk-bad) 35%, transparent);
 }
 
 .chk__group-head {
@@ -5550,7 +5551,7 @@ mark {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  margin-bottom: var(--space-4);
+  margin-bottom: 10px;
 }
 
 .chk__group-title {
@@ -5591,7 +5592,7 @@ mark {
 .chk__rows {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -5602,14 +5603,14 @@ mark {
   grid-template-columns: 20px minmax(0, 1fr);
   column-gap: 10px;
   align-items: start;
-  margin: 0 -10px;
-  padding: 8px 10px;
-  border-radius: 10px;
+  margin: 0 -8px;
+  padding: 5px 8px;
+  border-radius: 8px;
   font-size: var(--font-sm);
 }
 
 .chk__row--bad {
-  background: color-mix(in srgb, var(--chk-bad) 10%, transparent);
+  background: color-mix(in srgb, var(--chk-bad) 9%, transparent);
 }
 
 .chk__icon {
@@ -5663,7 +5664,7 @@ mark {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 3px;
   line-height: 1.4;
   color: var(--color-text-muted);
 }
@@ -5699,22 +5700,16 @@ mark {
 }
 
 /* Кредитная история — плитка с крупным баллом; фон чуть окрашен итогом. */
-.chk__bki {
-  background:
-    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--chk-none) 14%, transparent), transparent 60%),
-    var(--color-subtle);
-}
-
 .chk__bki--ok {
   background:
-    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--chk-ok) 18%, transparent), transparent 60%),
-    var(--color-subtle);
+    radial-gradient(110% 80% at 100% 0%, color-mix(in srgb, var(--chk-ok) 12%, transparent), transparent 65%),
+    color-mix(in srgb, var(--color-subtle) 55%, transparent);
 }
 
 .chk__bki--warn {
   background:
-    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--chk-warn) 18%, transparent), transparent 60%),
-    var(--color-subtle);
+    radial-gradient(110% 80% at 100% 0%, color-mix(in srgb, var(--chk-warn) 12%, transparent), transparent 65%),
+    color-mix(in srgb, var(--color-subtle) 55%, transparent);
 }
 
 .chk__bki-kind {
@@ -5730,7 +5725,7 @@ mark {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 44px;
+  font-size: 40px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.02em;
@@ -5753,10 +5748,17 @@ mark {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: var(--space-3);
+  margin-top: 10px;
   font-size: var(--font-md);
   font-weight: 600;
   color: var(--color-text);
+}
+
+/* Отчёта нет — без пустого балла: одна строка итога, приглушённо. */
+.chk__bki-outcome--plain {
+  margin-top: 2px;
+  font-weight: 500;
+  color: var(--color-text-muted);
 }
 
 .chk__bki-meta {

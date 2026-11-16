@@ -234,7 +234,7 @@ async def test_fssp_two_operators_concurrent_search_invalidates_older_session(
         assert ok_submit.json()["outcome"] == "ok"
 
 
-async def test_fssp_repeat_check_requires_reason(
+async def test_fssp_repeat_check_needs_no_reason(
     admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
 ):
     application_id = await _rejected_applicant(partner_admin, partner_client, storage, session_factory, active_ruleset)
@@ -252,17 +252,12 @@ async def test_fssp_repeat_check_requires_reason(
             f"/api/applications/{application_id}/fssp/{session_id}/submit-code", json={"code": _VALID_CODE},
         )
 
+        # Повтор — без причины (решение владельца 16.11.2026).
         no_reason = await admin_client.post(
             f"/api/applications/{application_id}/fssp/search",
             json={"subject_type": "applicant", "region_code": "77"},
         )
-        assert no_reason.status_code == 409
-
-        with_reason = await admin_client.post(
-            f"/api/applications/{application_id}/fssp/search",
-            json={"subject_type": "applicant", "region_code": "77", "reason": "оператор запросил повтор"},
-        )
-        assert with_reason.status_code == 200
+        assert no_reason.status_code == 200
 
 
 async def test_fssp_hit_after_decision_creates_post_decision_alert_without_changing_status(
