@@ -1,26 +1,26 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { components } from "../api/schema";
-import { formatDateTime } from "../lib/format";
 
 type ReportType = components["schemas"]["BkiReportTypeOut"];
 type Order = components["schemas"]["BkiOrderOut"];
 
-// Запрос в БКИ платный — только по кнопке (решение владельца). Стадия Б
-// ждёт в awaiting_bki; сотрудник выбирает вид отчёта, дальше — фоновая задача.
+// Запрос в БКИ платный — только по кнопке (решение владельца). Кнопки — прямо
+// в плитке «Кредитная история» блока «Проверки» (16.11.2026): без отдельной
+// карточки и пояснений — итог отчёта уже написан в плитке над кнопками.
 export function BkiRequestPanel({
   applicationId,
   types,
   order,
   canOperate,
-  retryReason = null,
+  retry = false,
 }: {
   applicationId: string;
   types: ReportType[];
   order: Order | null | undefined;
   canOperate: boolean;
-  /** Почему решения по отчёту нет (не получен, без балла…); кнопки те же, запрос повторный. */
-  retryReason?: string | null;
+  /** Отчёт уже был (не получен, без балла…) — запрос повторный. */
+  retry?: boolean;
 }) {
   const queryClient = useQueryClient();
   const mutation = useMutation({
@@ -35,70 +35,46 @@ export function BkiRequestPanel({
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ["application", applicationId] }),
   });
 
-  const pending = order?.pending && !retryReason ? order : null;
+  const pending = order?.pending && !retry ? order : null;
 
+  if (pending) {
+    return (
+      <p className="bki-act bki-act__pending" data-testid="bki-request" role="status">
+        <span className="bki-act__spinner" aria-hidden="true" />
+        Заказан {pending.label.toLowerCase()} отчёт — ждём ответа бюро
+      </p>
+    );
+  }
+  if (!canOperate) return null;
+  if (types.length === 0) {
+    return (
+      <p className="alert" role="alert" data-testid="bki-request">
+        В правилах нет видов отчёта БКИ — администратору: «Скоринг» → принять версию из файла.
+      </p>
+    );
+  }
   return (
-    <section className="pf-card bki-request" data-testid="bki-request" aria-labelledby="bki-request-title">
-      <div className="mc__head">
-        <h2 id="bki-request-title" className="pf-section-title bki-request__title">
-          Кредитная история (БКИ)
-        </h2>
-        {!pending && !retryReason && <span className="action-tag">требуется действие</span>}
+    <div className="bki-act" data-testid="bki-request">
+      <span className="bki-act__label">{retry ? "Запросить ещё раз" : "Запросить отчёт"}</span>
+      <div className="bki-act__buttons">
+        {/* Первый вид — основной; остальные дороже и нужны редко — не выделены. */}
+        {types.map((t, i) => (
+          <button
+            key={t.code}
+            type="button"
+            className={i === 0 ? "btn btn-primary btn-small" : "btn btn-small"}
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate(t.code)}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
-      {!pending && retryReason && (
-        <p className="bki-request__retry" role="status">
-          {retryReason}. Можно запросить ещё раз.
-        </p>
-      )}
-
-      {pending ? (
-        <p className="bki-request__status" role="status">
-          Заказан {pending.label.toLowerCase()} отчёт
-          {pending.employee_name ? ` · ${pending.employee_name}` : ""} · {formatDateTime(pending.created_at)}. Ждём
-          ответа бюро — решение придёт само.
-        </p>
-      ) : types.length === 0 ? (
-        <p className="alert" role="alert">
-          В действующих правилах нет видов отчёта БКИ (bki.report_types) — администратору: «Скоринг» → принять
-          версию из файла.
-        </p>
-      ) : canOperate ? (
-        <>
-          <div className="bki-request__buttons">
-            {/* Первый вид — основной (обычно хватает его), остальные — дороже,
-                нужны редко: серые. */}
-            {types.map((t, i) => (
-              <button
-                key={t.code}
-                type="button"
-                className={i === 0 ? "btn btn-primary" : "btn"}
-                disabled={mutation.isPending}
-                onClick={() => mutation.mutate(t.code)}
-              >
-                {t.label} отчёт
-              </button>
-            ))}
-          </div>
-          {types.length > 1 && (
-            <p className="muted bki-request__hint">
-              {types[0]!.label} — балл, просрочки и платежи, обычно его достаточно ·{" "}
-              {types
-                .slice(1)
-                .map((t) => t.label)
-                .join(", ")}{" "}
-              — дороже, нужен редко: плюс ФССП, банкротство, паспорт и другие проверки
-            </p>
-          )}
-        </>
-      ) : (
-        <p className="muted">Запрос в БКИ делает оператор или администратор.</p>
-      )}
-
       {mutation.isError && (
         <p className="alert" role="alert">
           {(mutation.error as { detail?: string })?.detail ?? "Не удалось заказать отчёт"}
         </p>
       )}
-    </section>
+    </div>
   );
 }

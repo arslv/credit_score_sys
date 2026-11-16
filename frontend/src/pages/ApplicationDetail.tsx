@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { components } from "../api/schema";
 import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
-import { ChecksOverview } from "../components/ChecksOverview";
+import { ChecksOverview, subjectKey } from "../components/ChecksOverview";
 import { ClientRatingPanel } from "../components/ClientRating";
 import { FedresursPanel } from "../components/FedresursPanel";
 import { BkiRequestPanel } from "../components/BkiRequestPanel";
@@ -24,12 +24,10 @@ import {
   decisionOutcomeLabel,
   documentKindLabel,
   humanizeFieldPath,
-  reasonCodeLabel,
   subjectTypeLabel,
 } from "../lib/labels";
 
 type CheckRow = components["schemas"]["CheckOut"];
-type BureauCheck = components["schemas"]["BureauCheckOut"];
 
 // Проверка из подробного отчёта бюро — рядом с нашей, с этой пометкой; наша
 // проверка — без пометки (решение владельца: обе видны, в решение входит наша).
@@ -42,19 +40,6 @@ function BkiTag() {
 }
 
 
-// Строки «по данным БКИ» под нашей ручной проверкой того же источника.
-function BureauLines({ checks }: { checks: BureauCheck[] }) {
-  if (checks.length === 0) return null;
-  return (
-    <ul className="bureau-lines">
-      {checks.map((b) => (
-        <li key={b.id} className={`bureau-line bureau-line--${checkTone(b.status)}`}>
-          <BkiTag /> {checkResultLabel(b.source, b.status)}
-        </li>
-      ))}
-    </ul>
-  );
-}
 // Статусы, которые просто повторяют последнее решение системы.
 const STATUS_MIRRORS_DECISION = new Set(["approved", "gray_zone", "rejected_a", "rejected_b", "to_operator"]);
 
@@ -149,8 +134,6 @@ export function ApplicationDetailPage() {
   // в закреплённом блоке «Нужно ваше действие» с самими проверками; что
   // делается не здесь (серая зона в CRM, проверка по перечням) — строкой под
   // решением.
-  const applicantFssp = findLatestCheck("fssp", "applicant", null);
-  const applicantFedresurs = findLatestCheck("fedresurs", "applicant", null);
   const manualSubjects: { type: "applicant" | "guarantor"; id: string | null; label: string }[] = [
     { type: "applicant", id: null, label: "заявителя" },
     ...(app.has_guarantor && app.guarantor_id
@@ -186,9 +169,6 @@ export function ApplicationDetailPage() {
   // Отчёт БКИ не получен (бюро не подключено, недоступно…) — серая зона, но
   // запрос можно повторить теми же кнопками.
   const bkiRetry = app.bki_request_state === "retry";
-  // Ручные проверки (ФССП, банкротство) — одна карточка на постоянном месте:
-  // отметили одну — вторая не перескакивает.
-  const manualActionCount = Number(fsspNeedsAction) + Number(fedresursNeedsAction);
   // После отказа или истечения ручные проверки уже ничего не меняют — блок
   // скрыт (результаты, если были, остаются в «Что проверили»). Проверки, что
   // ждут действия, показаны выше в «Нужно ваше действие».
@@ -241,74 +221,44 @@ export function ApplicationDetailPage() {
   const profileRows = clientBlock.filter((row) => row.label !== "ФИО");
   const innFound = Boolean(innOf("applicant", null));
 
-  const fsspSection = (
-    <section className="mc" key="fssp">
-      <div className="mc__head">
-        <h3 id="fssp" className="mc__title">
-          ФССП
-        </h3>
-      </div>
-      <FsspPanel
-        applicationId={app.id}
-        subjectType="applicant"
-        subjectLabel="заявитель"
-        subjectId={null}
-        latestCheck={applicantFssp}
-        canOperate={canOperateFssp}
-        hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("applicant")}
-      />
-      {app.has_guarantor && app.guarantor_id && (
+  // Ручные проверки (16.11.2026) — не отдельной карточкой, а кнопками под
+  // своей строкой в «Проверках» → «Долги и банкротство». После отказа или
+  // истечения они ничего не меняют — кнопок нет.
+  const rowActions: Record<string, ReactNode> = {};
+  if (showManual) {
+    for (const s of manualState) {
+      const isGuarantor = s.type === "guarantor";
+      rowActions[subjectKey("fssp", s.type, s.id)] = (
         <FsspPanel
           applicationId={app.id}
-          subjectType="guarantor"
-          subjectLabel="поручитель"
-          subjectName={guarantorName || null}
-          subjectId={app.guarantor_id}
-          latestCheck={findLatestCheck("fssp", "guarantor", app.guarantor_id)}
+          subjectType={s.type}
+          subjectId={s.id}
+          latestCheck={s.fssp}
           canOperate={canOperateFssp}
-          hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes("guarantor")}
+          hasPostDecisionAlert={app.fssp_post_decision_alert_subjects.includes(s.type)}
         />
-      )}
-      <BureauLines checks={bureauFor("fssp")} />
-    </section>
-  );
-
-  const fedresursSection = (
-    <section className="mc" key="fedresurs">
-      <div className="mc__head">
-        <h3 id="fedresurs" className="mc__title">
-          Банкротство (Федресурс)
-        </h3>
-      </div>
-      <FedresursPanel
-        applicationId={app.id}
-        subjectType="applicant"
-        subjectLabel="заявитель"
-        subjectId={null}
-        fullName={app.client_name ?? null}
-        birthDate={birthText(birthDate)}
-        inn={innOf("applicant", null)}
-        address={ocrValue(app.ocr_result?.fields ?? null, "registration_address") ?? null}
-        latestCheck={applicantFedresurs}
-        canOperate={canOperateFssp}
-      />
-      {app.has_guarantor && app.guarantor_id && (
+      );
+      rowActions[subjectKey("fedresurs", s.type, s.id)] = (
         <FedresursPanel
           applicationId={app.id}
-          subjectType="guarantor"
-          subjectLabel="поручитель"
-          subjectId={app.guarantor_id}
-          fullName={guarantorName || null}
-          birthDate={birthText(app.guarantor_profile?.birth_date as string | undefined)}
-          inn={innOf("guarantor", app.guarantor_id)}
-          address={(app.guarantor_profile?.registration_address as string | undefined) ?? null}
-          latestCheck={findLatestCheck("fedresurs", "guarantor", app.guarantor_id)}
+          subjectType={s.type}
+          subjectId={s.id}
+          fullName={isGuarantor ? guarantorName || null : (app.client_name ?? null)}
+          birthDate={
+            isGuarantor ? birthText(app.guarantor_profile?.birth_date as string | undefined) : birthText(birthDate)
+          }
+          inn={innOf(s.type, s.id)}
+          address={
+            isGuarantor
+              ? ((app.guarantor_profile?.registration_address as string | undefined) ?? null)
+              : (ocrValue(app.ocr_result?.fields ?? null, "registration_address") ?? null)
+          }
+          latestCheck={s.fed}
           canOperate={canOperateFssp}
         />
-      )}
-      <BureauLines checks={bureauFor("fedresurs")} />
-    </section>
-  );
+      );
+    }
+  }
 
   const lastOverride = app.manual_overrides.length > 0 ? app.manual_overrides[app.manual_overrides.length - 1]! : null;
   // Оператор CRM уже решил по последнему решению системы (одобрил / отказал)
@@ -448,29 +398,21 @@ export function ApplicationDetailPage() {
         checks={app.checks}
         bureau={bureauChecks}
         guarantorId={app.guarantor_id ?? null}
+        guarantorName={guarantorName || null}
         bki={app.bki_result ?? null}
+        bkiAction={
+          bkiWaiting || bkiRetry || app.bki_order?.pending ? (
+            <BkiRequestPanel
+              applicationId={app.id}
+              types={app.bki_report_types ?? []}
+              order={app.bki_order}
+              canOperate={canOperateFssp}
+              retry={bkiRetry}
+            />
+          ) : null
+        }
+        rowActions={rowActions}
       />
-
-      {/* Кредитная история — отдельным блоком: запрос в БКИ платный, по кнопке. */}
-      {(bkiWaiting || bkiRetry || app.bki_order?.pending) && (
-        <BkiRequestPanel
-          applicationId={app.id}
-          types={app.bki_report_types ?? []}
-          order={app.bki_order}
-          canOperate={canOperateFssp}
-          retryReason={bkiRetry ? reasonCodeLabel(latestDecision?.reason_code ?? "") : null}
-        />
-      )}
-
-      {showManual && (
-        // Вид карточки не меняется, когда одна проверка пройдена: те же
-        // разделы на тех же местах, меняется только подсветка.
-        <div className={manualActionCount > 0 ? "pf-card pf-action" : "pf-card pf-action pf-action--done"}>
-          <h2 className="pf-section-title">Ручные проверки</h2>
-          {fsspSection}
-          {fedresursSection}
-        </div>
-      )}
 
       {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
 
@@ -680,12 +622,6 @@ export function ApplicationDetailPage() {
       </div>
     </div>
   );
-}
-
-function checkTone(status: string): "ok" | "bad" | "warn" {
-  if (status === "hit") return "bad";
-  if (status === "source_unavailable" || status === "error") return "warn";
-  return "ok";
 }
 
 function KeyValue({ rows }: { rows: { label: string; value: string }[] }) {

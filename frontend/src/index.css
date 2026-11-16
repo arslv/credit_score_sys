@@ -5651,6 +5651,8 @@ mark {
 }
 
 .chk__who {
+  display: inline-block;
+  max-width: 100%;
   margin-left: 6px;
   padding: 0 6px;
   border-radius: 4px;
@@ -5784,5 +5786,104 @@ mark {
 
   .chk__legend {
     justify-content: flex-start;
+  }
+}
+
+/* Действия прямо в «Проверках» (16.11.2026): кнопки БКИ — внизу плитки
+   кредитной истории, ручные ФССП и Федресурс — под своей строкой. */
+.chk__action {
+  margin-top: 8px;
+}
+
+.chk__bki-action {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
+}
+
+.manual-act {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  font-size: var(--font-sm);
+}
+
+.manual-act > p {
+  margin: 0;
+}
+
+.manual-act .fed-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.manual-act .fed-check {
+  margin-top: 0;
+}
+
+.manual-act .fed-check__result {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 0;
+}
+
+.manual-act .field {
+  margin-top: 0;
+  width: 100%;
+}
+
+.manual-act .captcha-image {
+  max-width: 100%;
+}
+
+.bki-act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0;
+  font-size: var(--font-sm);
+}
+
+.bki-act__label {
+  color: var(--color-text-muted);
+}
+
+.bki-act__buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bki-act .alert {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.bki-act__pending {
+  color: var(--color-text-muted);
+}
+
+.bki-act__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: bki-spin 0.9s linear infinite;
+}
+
+@keyframes bki-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bki-act__spinner {
+    animation: none;
   }
 }

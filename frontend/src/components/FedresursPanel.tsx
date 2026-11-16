@@ -32,7 +32,6 @@ export function fedresursSearchUrl(query: string): string {
 export function FedresursPanel({
   applicationId,
   subjectType,
-  subjectLabel,
   subjectId,
   fullName,
   inn,
@@ -41,7 +40,6 @@ export function FedresursPanel({
 }: {
   applicationId: string;
   subjectType: "applicant" | "guarantor";
-  subjectLabel: string;
   subjectId: string | null;
   fullName: string | null;
   /** Уже в виде ДД.ММ.ГГГГ — для сверки с найденным на сайте. */
@@ -107,15 +105,8 @@ export function FedresursPanel({
   const showForm = canOperate && (state === "pending" || rechecking);
 
   return (
-    <div className={`manual-check manual-check--${state}`}>
-      <div className="manual-check__status">
-        <b>{subjectLabel[0]!.toUpperCase() + subjectLabel.slice(1)}</b>
-        {subjectType === "guarantor" && fullName && <span className="manual-check__who"> · {fullName}</span>}
-        <b>:</b>{" "}
-        {state === "pending" && <span>не проверено</span>}
-        {state === "ok" && <span>банкротства нет</span>}
-        {state === "hit" && <span>найдено банкротство</span>}
-      </div>
+    // Только действия (16.11.2026): итог — строкой «Федресурс» в «Проверках».
+    <div className="manual-act">
       {state === "hit" && foundComment && <p className="manual-check__note">Что найдено: {foundComment}</p>}
 
       {/* Сайт закрыт защитой от ботов — проверяем руками: одна кнопка открывает
@@ -124,7 +115,7 @@ export function FedresursPanel({
       {showForm && (
         <div className="fed-check">
           {searchUrl ? (
-            <a className="btn btn-primary" href={searchUrl} target="_blank" rel="noreferrer">
+            <a className="btn btn-small" href={searchUrl} target="_blank" rel="noreferrer">
               Найти на Федресурсе ↗
             </a>
           ) : (

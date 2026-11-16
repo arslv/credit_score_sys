@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { components } from "../api/schema";
 import { formatDateTime } from "../lib/format";
 import { checkResultLabel, passportCheckLabel, passportCheckStatusLabel, sourceMeta } from "../lib/labels";
@@ -86,7 +87,9 @@ function passportTone(status: string): Tone {
   return "none";
 }
 
-const subjectKey = (source: string, subjectType: string, subjectId?: string | null) =>
+// Ключ строки «источник + субъект»; по нему же карточка заявки передаёт
+// кнопки ручных проверок (ФССП, Федресурс) под нужную строку.
+export const subjectKey = (source: string, subjectType: string, subjectId?: string | null) =>
   `${source}|${subjectType}|${subjectType === "guarantor" ? (subjectId ?? "") : ""}`;
 
 // Последняя по времени проверка каждой пары «источник + субъект».
@@ -107,13 +110,22 @@ export function ChecksOverview({
   checks,
   bureau,
   guarantorId,
+  guarantorName = null,
   bki,
+  bkiAction = null,
+  rowActions = {},
 }: {
   passport: PassportCheck[];
   checks: CheckRow[];
   bureau: BureauCheck[];
   guarantorId: string | null;
+  /** ФИО поручителя — рядом с пометкой «поручитель», чтобы было видно, кого проверяем. */
+  guarantorName?: string | null;
   bki: BkiResult | null;
+  /** Кнопки запроса отчёта БКИ — внизу плитки «Кредитная история». */
+  bkiAction?: ReactNode;
+  /** Действия под строкой проверки, по subjectKey (ручные ФССП и Федресурс). */
+  rowActions?: Record<string, ReactNode>;
 }) {
   // МВД (отменённый реестр) не показываем — паспорт ниже по пунктам.
   const current = latest(
@@ -122,6 +134,7 @@ export function ChecksOverview({
     ),
   );
   const bureauLatest = latest(bureau);
+  const guarantorWho = guarantorName ? `поручитель · ${guarantorName}` : "поручитель";
 
   const bureauLine = (b: BureauCheck): Line => ({
     value: typeof b.parsed?.summary === "string" ? b.parsed.summary : checkResultLabel(b.source, b.status),
@@ -134,17 +147,27 @@ export function ChecksOverview({
   function buildRows(sources: string[], title: string): Row[] {
     const rows = new Map<string, Row>();
     for (const c of current.filter((x) => sources.includes(x.source))) {
-      rows.set(subjectKey(c.source, c.subject_type, c.subject_id), {
-        key: c.id,
+      const key = subjectKey(c.source, c.subject_type, c.subject_id);
+      rows.set(key, {
+        key,
         name: sourceMeta(c.source).label,
-        who: c.subject_type === "guarantor" ? "поручитель" : undefined,
+        who: c.subject_type === "guarantor" ? guarantorWho : undefined,
         lines: [{ value: checkResultLabel(c.source, c.status), tone: checkTone(c.status) }],
       });
     }
+    // Ручные проверки — у заявителя и поручителя (если он есть) всегда строкой.
+    const manualSubjects: [string, string | null][] = [["applicant", null], ...(guarantorId ? [["guarantor", guarantorId] as [string, string]] : [])];
     for (const source of MANUAL_SOURCES) {
-      const key = subjectKey(source, "applicant");
-      if (sources.includes(source) && !rows.has(key)) {
-        rows.set(key, { key: `pending-${source}`, name: sourceMeta(source).label, lines: [{ value: "не проверено", tone: "none" }] });
+      for (const [subjectType, subjectId] of manualSubjects) {
+        const key = subjectKey(source, subjectType, subjectId);
+        if (sources.includes(source) && !rows.has(key)) {
+          rows.set(key, {
+            key,
+            name: sourceMeta(source).label,
+            who: subjectType === "guarantor" ? guarantorWho : undefined,
+            lines: [{ value: "не проверено", tone: "none" }],
+          });
+        }
       }
     }
     for (const b of bureauLatest.filter((x) => BUREAU_GROUP[x.source] === title)) {
@@ -153,7 +176,7 @@ export function ChecksOverview({
       if (existing) existing.lines.push(bureauLine(b));
       else
         rows.set(key, {
-          key: `bureau-${b.id}`,
+          key,
           name: b.source === "mvd" ? "Реестр недействительных" : sourceMeta(b.source).label,
           lines: [bureauLine(b)],
         });
@@ -182,7 +205,7 @@ export function ChecksOverview({
     .map<Row>((c) => ({
       key: c.id,
       name: sourceMeta(c.source).label,
-      who: c.subject_type === "guarantor" ? "поручитель" : undefined,
+      who: c.subject_type === "guarantor" ? guarantorWho : undefined,
       lines: [{ value: checkResultLabel(c.source, c.status), tone: checkTone(c.status) }],
     }));
   if (other.length > 0) sections.push({ title: "Прочее", rows: other });
@@ -223,16 +246,16 @@ export function ChecksOverview({
       </header>
 
       <div className="chk__grid">
-        <BkiTile result={bki} tone={bkiTone} />
+        <BkiTile result={bki} tone={bkiTone} action={bkiAction} />
         {sections.map((section) => (
-          <GroupCard key={section.title} title={section.title} rows={section.rows} />
+          <GroupCard key={section.title} title={section.title} rows={section.rows} actions={rowActions} />
         ))}
       </div>
     </section>
   );
 }
 
-function GroupCard({ title, rows }: { title: string; rows: Row[] }) {
+function GroupCard({ title, rows, actions }: { title: string; rows: Row[]; actions: Record<string, ReactNode> }) {
   const rowTones = rows.map((r) => worst(r.lines.map((l) => l.tone)));
   const bad = rowTones.filter((t) => t === "bad").length;
   const warn = rowTones.filter((t) => t === "warn").length;
@@ -282,6 +305,7 @@ function GroupCard({ title, rows }: { title: string; rows: Row[] }) {
                         <span className="chk__value">{line.value}</span>
                       </div>
                     ))}
+                  {actions[row.key] && <div className="chk__action">{actions[row.key]}</div>}
                 </div>
               </li>
             );
@@ -308,7 +332,7 @@ function StatusIcon({ tone }: { tone: Tone }) {
 }
 
 // Кредитная история — плитка: крупный балл (или прочерк), итог, вид отчёта и дата.
-function BkiTile({ result, tone }: { result: BkiResult | null; tone: Tone }) {
+function BkiTile({ result, tone, action }: { result: BkiResult | null; tone: Tone; action: ReactNode }) {
   const score = result?.status === "ok" && result.score != null ? String(Math.round(Number(result.score))) : null;
   const outcome = !result
     ? "Отчёт ещё не запрашивался"
@@ -338,6 +362,7 @@ function BkiTile({ result, tone }: { result: BkiResult | null; tone: Tone }) {
         {outcome}
       </div>
       {result && <div className="chk__bki-meta">{formatDateTime(result.requested_at)}</div>}
+      {action && <div className="chk__bki-action">{action}</div>}
     </section>
   );
 }

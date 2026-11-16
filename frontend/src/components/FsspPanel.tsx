@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import { checkResultLabel } from "../lib/labels";
 
 // T16: капчу решает только человек (жёсткое правило) — ни авторешения, ни
 // внешних сервисов распознавания здесь нет и быть не может. Два шага вручную:
@@ -65,8 +64,6 @@ interface FsspCheckSummary {
 export function FsspPanel({
   applicationId,
   subjectType,
-  subjectLabel,
-  subjectName = null,
   subjectId,
   latestCheck,
   canOperate,
@@ -74,9 +71,6 @@ export function FsspPanel({
 }: {
   applicationId: string;
   subjectType: "applicant" | "guarantor";
-  subjectLabel: string;
-  /** ФИО — чтобы было видно, кого проверяем (у поручителя особенно). */
-  subjectName?: string | null;
   subjectId: string | null;
   latestCheck: FsspCheckSummary | null;
   canOperate: boolean;
@@ -222,21 +216,12 @@ export function FsspPanel({
   } | null | undefined;
 
   return (
-    // T23: та же строка-карточка, что у Федресурса: статус точкой цвета исхода.
-    <div
-      className={`manual-check manual-check--${
-        !latestCheck ? "pending" : latestCheck.status === "hit" ? "hit" : latestCheck.status === "ok" ? "ok" : "pending"
-      }`}
-    >
-      <div className="manual-check__status">
-        <b>{subjectLabel[0]!.toUpperCase() + subjectLabel.slice(1)}</b>
-        {subjectName && <span className="manual-check__who"> · {subjectName}</span>}
-        <b>:</b>{" "}
-        {latestCheck ? checkResultLabel("fssp", latestCheck.status) : <span>не проверено</span>}
-        {latestCheck?.status === "hit" && classification?.fssp_total_amount != null && (
-          <span> · {classification.fssp_total_amount} ₽</span>
-        )}
-      </div>
+    // Только действия (16.11.2026): итог проверки — строкой «ФССП» в блоке
+    // «Проверки», под ней эти кнопки.
+    <div className="manual-act">
+      {latestCheck?.status === "hit" && classification?.fssp_total_amount != null && (
+        <p className="manual-check__note">Сумма долга: {classification.fssp_total_amount} ₽</p>
+      )}
 
       {hasPostDecisionAlert && (
         <p className="alert" role="alert">
@@ -250,7 +235,7 @@ export function FsspPanel({
           disabled={startMutation.isPending || blocked}
           onClick={() => startMutation.mutate()}
         >
-          {latestCheck ? "Повторить проверку" : "Начать проверку"}
+          {latestCheck ? "Проверить заново" : "Проверить"}
         </button>
       )}
 

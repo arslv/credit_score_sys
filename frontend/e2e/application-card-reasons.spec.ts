@@ -153,8 +153,11 @@ test("карточка серой зоны: «В норме» отдельно, 
   );
 
   // Раздел ФССП — коротко: только статус, без пояснений.
-  const fsspSection = page.locator("#fssp").locator("xpath=ancestor::section[1]");
-  await expect(fsspSection.getByText("не проверено").first()).toBeVisible();
+  // ФССП — строкой в «Проверках» → «Долги и банкротство», кнопка под ней.
+  const fsspRow = page
+    .locator(".chk__area--debts .chk__row", { hasText: "ФССП" })
+    .filter({ hasNotText: "поручитель" });
+  await expect(fsspRow.getByText("не проверено")).toBeVisible();
 
   // Подсказка «?» ровно одна, по клику — объяснение этого решения.
   const toggles = page.locator(".help-toggle");
@@ -196,5 +199,7 @@ test("карточка без стадий, ряда цифр и хода зая
   for (const group of ["Паспорт", "Перечни", "Налоговая", "Долги и банкротство", "Кредитная история"]) {
     await expect(checks.getByRole("heading", { name: group, exact: true })).toBeVisible();
   }
-  await expect(page.getByRole("heading", { name: "Ручные проверки", exact: true })).toBeVisible();
+  // Ручные проверки — кнопками прямо в «Долгах и банкротстве», без отдельного блока.
+  await expect(page.getByRole("heading", { name: "Ручные проверки", exact: true })).toHaveCount(0);
+  await expect(checks.locator(".chk__area--debts").getByRole("button", { name: "Проверить", exact: true }).first()).toBeVisible();
 });

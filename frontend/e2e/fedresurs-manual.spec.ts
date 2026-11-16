@@ -9,7 +9,8 @@ test("оператор отмечает проверку банкротства;
   await login(page, seed.operator.email, seed.operator.password);
   await page.goto(`/applications/${seed.no_income.id}`);
 
-  const section = page.locator("#fedresurs").locator("xpath=ancestor::section[1]");
+  // Строка «Федресурс» в «Проверках» → «Долги и банкротство», кнопки под ней.
+  const section = page.locator(".chk__area--debts .chk__row", { hasText: "Федресурс" }).first();
   await expect(section.getByText("не проверено")).toBeVisible();
   // Ссылка сразу открывает поиск с подставленным ИНН или ФИО заявителя.
   const href = await section.getByRole("link", { name: /Найти на Федресурсе/ }).getAttribute("href");
@@ -37,7 +38,7 @@ test("наблюдатель видит статус банкротства, н�
   const seed = loadSeed();
   await login(page, seed.viewer.email, seed.viewer.password);
   await page.goto(`/applications/${seed.gray_fssp.id}`);
-  const section = page.locator("#fedresurs").locator("xpath=ancestor::section[1]");
+  const section = page.locator(".chk__area--debts");
   // У заявки с поручителем — по строке на заявителя и поручителя.
   await expect(section.getByText("не проверено").first()).toBeVisible();
   await expect(section.getByRole("button", { name: "Банкротства нет" })).toHaveCount(0);
