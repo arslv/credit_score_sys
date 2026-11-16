@@ -236,29 +236,16 @@ export function FsspPanel({
         {subjectName && <span className="manual-check__who"> · {subjectName}</span>}
         <b>:</b>{" "}
         {latestCheck ? checkResultLabel("fssp", latestCheck.status) : <span>не проверено</span>}
+        {latestCheck?.status === "hit" && classification?.fssp_total_amount != null && (
+          <span> · {classification.fssp_total_amount} ₽</span>
+        )}
       </div>
 
       {hasPostDecisionAlert && (
         <p className="alert" role="alert">
-          ФССП найдено после того, как решение по заявке уже было принято — пересмотрите вручную.
-          Статус заявки автоматически не меняется.
+          Найдено после решения — пересмотрите вручную.
         </p>
       )}
-
-      {latestCheck && latestCheck.status === "hit" && classification && (
-        <p className="muted">
-          Долг по кредитам: {classification.fssp_credit_debt_amount ?? 0} ₽ · всего производств:{" "}
-          {classification.fssp_count ?? 0} ({classification.fssp_total_amount ?? 0} ₽)
-        </p>
-      )}
-      {latestCheck && latestCheck.status === "hit" && !classification && (
-        <p className="muted">Найдено, но сумм в ответе ФССП нет.</p>
-      )}
-      {latestCheck && latestCheck.status === "source_unavailable" && (
-        <p className="muted">Сайт ФССП был недоступен во время последней попытки.</p>
-      )}
-
-      {!canOperate && !latestCheck && <p className="muted">Проверку запускает оператор или администратор.</p>}
 
       {canOperate && !open && (
         <button
@@ -284,7 +271,7 @@ export function FsspPanel({
             </label>
           )}
           <label className="field">
-            Регион ФССП (выберите сами — не подставляется автоматически)
+            Регион
             <select value={regionCode} onChange={(e) => setRegionCode(e.target.value)}>
               <option value="">— выберите регион —</option>
               {regions.map((r) => (

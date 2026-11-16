@@ -4786,11 +4786,6 @@ mark {
   color: var(--color-text-muted);
 }
 
-.pf-action__left {
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-sm);
-}
-
 /* Проверка из отчёта бюро — маленькая пометка рядом с источником. */
 .bki-tag {
   display: inline-block;

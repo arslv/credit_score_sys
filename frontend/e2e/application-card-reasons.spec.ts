@@ -152,9 +152,9 @@ test("карточка серой зоны: «В норме» отдельно, 
     `${formatAmount("4500")} ₽ (рассчитан нами, не из CRM)`,
   );
 
-  // T23: отдельного списка дел нет — раздел ФССП сам помечен «требуется действие».
+  // Раздел ФССП — коротко: только статус, без пояснений.
   const fsspSection = page.locator("#fssp").locator("xpath=ancestor::section[1]");
-  await expect(fsspSection.getByText("требуется действие", { exact: true })).toBeVisible();
+  await expect(fsspSection.getByText("не проверено").first()).toBeVisible();
 
   // Подсказка «?» ровно одна, по клику — объяснение этого решения.
   const toggles = page.locator(".help-toggle");
@@ -173,8 +173,6 @@ test("карточка без дохода: «ПДН: не вычислимо»,
   await expect(page.getByText("ПДН 0%")).toHaveCount(0);
   // Серая зона не из-за ФССП — решение в CRM: строкой в вердикте, у ФССП пометки нет.
   await expect(page.locator(".verdict-action")).toHaveText("Решение принимает оператор в CRM.");
-  const fsspSection = page.locator("#fssp").locator("xpath=ancestor::section[1]");
-  await expect(fsspSection.getByText("требуется действие", { exact: true })).toHaveCount(0);
   // Платежа в снимке нет — строки «Платёж в месяц» нет (не «0 ₽»).
   await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toHaveCount(0);
 });
@@ -198,5 +196,5 @@ test("карточка без стадий, ряда цифр и хода зая
   for (const group of ["Паспорт", "Перечни", "Налоговая", "Долги и банкротство", "Кредитная история"]) {
     await expect(checks.getByRole("heading", { name: group, exact: true })).toBeVisible();
   }
-  await expect(page.getByText(/нужно ваше действие/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ручные проверки", exact: true })).toBeVisible();
 });

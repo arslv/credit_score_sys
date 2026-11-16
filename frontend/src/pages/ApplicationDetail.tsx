@@ -41,7 +41,6 @@ function BkiTag() {
   );
 }
 
-const capitalize = (text: string) => (text ? text[0]!.toUpperCase() + text.slice(1) : text);
 
 // Строки «по данным БКИ» под нашей ручной проверкой того же источника.
 function BureauLines({ checks }: { checks: BureauCheck[] }) {
@@ -49,10 +48,8 @@ function BureauLines({ checks }: { checks: BureauCheck[] }) {
   return (
     <ul className="bureau-lines">
       {checks.map((b) => (
-        <li key={b.id} className={`manual-check__status bureau-line bureau-line--${checkTone(b.status)}`}>
-          <b>{capitalize(subjectTypeLabel(b.subject_type))}:</b> {checkResultLabel(b.source, b.status)}
-          {typeof b.parsed?.summary === "string" && <> — {b.parsed.summary}</>} <BkiTag />
-          <span className="muted"> · {formatDateTime(b.created_at)}</span>
+        <li key={b.id} className={`bureau-line bureau-line--${checkTone(b.status)}`}>
+          <BkiTag /> {checkResultLabel(b.source, b.status)}
         </li>
       ))}
     </ul>
@@ -184,19 +181,6 @@ export function ApplicationDetailPage() {
   // ещё в работе (после отказа или истечения — незачем).
   const fedresursNeedsAction =
     fedLeft.length > 0 && app.decisions.length > 0 && !["rejected_a", "rejected_b", "expired"].includes(app.status);
-  // Что именно осталось — поимённо: «ФССП поручителя, банкротство заявителя и поручителя».
-  const joinRu = (items: string[]) =>
-    items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} и ${items[items.length - 1]}`;
-  const lateFssp = manualState
-    .filter((m) => app.fssp_post_decision_alert_subjects.includes(m.type))
-    .map((m) => m.label);
-  const leftText = [
-    fsspNeedsAction && fsspLeft.length > 0 && `ФССП ${joinRu(fsspLeft)}`,
-    lateFssp.length > 0 && `пересмотреть решение: у ${joinRu(lateFssp)} ФССП нашёл долг после решения`,
-    fedresursNeedsAction && `банкротство ${joinRu(fedLeft)}`,
-  ]
-    .filter(Boolean)
-    .join("; ");
   // Стадия Б ждёт, пока сотрудник закажет отчёт БКИ (запрос платный).
   const bkiWaiting = app.status === "awaiting_bki";
   // Отчёт БКИ не получен (бюро не подключено, недоступно…) — серая зона, но
@@ -263,8 +247,6 @@ export function ApplicationDetailPage() {
         <h3 id="fssp" className="mc__title">
           ФССП
         </h3>
-        {fsspNeedsAction && <span className="action-tag">требуется действие</span>}
-        {fsspNeedsAction && grayStageB && <span className="mc__why">без неё одобрение недоступно</span>}
       </div>
       <FsspPanel
         applicationId={app.id}
@@ -297,7 +279,6 @@ export function ApplicationDetailPage() {
         <h3 id="fedresurs" className="mc__title">
           Банкротство (Федресурс)
         </h3>
-        {fedresursNeedsAction && <span className="action-tag">требуется действие</span>}
       </div>
       <FedresursPanel
         applicationId={app.id}
@@ -485,17 +466,7 @@ export function ApplicationDetailPage() {
         // Вид карточки не меняется, когда одна проверка пройдена: те же
         // разделы на тех же местах, меняется только подсветка.
         <div className={manualActionCount > 0 ? "pf-card pf-action" : "pf-card pf-action pf-action--done"}>
-          {manualActionCount > 0 ? (
-            <div className="pf-action__head">
-              <span className="pf-action__icon" aria-hidden="true">
-                !
-              </span>
-              Ручные проверки — нужно ваше действие
-            </div>
-          ) : (
-            <h2 className="pf-section-title">Ручные проверки</h2>
-          )}
-          {leftText && <p className="pf-action__left">Осталось: {leftText}</p>}
+          <h2 className="pf-section-title">Ручные проверки</h2>
           {fsspSection}
           {fedresursSection}
         </div>

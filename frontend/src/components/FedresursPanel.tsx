@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import { formatDateTime } from "../lib/format";
 
 // T23: банкротство (Федресурс) — ручная проверка рядом с ФССП. Сайт закрыт
 // защитой от ботов (Qrator), автоматически его не опросить без обхода защиты —
@@ -36,9 +35,7 @@ export function FedresursPanel({
   subjectLabel,
   subjectId,
   fullName,
-  birthDate,
   inn,
-  address,
   latestCheck,
   canOperate,
 }: {
@@ -113,15 +110,13 @@ export function FedresursPanel({
     <div className={`manual-check manual-check--${state}`}>
       <div className="manual-check__status">
         <b>{subjectLabel[0]!.toUpperCase() + subjectLabel.slice(1)}</b>
-        {fullName && <span className="manual-check__who"> · {fullName}</span>}
+        {subjectType === "guarantor" && fullName && <span className="manual-check__who"> · {fullName}</span>}
         <b>:</b>{" "}
         {state === "pending" && <span>не проверено</span>}
         {state === "ok" && <span>банкротства нет</span>}
         {state === "hit" && <span>найдено банкротство</span>}
-        {latestCheck && <span className="muted"> · отмечено {formatDateTime(latestCheck.started_at)}</span>}
       </div>
       {state === "hit" && foundComment && <p className="manual-check__note">Что найдено: {foundComment}</p>}
-      {state === "pending" && !canOperate && <p className="manual-check__note">Проверяет оператор или администратор.</p>}
 
       {/* Сайт закрыт защитой от ботов — проверяем руками: одна кнопка открывает
           поиск с подставленным ИНН или ФИО, рядом дата рождения для сверки с
@@ -137,9 +132,6 @@ export function FedresursPanel({
           )}
           {searchUrl && (
             <span className="fed-check__hint">
-              {inn
-                ? `по ИНН ${inn}${birthDate ? ` · д.р. ${birthDate}` : ""}`
-                : `ИНН не найден — ищем по ФИО${address ? `, сверяйте адрес: ${address}` : ""}`}
               <button
                 type="button"
                 className="btn-link fed-check__copy"
