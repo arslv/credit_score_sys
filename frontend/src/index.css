@@ -4923,60 +4923,133 @@ mark {
 }
 
 /* ── «Проверки» в карточке заявки (components/ChecksOverview.tsx) ──────────
-   Строго и спокойно: группы карточками в сетке, строка = значок статуса,
-   название, итог справа. Цвет — только у значка, текст нейтральный. */
+   Сводка — полосой и словами; разделы — карточками «кладкой» (колонки без
+   пустот); строка — значок, название, под ним итог (длинный итог не ужимает
+   название). Нарушение подсвечено фоном строки. */
 .chk {
+  --chk-ok: var(--status-ok);
+  --chk-bad: var(--status-bad);
+  --chk-warn: var(--status-gray);
+  --chk-none: var(--status-neutral);
   padding: var(--space-5);
 }
 
 .chk__head {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-4);
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
 }
 
 .chk__head .pf-section-title {
   margin: 0;
 }
 
+.chk__total {
+  margin: 2px 0 0;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
 .chk__summary {
   display: flex;
-  gap: var(--space-2);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: min(420px, 100%);
+}
+
+.chk__bar {
+  display: flex;
+  gap: 3px;
+  width: 100%;
+  height: 6px;
+}
+
+.chk__bar-seg {
+  min-width: 6px;
+  border-radius: 999px;
+  background: var(--chk-none);
+}
+
+.chk__bar-seg--ok { background: var(--chk-ok); }
+.chk__bar-seg--bad { background: var(--chk-bad); }
+.chk__bar-seg--warn { background: var(--chk-warn); }
+
+.chk__legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 16px;
   margin: 0;
   padding: 0;
   list-style: none;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
 }
 
-.chk__count {
+.chk__legend-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 10px 2px 4px;
-  border: var(--line);
-  border-radius: 999px;
-  font-size: var(--font-sm);
+  white-space: nowrap;
+}
+
+.chk__legend-item b {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--color-text);
 }
 
+.chk__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--chk-none);
+}
+
+.chk__legend-item--ok .chk__dot { background: var(--chk-ok); }
+.chk__legend-item--bad .chk__dot { background: var(--chk-bad); }
+.chk__legend-item--warn .chk__dot { background: var(--chk-warn); }
+
+.chk__legend-item--bad,
+.chk__legend-item--bad b {
+  color: var(--chk-bad);
+}
+
+/* Кладка: колонки заполняются сверху вниз и выравниваются по высоте —
+   короткий раздел не оставляет дыры рядом с длинным. */
 .chk__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: var(--space-3);
+  column-width: 300px;
+  column-gap: var(--space-3);
 }
 
 .chk__group {
-  padding: var(--space-3) var(--space-4) var(--space-2);
+  display: block;
+  width: 100%;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-4);
   border: var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
   background: var(--color-subtle);
+  break-inside: avoid;
+}
+
+.chk__group--bad {
+  border-color: color-mix(in srgb, var(--chk-bad) 40%, var(--color-border));
+}
+
+.chk__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 .chk__group-title {
-  margin: 0 0 var(--space-2);
+  margin: 0;
   font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -4984,7 +5057,36 @@ mark {
   color: var(--color-text-muted);
 }
 
+.chk__group-stat {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--chk-none) 16%, transparent);
+}
+
+.chk__group-stat--ok {
+  color: var(--chk-ok);
+  background: color-mix(in srgb, var(--chk-ok) 14%, transparent);
+}
+
+.chk__group-stat--bad {
+  color: var(--chk-bad);
+  background: color-mix(in srgb, var(--chk-bad) 14%, transparent);
+}
+
+.chk__group-stat--warn {
+  color: var(--chk-warn);
+  background: color-mix(in srgb, var(--chk-warn) 14%, transparent);
+}
+
 .chk__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -4992,75 +5094,168 @@ mark {
 
 .chk__row {
   display: grid;
-  /* Название не ужимается из-за длинного итога: ему минимум половина строки. */
-  grid-template-columns: 20px minmax(50%, 1fr) minmax(0, auto);
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 10px;
   align-items: start;
-  column-gap: var(--space-2);
-  padding: 7px 0;
-  border-top: var(--line);
+  margin: 0 -8px;
+  padding: 6px 8px;
+  border-radius: 8px;
   font-size: var(--font-sm);
 }
 
-.chk__row:first-child {
-  border-top: 0;
+.chk__row--bad {
+  background: color-mix(in srgb, var(--chk-bad) 10%, transparent);
 }
 
 .chk__icon {
   display: inline-grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
+  flex: none;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  color: #ffffff;
-  background: var(--status-neutral);
+  color: var(--chk-none);
+  background: color-mix(in srgb, var(--chk-none) 18%, transparent);
 }
 
-.chk__row--ok .chk__icon,
-.chk__count--ok .chk__icon {
-  background: var(--status-ok);
+.chk__icon--ok {
+  color: var(--chk-ok);
+  background: color-mix(in srgb, var(--chk-ok) 16%, transparent);
 }
 
-.chk__row--bad .chk__icon,
-.chk__count--bad .chk__icon {
-  background: var(--status-bad);
+.chk__icon--bad {
+  color: var(--chk-bad);
+  background: color-mix(in srgb, var(--chk-bad) 18%, transparent);
 }
 
-.chk__row--warn .chk__icon,
-.chk__count--warn .chk__icon {
-  background: var(--status-gray);
+.chk__icon--warn {
+  color: var(--chk-warn);
+  background: color-mix(in srgb, var(--chk-warn) 18%, transparent);
+}
+
+.chk__body {
+  min-width: 0;
 }
 
 .chk__name {
+  font-weight: 500;
+  line-height: 20px;
   color: var(--color-text);
-  line-height: 1.45;
-}
-
-.chk__name .bki-tag {
-  margin-left: 6px;
+  overflow-wrap: anywhere;
 }
 
 .chk__who {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--chk-none) 16%, transparent);
+}
+
+.chk__line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 2px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.chk__line .bki-tag {
+  flex: none;
+  margin-left: 0;
+}
+
+.chk__site-tag {
+  border-color: var(--color-border-strong);
   color: var(--color-text-muted);
 }
 
 .chk__value {
-  max-width: 220px;
-  text-align: right;
-  line-height: 1.45;
-  color: var(--color-text-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.chk__row--bad .chk__value {
-  color: var(--status-bad);
+.chk__line--bad {
   font-weight: 600;
+  color: var(--chk-bad);
+}
+
+.chk__line--warn {
+  color: var(--chk-warn);
 }
 
 .chk__empty {
-  margin: var(--space-1) 0 var(--space-2);
+  margin: 0;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+/* Кредитная история — плитка с крупным баллом; фон чуть окрашен итогом. */
+.chk__bki {
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--chk-none) 14%, transparent), transparent 60%),
+    var(--color-subtle);
+}
+
+.chk__bki--ok {
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--chk-ok) 18%, transparent), transparent 60%),
+    var(--color-subtle);
+}
+
+.chk__bki--warn {
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--chk-warn) 18%, transparent), transparent 60%),
+    var(--color-subtle);
+}
+
+.chk__bki-kind {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.chk__bki-score {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.chk__bki--none .chk__bki-score {
+  color: var(--chk-none);
+}
+
+.chk__bki-unit {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--color-text-muted);
+}
+
+.chk__bki-outcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: var(--space-3);
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.chk__bki-meta {
+  margin: 2px 0 0 28px;
   font-size: var(--font-sm);
   color: var(--color-text-muted);
 }
@@ -5072,56 +5267,15 @@ mark {
 
   .chk__head {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
   }
 
-  .chk__value {
-    max-width: 150px;
+  .chk__summary {
+    align-items: stretch;
+    min-width: 0;
   }
-}
 
-/* Кредитная история в «Проверках» — плитка с крупным баллом. */
-.chk__bki-body {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-1) 0 var(--space-2);
-}
-
-.chk__bki-score {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 64px;
-  font-size: 32px;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text);
-}
-
-.chk__bki--warn .chk__bki-score {
-  color: var(--status-gray);
-}
-
-.chk__bki--none .chk__bki-score {
-  color: var(--status-neutral);
-}
-
-.chk__bki-unit {
-  font-size: var(--font-sm);
-  font-weight: 500;
-  color: var(--color-text-muted);
-}
-
-.chk__bki-outcome {
-  font-size: var(--font-md);
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.chk__bki-meta {
-  margin-top: 2px;
-  font-size: var(--font-sm);
-  color: var(--color-text-muted);
+  .chk__legend {
+    justify-content: flex-start;
+  }
 }
