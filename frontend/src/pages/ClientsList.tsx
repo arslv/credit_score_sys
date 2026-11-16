@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import { ErrorState, LoadingState, Pagination } from "../components/ui";
+import { ErrorState, LoadingState, Pagination, SearchInput, Toolbar, useDebounced } from "../components/ui";
 import { initialsOf } from "../lib/format";
 
 const PAGE_SIZE = 24;
@@ -19,12 +19,15 @@ function applicationsWord(n: number): string {
 // ФИО, сколько заявок; повторный клиент (2+ заявки) отмечен.
 export function ClientsListPage() {
   const [page, setPage] = useState(1);
+  // Поиск (решение владельца 16.11.2026): ФИО, телефон, ИНН, номер паспорта.
+  const [search, setSearch] = useState("");
+  const q = useDebounced(search.trim());
 
   const query = useQuery({
-    queryKey: ["clients", page],
+    queryKey: ["clients", page, q],
     queryFn: async () => {
       const { data, error } = await api.GET("/api/clients", {
-        params: { query: { page, page_size: PAGE_SIZE } },
+        params: { query: { page, page_size: PAGE_SIZE, q: q || undefined } },
       });
       if (error) throw error;
       return data;
@@ -48,12 +51,26 @@ export function ClientsListPage() {
         )}
       </header>
 
+      <Toolbar>
+        <SearchInput
+          value={search}
+          onChange={(value) => {
+            setSearch(value);
+            setPage(1);
+          }}
+          placeholder="ФИО, телефон, ИНН или паспорт"
+          label="Поиск клиентов"
+        />
+      </Toolbar>
+
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message="Не удалось загрузить список клиентов." onRetry={() => void query.refetch()} />}
       {query.data && query.data.items.length === 0 && (
         <div className="pg-empty">
-          <div className="pg-empty__title">Клиентов пока нет</div>
-          <div className="pg-empty__hint">Клиент появляется после проверки паспорта по первой заявке.</div>
+          <div className="pg-empty__title">{q ? "Никого не нашли" : "Клиентов пока нет"}</div>
+          <div className="pg-empty__hint">
+            {q ? "Проверьте написание или ищите по телефону." : "Клиент появляется после проверки паспорта по первой заявке."}
+          </div>
         </div>
       )}
 

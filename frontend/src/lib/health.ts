@@ -43,21 +43,21 @@ export function healthProblems(s: HealthInput): HealthProblem[] {
     problems.push({
       key: "ruleset-mismatch",
       what: "Действующие правила отличаются от файла правил на сервере.",
-      todo: "Решите, какая версия верная: опубликуйте нужную в «Скоринг» → «Правила» или поправьте файл.",
+      todo: "Опубликуйте верную версию в «Скоринге» или поправьте файл.",
     });
   }
   if (!s.bki_configured) {
     problems.push({
       key: "bki",
       what: "БКИ не подключено — одобрить заявку нельзя, все заявки уходят в серую зону.",
-      todo: "Нужен договор с бюро кредитных историй и ключи доступа в настройках сервера.",
+      todo: "Нужны договор с бюро и ключи доступа на сервере.",
     });
   }
   if (s.stuck_in_ocr > 0) {
     problems.push({
       key: "ocr",
       what: `${applications(s.stuck_in_ocr)} зависли в распознавании паспорта.`,
-      todo: "Проверьте, что работает фоновый обработчик (worker) и доступен сервис распознавания; заявки подхватятся автоматически.",
+      todo: "Проверьте фоновый обработчик (worker) и сервис распознавания.",
     });
   }
   if (s.stage_b_reprocessing_loop_applications > 0) {
@@ -71,14 +71,14 @@ export function healthProblems(s: HealthInput): HealthProblem[] {
     problems.push({
       key: "stuck",
       what: `${applications(s.stuck_applications_over_1h)} больше часа без движения.`,
-      todo: "Откройте список заявок и проверьте, на каком шаге они стоят; если таких много — проверьте фоновый обработчик (worker).",
+      todo: "Посмотрите, где они стоят; если их много — проверьте фоновый обработчик (worker).",
     });
   }
   if (s.partner_integration_errors_last_24h > 0) {
     problems.push({
       key: "partner",
       what: `Ошибок обмена с CRM за сутки: ${s.partner_integration_errors_last_24h}.`,
-      todo: "Ответы в CRM отправляются повторно автоматически. Если число растёт — проверьте адрес и токен CRM и что она доступна.",
+      todo: "Повтор идёт сам; если число растёт — проверьте адрес и токен CRM.",
     });
   }
   if (s.fssp_results_after_decision > 0) {
@@ -97,7 +97,7 @@ export function healthProblems(s: HealthInput): HealthProblem[] {
         what: r.registry === "rosfinmon_sanctions"
           ? "Перечень Росфинмониторинга давно не обновлялся."
           : `Реестр ${r.registry} давно не обновлялся.`,
-        todo: "Проверьте, что работает планировщик (beat) и доступен адрес загрузки реестра.",
+        todo: "Проверьте планировщик (beat) и адрес загрузки.",
       });
     }
   }

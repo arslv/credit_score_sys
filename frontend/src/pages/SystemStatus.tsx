@@ -2,22 +2,19 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { components } from "../api/schema";
-import { ErrorState, LoadingState, PageHeader } from "../components/ui";
+import { StatusIcon, type Tone } from "../components/ChecksOverview";
+import { ErrorState, LoadingState } from "../components/ui";
 import { healthProblems } from "../lib/health";
 
 type SystemStatus = components["schemas"]["SystemStatus"];
-type Tone = "ok" | "bad" | "warn" | "mute";
 
-const TONE_ICON: Record<Tone, string> = { ok: "✓", bad: "!", warn: "!", mute: "–" };
-
-// Плитка одного узла системы: статус точкой-иконкой, крупное значение, пояснение.
+// Плитка одного узла системы — как группа в «Проверках» карточки заявки:
+// значок итога и название, крупное значение, одна короткая строка пояснения.
 function Tile({ title, value, hint, tone }: { title: string; value: string; hint?: string; tone: Tone }) {
   return (
     <div className={`sys-tile sys-tile--${tone}`}>
       <div className="sys-tile__head">
-        <span className="sys-tile__icon" aria-hidden="true">
-          {TONE_ICON[tone]}
-        </span>
+        <StatusIcon tone={tone} />
         <span className="sys-tile__title">{title}</span>
       </div>
       <div className="sys-tile__value">{value}</div>
@@ -35,9 +32,9 @@ const PROBLEM_LINKS: Record<string, { to: string; label: string }> = {
   "fssp-late": { to: "/applications", label: "К заявкам" },
 };
 
-// T23 (по отзыву): сверху — крупный итог, ниже — проблемы карточками с тем,
-// что делать, и плитки по узлам системы (правила, БКИ, CRM, конвейер, ФССП,
-// реестры) — все цифры видны сразу, без свёрнутой таблицы.
+// Вид от 16.11.2026 — в стиле карточки заявки: шапка страницы с итогом
+// справа, проблемы — карточками с красной кромкой, узлы — плитками с
+// короткими пояснениями.
 export function SystemStatusPage() {
   const query = useQuery({
     queryKey: ["system-status"],
@@ -49,42 +46,43 @@ export function SystemStatusPage() {
     refetchInterval: 30_000,
   });
 
-  const header = <PageHeader title="Состояние системы" description="Обновляется каждые 30 секунд." />;
-  if (query.isLoading) return <section>{header}<LoadingState /></section>;
-  if (query.isError || !query.data) {
-    return (
-      <section>
-        {header}
-        <ErrorState message="Не удалось загрузить состояние системы." onRetry={() => void query.refetch()} />
-      </section>
-    );
-  }
-
-  const s: SystemStatus = query.data;
-  const problems = healthProblems(s);
-  const updatedAt = new Date(query.dataUpdatedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const pipelineStuck = s.stuck_applications_over_1h + s.stuck_in_ocr + s.stage_b_reprocessing_loop_applications;
+  const updatedAt = query.dataUpdatedAt
+    ? new Date(query.dataUpdatedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : null;
+  const s: SystemStatus | undefined = query.data;
+  const problems = s ? healthProblems(s) : [];
 
   return (
-    <section className="sys">
-      {header}
-
-      <div className={problems.length > 0 ? "sys-hero sys-hero--bad" : "sys-hero sys-hero--ok"}>
-        <span className="sys-hero__icon" aria-hidden="true">
-          {problems.length > 0 ? "!" : "✓"}
-        </span>
+    <section className="pg sys">
+      <header className="pg-head">
         <div>
-          <p className="sys-hero__title" data-testid="health-summary">
-            {problems.length > 0 ? `Есть проблемы: ${problems.length}` : "Всё работает"}
+          <h1>Состояние системы</h1>
+          <p className="pg-head__sub">
+            Обновляется каждые 30 секунд{updatedAt ? ` · проверено в ${updatedAt}` : ""}
           </p>
-          <p className="sys-hero__sub">Проверено в {updatedAt}</p>
         </div>
-      </div>
+        {s && (
+          <div className="pg-stats">
+            <div className={problems.length > 0 ? "pg-stat pg-stat--bad" : "pg-stat pg-stat--ok"}>
+              <span className="pg-stat__value sys-summary" data-testid="health-summary">
+                {problems.length > 0 ? `Есть проблемы: ${problems.length}` : "Всё работает"}
+              </span>
+              <span className="pg-stat__label">{problems.length > 0 ? "нужно внимание" : "проблем нет"}</span>
+            </div>
+          </div>
+        )}
+      </header>
 
-      {problems.length > 0 && (
+      {query.isLoading && <LoadingState />}
+      {(query.isError || (!query.isLoading && !s)) && (
+        <ErrorState message="Не удалось загрузить состояние системы." onRetry={() => void query.refetch()} />
+      )}
+
+      {s && problems.length > 0 && (
         <ul className="sys-problems" data-testid="health-problems">
           {problems.map((p) => (
             <li key={p.key} className="sys-problem">
+              <StatusIcon tone="bad" />
               <div className="sys-problem__text">
                 <div className="sys-problem__what">{p.what}</div>
                 <div className="sys-problem__todo">{p.todo}</div>
@@ -99,6 +97,15 @@ export function SystemStatusPage() {
         </ul>
       )}
 
+      {s && <Nodes s={s} />}
+    </section>
+  );
+}
+
+function Nodes({ s }: { s: SystemStatus }) {
+  const pipelineStuck = s.stuck_applications_over_1h + s.stuck_in_ocr + s.stage_b_reprocessing_loop_applications;
+  return (
+    <>
       <h2 className="sys-section">Узлы системы</h2>
       <div className="sys-grid">
         <Tile
@@ -108,8 +115,8 @@ export function SystemStatusPage() {
             s.ruleset_matches_file === null
               ? "сверка с файлом неизвестна"
               : s.ruleset_matches_file
-                ? "совпадает с файлом на сервере"
-                : "отличается от файла на сервере"
+                ? "совпадает с файлом"
+                : "отличается от файла"
           }
           tone={s.ruleset_active_version == null ? "bad" : s.ruleset_matches_file === false ? "warn" : "ok"}
         />
@@ -122,34 +129,39 @@ export function SystemStatusPage() {
         <Tile
           title="Обмен с CRM"
           value={s.partner_integration_errors_last_24h === 0 ? "без ошибок" : `${s.partner_integration_errors_last_24h} ошибок`}
-          hint="за последние сутки"
+          hint="за сутки"
           tone={s.partner_integration_errors_last_24h === 0 ? "ok" : "warn"}
         />
         <Tile
           title="Конвейер заявок"
           value={pipelineStuck === 0 ? "всё движется" : `${pipelineStuck} застряли`}
-          hint={`больше часа без движения: ${s.stuck_applications_over_1h} · в распознавании: ${s.stuck_in_ocr} · проверка по кругу: ${s.stage_b_reprocessing_loop_applications}`}
+          hint={
+            pipelineStuck === 0
+              ? undefined
+              : [
+                  s.stuck_applications_over_1h ? `без движения: ${s.stuck_applications_over_1h}` : null,
+                  s.stuck_in_ocr ? `в распознавании: ${s.stuck_in_ocr}` : null,
+                  s.stage_b_reprocessing_loop_applications ? `по кругу: ${s.stage_b_reprocessing_loop_applications}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+          }
           tone={pipelineStuck === 0 ? "ok" : "bad"}
         />
         <Tile
           title="ФССП после решения"
           value={s.fssp_results_after_decision === 0 ? "нет" : String(s.fssp_results_after_decision)}
-          hint="долг нашёлся уже после решения по заявке"
+          hint="долг найден после решения"
           tone={s.fssp_results_after_decision === 0 ? "ok" : "warn"}
         />
         {s.registries.map((r) =>
-          // Реестр МВД отменён в 2023 — недействительный паспорт проверяет
-          // бюро (блок P.0308 в «Подробном» отчёте Спектрум Даты).
+          // Реестр МВД отменён в 2023 — недействительный паспорт проверяет бюро.
           r.registry === "mvd_invalid_passports" ? (
             <Tile
               key={r.registry}
               title="Недействительные паспорта"
-              value={s.bki_configured ? "проверяются через БКИ" : "не проверяются"}
-              hint={
-                s.bki_configured
-                  ? "запрос КИ по кнопке — паспорт проверяется вместе с «Подробным» отчётом; формат, даты и код подразделения — всегда, сразу"
-                  : "реестр МВД отменён в 2023 году — паспорт проверяет бюро, подключите БКИ"
-              }
+              value={s.bki_configured ? "через БКИ" : "не проверяются"}
+              hint={s.bki_configured ? "в «Подробном» отчёте" : "подключите БКИ"}
               tone={s.bki_configured ? "ok" : "warn"}
             />
           ) : (
@@ -157,13 +169,13 @@ export function SystemStatusPage() {
               key={r.registry}
               title={registryLabel(r.registry)}
               value={r.stale ? "устарел" : "свежий"}
-              hint="обновляется планировщиком"
+              hint="обновляется сам"
               tone={r.stale ? "warn" : "ok"}
             />
           ),
         )}
       </div>
-    </section>
+    </>
   );
 }
 

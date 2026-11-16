@@ -293,6 +293,23 @@
             }
           },
           {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -540,6 +557,23 @@
         "summary": "List Clients",
         "operationId": "list_clients_api_clients_get",
         "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
           {
             "name": "page",
             "in": "query",
@@ -2561,6 +2595,105 @@
         }
       }
     },
+    "/api/manual-applications/{application_id}/form": {
+      "get": {
+        "tags": [
+          "manual-applications"
+        ],
+        "summary": "Get Application Form",
+        "description": "Текущая анкета заявки в формате формы — для правки.",
+        "operationId": "get_application_form_api_manual_applications__application_id__form_get",
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Application Form Api Manual Applications  Application Id  Form Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/manual-applications/{application_id}": {
+      "post": {
+        "tags": [
+          "manual-applications"
+        ],
+        "summary": "Edit Application Form",
+        "operationId": "edit_application_form_api_manual_applications__application_id__post",
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_edit_application_form_api_manual_applications__application_id__post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualApplicationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/crm/new-order": {
       "post": {
         "tags": [
@@ -3684,6 +3817,44 @@
           "data"
         ],
         "title": "Body_create_manual_application_api_manual_applications_post"
+      },
+      "Body_edit_application_form_api_manual_applications__application_id__post": {
+        "properties": {
+          "data": {
+            "type": "string",
+            "title": "Data",
+            "description": "анкета — JSON по схеме ManualApplicationIn"
+          },
+          "passport_main": {
+            "anyOf": [
+              {
+                "type": "string",
+                "contentMediaType": "application/octet-stream"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Main"
+          },
+          "passport_reg": {
+            "anyOf": [
+              {
+                "type": "string",
+                "contentMediaType": "application/octet-stream"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passport Reg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "Body_edit_application_form_api_manual_applications__application_id__post"
       },
       "Body_import_blacklist_api_references_blacklist_import_post": {
         "properties": {

@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
-import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination } from "../components/ui";
+import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination, SearchInput, useDebounced } from "../components/ui";
 import { formatAmount, formatElapsed } from "../lib/format";
 import { applicationStatusLabel } from "../lib/labels";
 
@@ -62,6 +62,9 @@ export function ApplicationsListPage() {
   const [view, setView] = useState<View>(hasQueue ? "action" : "all");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
+  // Поиск (решение владельца 16.11.2026): ФИО, телефон, № заявки, № в CRM, паспорт.
+  const [search, setSearch] = useState("");
+  const q = useDebounced(search.trim());
 
   const countsQuery = useQuery({
     queryKey: ["applications", "quick-counts"],
@@ -73,12 +76,13 @@ export function ApplicationsListPage() {
   });
 
   const query = useQuery({
-    queryKey: ["applications", view, filters, page],
+    queryKey: ["applications", view, filters, page, q],
     queryFn: async () => {
       const { data, error } = await api.GET("/api/applications", {
         params: {
           query: {
             view,
+            q: q || undefined,
             status: filters.status || undefined,
             discrepancies_only: filters.discrepanciesOnly || undefined,
             ocr_failed_only: filters.ocrFailedOnly,
@@ -137,6 +141,20 @@ export function ApplicationsListPage() {
             : "Все заявки, пришедшие из CRM, и решения по ним."
         }
       />
+
+      <div className="list-search">
+        <SearchInput
+          value={search}
+          onChange={(value) => {
+            setSearch(value);
+            setPage(1);
+            // Ищем по всем заявкам, а не только в выбранной вкладке.
+            if (value.trim() && view !== "all") setView("all");
+          }}
+          placeholder="ФИО, телефон, № заявки или паспорт"
+          label="Поиск заявок"
+        />
+      </div>
 
       <div className="chips" role="group" aria-label="Быстрые фильтры">
         {views.map((key) => (

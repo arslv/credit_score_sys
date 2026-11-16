@@ -2,7 +2,7 @@
 // пустое состояние, одна загрузка/ошибка, одно модальное окно. Раньше каждый
 // экран собирал их сам (h1 + muted-абзац, «Загрузка…» разным текстом и
 // местом) — отсюда разнобой. Все размеры — токенами index.css.
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Search, X } from "lucide-react";
 import { highlightRanges } from "../lib/search";
 
@@ -24,6 +24,16 @@ export function PageHeader({
       {actions && <div className="page-header__actions">{actions}</div>}
     </header>
   );
+}
+
+// Значение с задержкой: поиск уходит на сервер, когда перестали печатать.
+export function useDebounced<T>(value: T, delayMs = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
 }
 
 // Индикатор «идёт запрос» — крутящееся кольцо; в кнопке — перед текстом.

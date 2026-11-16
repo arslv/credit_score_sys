@@ -318,7 +318,7 @@ function GroupCard({ title, rows, actions }: { title: string; rows: Row[]; actio
 
 // Значок статуса — мягкий круг цвета итога с рисованным знаком (а не буквой
 // шрифта: одинаково чётко в любой теме и масштабе).
-function StatusIcon({ tone }: { tone: Tone }) {
+export function StatusIcon({ tone }: { tone: Tone }) {
   return (
     <span className={`chk__icon chk__icon--${tone}`} aria-hidden="true">
       <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

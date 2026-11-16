@@ -863,6 +863,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/manual-applications/{application_id}/form": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Application Form
+         * @description Текущая анкета заявки в формате формы — для правки.
+         */
+        get: operations["get_application_form_api_manual_applications__application_id__form_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/manual-applications/{application_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Application Form */
+        post: operations["edit_application_form_api_manual_applications__application_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/crm/new-order": {
         parameters: {
             query?: never;
@@ -1219,6 +1256,18 @@ export interface components {
         };
         /** Body_create_manual_application_api_manual_applications_post */
         Body_create_manual_application_api_manual_applications_post: {
+            /**
+             * Data
+             * @description анкета — JSON по схеме ManualApplicationIn
+             */
+            data: string;
+            /** Passport Main */
+            passport_main?: string | null;
+            /** Passport Reg */
+            passport_reg?: string | null;
+        };
+        /** Body_edit_application_form_api_manual_applications__application_id__post */
+        Body_edit_application_form_api_manual_applications__application_id__post: {
             /**
              * Data
              * @description анкета — JSON по схеме ManualApplicationIn
@@ -2536,6 +2585,7 @@ export interface operations {
                 source_unavailable_only?: boolean;
                 discrepancies_only?: boolean;
                 view?: string;
+                q?: string | null;
                 page?: number;
                 page_size?: number;
             };
@@ -2694,6 +2744,7 @@ export interface operations {
     list_clients_api_clients_get: {
         parameters: {
             query?: {
+                q?: string | null;
                 page?: number;
                 page_size?: number;
             };
@@ -4053,6 +4104,74 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualApplicationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_application_form_api_manual_applications__application_id__form_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_application_form_api_manual_applications__application_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_edit_application_form_api_manual_applications__application_id__post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

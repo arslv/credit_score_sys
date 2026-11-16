@@ -5,9 +5,11 @@ T23: ролей три — персданные видит admin, viewer — о�
 from datetime import date, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
+
+from app.api.search import all_tokens_match, like_pattern, search_tokens
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -43,6 +45,16 @@ class ClientDetail(BaseModel):
     applications: list[ClientApplicationItem]
 
 
+def _client_search(token: str):
+    pattern = like_pattern(token)
+    return or_(*(
+        column.ilike(pattern, escape="\\")
+        for column in (
+            Client.last_name, Client.first_name, Client.middle_name, Client.phone, Client.inn, Client.passport_number,
+        )
+    ))
+
+
 def _name(client: Client, full_pii: bool) -> str:
     if not full_pii:
         return _MASKED_NAME
@@ -52,14 +64,18 @@ def _name(client: Client, full_pii: bool) -> str:
 @router.get("", response_model=Page[ClientListItem])
 async def list_clients(
     params: PageParams = Depends(),
+    # Поиск (решение владельца 16.11.2026): ФИО, телефон, ИНН, номер паспорта.
+    q: str | None = Query(None, max_length=200),
     employee: Employee = Depends(require_roles(*_VIEW_ROLES)),
     session: AsyncSession = Depends(get_session),
 ) -> Page[ClientListItem]:
     full_pii = has_full_pii(employee)
-    total = len((await session.execute(select(Client.id))).scalars().all())
+    condition = all_tokens_match(search_tokens(q), _client_search)
+    total = (await session.execute(select(func.count(Client.id)).where(condition))).scalar_one()
     clients = (
         await session.execute(
-            select(Client).order_by(Client.created_at.desc()).offset(params.offset).limit(params.page_size)
+            select(Client).where(condition).order_by(Client.created_at.desc())
+            .offset(params.offset).limit(params.page_size)
         )
     ).scalars().all()
 

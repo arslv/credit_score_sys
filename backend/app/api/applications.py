@@ -11,7 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import and_, case, exists, func, or_, select
+from sqlalchemy import Text, and_, case, cast, exists, func, or_, select
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,7 @@ from app.engine.fssp_alerts import active_alert_condition
 from app.engine.guarantors import current_guarantor
 from app.engine.versions import get_active_ruleset_version, load_config
 from app.integrations.status_mapping import _render_rule_text, build_operator_comment, get_all_reason_notes
+from app.api.search import all_tokens_match, any_of, like_pattern, search_tokens
 from app.models import (
     Application,
     BkiBureauCheck,
@@ -237,6 +238,33 @@ def _latest_override_at_expr():
 _QUEUE_ROLES = ("operator", "admin")
 
 
+def _application_search(token: str):
+    """Слово нашлось в заявке: ФИО и телефон из анкеты, клиент по паспорту,
+    паспортные данные (последние и прежние — после правки анкеты), № в CRM
+    или наш номер (№6, 6)."""
+    pattern = like_pattern(token)
+
+    def has(column):
+        return column.ilike(pattern, escape="\\")
+
+    client_match = Application.client_id.in_(
+        select(Client.id).where(
+            or_(has(Client.last_name), has(Client.first_name), has(Client.middle_name), has(Client.phone))
+        )
+    )
+    passport_match = exists(
+        select(OcrResult.id).where(OcrResult.application_id == Application.id, has(cast(OcrResult.fields, Text)))
+    )
+    digits = token.lstrip("№#")
+    return any_of(
+        *(has(Application.profile[key].astext) for key in ("last_name", "first_name", "middle_name", "phone")),
+        client_match,
+        passport_match,
+        has(Application.external_id),
+        Application.number == int(digits) if digits.isdigit() and len(digits) < 18 else None,
+    )
+
+
 def _queue_clause(role: str):
     """SQL-условие очереди роли (зеркало _queue_entry — держать в синхроне)."""
     # T23: роли compliance/risk_manager слиты — заморозки по перечню ждут и
@@ -380,10 +408,16 @@ async def list_applications(
     # Быстрые фильтры макета: action — «Требуют действия», gray — «Серая зона»,
     # today — «Сегодня» (по Москве), all — без ограничения.
     view: str = Query("all", pattern="^(action|gray|today|all)$"),
+    # Поиск (решение владельца 16.11.2026): ФИО, телефон, № заявки, № в CRM,
+    # паспортные данные — см. _application_search.
+    q: str | None = Query(None, max_length=200),
     employee: Employee = Depends(require_roles(*_VIEW_ROLES)),
     session: AsyncSession = Depends(get_session),
 ) -> Page[ApplicationListItem]:
     stmt = select(Application)
+    tokens = search_tokens(q)
+    if tokens:
+        stmt = stmt.where(all_tokens_match(tokens, _application_search))
     queue = _queue_clause(employee.role) if view == "action" else None
     if view == "action":
         if queue is None:
