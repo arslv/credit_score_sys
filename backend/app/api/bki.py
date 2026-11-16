@@ -24,9 +24,16 @@ router = APIRouter(prefix="/api", tags=["bki"])
 _BKI_REQUEST_ROLES = ("operator", "admin")
 
 # Серая зона, потому что отчёт БКИ не получен (бюро не подключено, недоступно,
-# ошибка, клиент не определён) — запрос можно повторить кнопкой. Нет согласия
-# на КИ — не повторяем (нужно новое согласие от CRM); отчёт получен — незачем.
-BKI_RETRYABLE_REASONS = frozenset({"BKI_NOT_CONFIGURED", "BKI_SOURCE_UNAVAILABLE", "BKI_ERROR", "BKI_CLIENT_UNKNOWN"})
+# ошибка, клиент не определён) или получен, но решения по нему нет: балла нет
+# (SCORE_MISSING — например, после правки анкеты стоит спросить заново) или по
+# этому виду отчёта одобрять нельзя (BKI_REPORT_TYPE_NO_APPROVAL — можно
+# заказать другой) — запрос можно повторить кнопкой (решение владельца
+# 16.11.2026). Нет согласия на КИ — не повторяем (нужно новое согласие от CRM);
+# балл получен и сравнён с порогами — повтор ничего не даст.
+BKI_RETRYABLE_REASONS = frozenset({
+    "BKI_NOT_CONFIGURED", "BKI_SOURCE_UNAVAILABLE", "BKI_ERROR", "BKI_CLIENT_UNKNOWN",
+    "SCORE_MISSING", "BKI_REPORT_TYPE_NO_APPROVAL",
+})
 
 
 async def bki_request_state(session: AsyncSession, application: Application) -> str | None:

@@ -19,7 +19,7 @@ export function BkiRequestPanel({
   types: ReportType[];
   order: Order | null | undefined;
   canOperate: boolean;
-  /** Отчёт не получен — почему; кнопки те же, запрос повторный. */
+  /** Почему решения по отчёту нет (не получен, без балла…); кнопки те же, запрос повторный. */
   retryReason?: string | null;
 }) {
   const queryClient = useQueryClient();
@@ -47,7 +47,7 @@ export function BkiRequestPanel({
       </div>
       {!pending && retryReason && (
         <p className="bki-request__retry" role="status">
-          Отчёт не получен — {retryReason.toLowerCase()}. Можно запросить ещё раз.
+          {retryReason}. Можно запросить ещё раз.
         </p>
       )}
 

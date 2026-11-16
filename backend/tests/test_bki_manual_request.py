@@ -192,6 +192,13 @@ async def test_report_type_without_approval_never_approves(
     sent = await _all_decisions(partner_admin, external_id)
     assert "решение за оператором" in sent[-1]["reason"]
 
+    # По обычному отчёту одобрять нельзя — можно сразу заказать подробный.
+    detail = await admin_client.get(f"/api/applications/{application_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["bki_request_state"] == "retry"
+    again = await admin_client.post(f"/api/applications/{application_id}/bki-request", json={"report_type": "detailed"})
+    assert again.status_code == 202, again.text
+
 
 async def test_order_rules(
     manual_mode, queued, admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
@@ -273,3 +280,31 @@ async def test_no_retry_without_bki_consent(
     assert await run_stage_b(session_factory, application_id, partner_client=partner_client) == "gray_zone"
     response = await _order(admin_client, session_factory, application_id, "basic", email="bki-noconsent@example.com")
     assert response.status_code == 409
+
+
+async def test_report_without_score_can_be_requested_again(
+    manual_mode, queued, admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """Отчёт получен, но балла в нём нет (SCORE_MISSING) — серая зона, и
+    запрос можно повторить (решение владельца 16.11.2026)."""
+    from app.sources.bki import BkiReport
+
+    _external_id, application_id = await _ready_application(partner_admin, partner_client, storage, session_factory)
+    await run_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=FakeBkiProvider())
+    response = await _order(admin_client, session_factory, application_id, "basic", email="bki-noscore@example.com")
+    assert response.status_code == 202, response.text
+    empty = FakeBkiProvider(reports=_bki_reports_for_applicant(BkiReport(contracts=[], inquiries=[], score=None)))
+    assert await finalize_stage_b(
+        session_factory, application_id, partner_client=partner_client, bki_provider=empty,
+    ) == "gray_zone"
+    async with session_factory() as session:
+        reasons = (
+            await session.execute(select(Decision.reason_code).where(Decision.application_id == application_id))
+        ).scalars().all()
+    assert reasons[-1] == "SCORE_MISSING"
+
+    detail = await admin_client.get(f"/api/applications/{application_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["bki_request_state"] == "retry"
+    again = await admin_client.post(f"/api/applications/{application_id}/bki-request", json={"report_type": "detailed"})
+    assert again.status_code == 202, again.text
