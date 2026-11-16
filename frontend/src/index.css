@@ -6057,3 +6057,224 @@ mark {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── Шапка карточки, вид от 16.11.2026 ────────────────────────────────────
+   Сверху: аватар, ФИО, мета-строка и метки — слева, кнопки — справа.
+   Ниже — ряд фактов (товар, сумма, срок, источник) с разделителями;
+   причина решения — полосой во всю ширину, цвета исхода. */
+.ah__top {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-5) var(--space-4);
+}
+
+.ah__top > .ah__actions {
+  grid-column: auto;
+}
+
+.ah__who {
+  align-items: center;
+}
+
+.ah__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  font-size: 20px;
+  letter-spacing: 0.02em;
+}
+
+.ah__name {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.ah__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 0;
+  margin: 4px 0 0;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.ah__meta span:not(:last-child)::after {
+  content: "·";
+  margin: 0 8px;
+  color: var(--color-border-strong);
+}
+
+.ah__tags {
+  margin-top: 10px;
+}
+
+.ah__actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.ah__actions .decision-stub__row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ah__facts {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  background: color-mix(in srgb, var(--color-subtle) 45%, transparent);
+}
+
+.ah__fact {
+  min-width: 0;
+  padding: 12px var(--space-5);
+}
+
+.ah__fact + .ah__fact {
+  border-left: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+.ah__fact dt {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.ah__fact dd {
+  margin: 4px 0 0;
+  overflow: hidden;
+  font-size: var(--font-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Причина решения — полоса во всю ширину, слегка окрашена исходом. */
+.ah__verdict {
+  display: grid;
+  gap: 6px;
+  padding: 12px var(--space-5);
+  border-left: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  background: color-mix(in srgb, var(--status-neutral) 8%, transparent);
+}
+
+.ah.pf-verdict--bad .ah__verdict { background: color-mix(in srgb, var(--status-bad) 9%, transparent); }
+.ah.pf-verdict--ok .ah__verdict { background: color-mix(in srgb, var(--status-ok) 9%, transparent); }
+.ah.pf-verdict--warn .ah__verdict { background: color-mix(in srgb, var(--status-gray) 9%, transparent); }
+
+.ah__verdict .pf-verdict__reason {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+
+.ah.pf-verdict--bad .ah__verdict .pf-verdict__reason { color: var(--status-bad); }
+.ah.pf-verdict--ok .ah__verdict .pf-verdict__reason { color: var(--status-ok); }
+
+@media (max-width: 1000px) {
+  .ah__top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ah__actions {
+    justify-content: flex-start;
+  }
+
+  .ah__facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ah__fact--wide {
+    grid-column: 1 / -1;
+  }
+
+  .ah__fact + .ah__fact {
+    border-left: 0;
+  }
+
+  .ah__fact:nth-child(n + 2) {
+    border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  }
+
+  .ah__fact:nth-child(odd):not(:first-child) {
+    border-left: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  }
+}
+
+/* «Проверить заново» значком (components/ui.tsx RecheckButton) — в правом
+   верхнем углу строки «Проверок» или плитки кредитной истории. */
+.recheck {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.recheck:hover:not(:disabled) {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+.recheck:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.recheck:disabled {
+  cursor: default;
+}
+
+.recheck--busy svg {
+  color: var(--color-accent);
+  animation: spin-rotate 0.9s linear infinite;
+}
+
+.chk__row,
+.chk__bki {
+  position: relative;
+}
+
+.chk__row .recheck {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
+.chk__row:has(.recheck) .chk__body {
+  padding-right: 30px;
+}
+
+/* У плитки кредитной истории — значок внизу справа, без разделителя. */
+.chk__bki-action:has(> .recheck) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.chk__bki .chk__bki-action > .recheck {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+}

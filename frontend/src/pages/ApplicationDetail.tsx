@@ -270,6 +270,18 @@ export function ApplicationDetailPage() {
       </p>
 
       <section className={`ah ${verdictTone(headerOutcome)}`} aria-label="Главное по заявке">
+        {/* Шапка (16.11.2026): кто клиент и кнопки — сверху; товар, сумма,
+            срок и источник — рядом фактов; причина решения — полосой внизу.
+            Исход — цветом полосы сверху, слово — только для экранного диктора. */}
+        <h1 className="sr-only">
+          {operatorFinal === "approve"
+            ? "Одобрено оператором"
+            : operatorFinal === "reject"
+              ? "Отказ оператора"
+              : latestDecision
+                ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome)
+                : "В обработке"}
+        </h1>
         <div className="ah__top">
           <div className="ah__who">
             <div className="ah__avatar" aria-hidden="true">
@@ -277,20 +289,22 @@ export function ApplicationDetailPage() {
             </div>
             <div className="ah__who-text">
               <h2 className="ah__name">{app.client_name ?? "Клиент скрыт"}</h2>
-              <p className="ah__line">
-                {[age != null ? `${age} лет` : null, (app.profile?.phone as string | undefined) ?? null]
+              <p className="ah__meta">
+                {[
+                  age != null ? `${age} лет` : null,
+                  (app.profile?.phone as string | undefined) ?? null,
+                  `Заявка №${app.number}`,
+                  formatDateTime(app.submitted_at),
+                ]
                   .filter(Boolean)
-                  .join(" · ") || "паспортных данных нет"}
-              </p>
-              <p className="ah__line ah__line--muted">
-                Заявка №{app.number} · подана {formatDateTime(app.submitted_at)} ·{" "}
-                {manual ? "заведена вручную, в CRM её нет" : `в CRM ${app.external_id}`}
-              </p>
-              <p className="ah__line">
-                {app.goods_name && app.goods_name !== "—" ? app.goods_name : "товар уточняется"}
-                {app.term_months > 0 && ` · ${formatAmount(app.requested_amount)} ₽ на ${app.term_months} мес.`}
+                  .map((part) => (
+                    <span key={part}>{part}</span>
+                  ))}
               </p>
               <div className="ah__tags">
+                {!STATUS_MIRRORS_DECISION.has(app.status) && (
+                  <Badge value={app.status} label={applicationStatusLabel(app.status)} />
+                )}
                 {innFound && <span className="pill pill-ok">ИНН найден</span>}
                 {app.has_guarantor ? (
                   <span className="pill pill-mute">есть поручитель</span>
@@ -300,39 +314,6 @@ export function ApplicationDetailPage() {
               </div>
             </div>
           </div>
-
-          {/* Решение (16.11.2026, решение владельца): без слов «Серая зона» /
-              «Отказ» / «Одобрено» — исход виден цветом полосы сверху; слово —
-              только для экранного диктора. Причина — строкой у отказа и
-              одобрения; у серой зоны всё видно в «Проверках». */}
-          <h1 className="sr-only">
-            {operatorFinal === "approve"
-              ? "Одобрено оператором"
-              : operatorFinal === "reject"
-                ? "Отказ оператора"
-                : latestDecision
-                  ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome)
-                  : "В обработке"}
-          </h1>
-          {(verdictReason || lastOverride?.comment || latestDecision?.freeze || !STATUS_MIRRORS_DECISION.has(app.status)) && (
-            <div className="ah__verdict">
-              {!STATUS_MIRRORS_DECISION.has(app.status) && (
-                <Badge value={app.status} label={applicationStatusLabel(app.status)} />
-              )}
-              {operatorFinal && lastOverride?.comment && (
-                <p className="pf-verdict__reason">Оператор: {lastOverride.comment}</p>
-              )}
-              {verdictReason && <p className="pf-verdict__reason">{verdictReason}</p>}
-              {latestDecision?.freeze && (
-                <p className="verdict-action">
-                  Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.
-                  <Link className="btn btn-primary btn-small" to="/compliance">
-                    К проверке по перечням
-                  </Link>
-                </p>
-              )}
-            </div>
-          )}
 
           {/* «Принять» / «Отказать» — будущая отправка решения в CRM по API.
               Пока недоступны: серые, не нажимаются. */}
@@ -353,6 +334,41 @@ export function ApplicationDetailPage() {
           )}
         </div>
 
+        <dl className="ah__facts">
+          <div className="ah__fact ah__fact--wide">
+            <dt>Товар</dt>
+            <dd>{app.goods_name && app.goods_name !== "—" ? app.goods_name : "уточняется"}</dd>
+          </div>
+          <div className="ah__fact">
+            <dt>Сумма</dt>
+            <dd>{app.term_months > 0 ? `${formatAmount(app.requested_amount)} ₽` : "—"}</dd>
+          </div>
+          <div className="ah__fact">
+            <dt>Срок</dt>
+            <dd>{app.term_months > 0 ? `${app.term_months} мес.` : "—"}</dd>
+          </div>
+          <div className="ah__fact">
+            <dt>Источник</dt>
+            <dd>{manual ? "заведена вручную" : `CRM · ${app.external_id}`}</dd>
+          </div>
+        </dl>
+
+        {(verdictReason || (operatorFinal && lastOverride?.comment) || latestDecision?.freeze) && (
+          <div className="ah__verdict">
+            {operatorFinal && lastOverride?.comment && (
+              <p className="pf-verdict__reason">Оператор: {lastOverride.comment}</p>
+            )}
+            {verdictReason && <p className="pf-verdict__reason">{verdictReason}</p>}
+            {latestDecision?.freeze && (
+              <p className="verdict-action">
+                Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.
+                <Link className="btn btn-primary btn-small" to="/compliance">
+                  К проверке по перечням
+                </Link>
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Всё, что проверено по заявке, — на одном экране (решение владельца 16.11.2026). */}

@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import { Spinner } from "./ui";
+import { RecheckButton, Spinner } from "./ui";
 import type { components } from "../api/schema";
 
 type ReportType = components["schemas"]["BkiReportTypeOut"];
@@ -40,6 +41,8 @@ export function BkiRequestPanel({
   });
 
   const pending = order?.pending && !retry ? order : null;
+  // Отчёт уже есть — кнопки заказа свёрнуты в значок «запросить заново».
+  const [expanded, setExpanded] = useState(false);
 
   if (pending) {
     return (
@@ -50,6 +53,9 @@ export function BkiRequestPanel({
     );
   }
   if (!canOperate) return null;
+  if (hasReport && retry && !expanded) {
+    return <RecheckButton label="Запросить отчёт заново" onClick={() => setExpanded(true)} />;
+  }
   if (types.length === 0) {
     return (
       <p className="alert" role="alert" data-testid="bki-request">

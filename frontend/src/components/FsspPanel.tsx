@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import { Spinner } from "./ui";
+import { RecheckButton, Spinner } from "./ui";
 
 // T16: капчу решает только человек (жёсткое правило) — ни авторешения, ни
 // внешних сервисов распознавания здесь нет и быть не может. «Проверить» сразу
@@ -216,6 +216,10 @@ export function FsspPanel({
     fssp_count?: number;
   } | null | undefined;
 
+  // Проверка пройдена — сайт ответил (найдено / не найдено); недоступность
+  // сайта — не пройдена, нужна обычная кнопка.
+  const checked = latestCheck?.status === "ok" || latestCheck?.status === "hit";
+
   return (
     // Только действия (16.11.2026): итог проверки — строкой «ФССП» в блоке
     // «Проверки», под ней эти кнопки.
@@ -232,7 +236,12 @@ export function FsspPanel({
 
       {message && !captchaBase64 && <p className="alert" role="alert">{message}</p>}
 
-      {canOperate && !captchaBase64 && (
+      {/* Уже проверено (найдено / не найдено) — повтор значком в углу строки. */}
+      {canOperate && !captchaBase64 && checked && (
+        <RecheckButton busy={searchMutation.isPending || blocked} onClick={() => searchMutation.mutate()} />
+      )}
+
+      {canOperate && !captchaBase64 && !checked && (
         <div className="fssp-start">
           <button
             type="button"

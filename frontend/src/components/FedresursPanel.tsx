@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import { Spinner } from "./ui";
+import { RecheckButton, Spinner } from "./ui";
 
 // T23: банкротство (Федресурс) — ручная проверка рядом с ФССП. Сайт закрыт
 // защитой от ботов (Qrator), автоматически его не опросить без обхода защиты —
@@ -179,11 +179,8 @@ export function FedresursPanel({
         </div>
       )}
 
-      {canOperate && state !== "pending" && !rechecking && (
-        <button type="button" className="btn btn-small" onClick={() => setRechecking(true)}>
-          Проверить заново
-        </button>
-      )}
+      {/* Уже отмечено — повтор значком в углу строки. */}
+      {canOperate && state !== "pending" && !rechecking && <RecheckButton onClick={() => setRechecking(true)} />}
       {error && (
         <p className="manual-check__error" role="alert">
           {error}

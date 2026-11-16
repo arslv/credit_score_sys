@@ -31,6 +31,47 @@ export function Spinner() {
   return <span className="spin" aria-hidden="true" />;
 }
 
+// «Проверить заново» значком — когда проверка уже пройдена и повтор нужен
+// редко (решение владельца 16.11.2026): круглые стрелки в углу строки,
+// во время запроса крутятся.
+export function RecheckButton({
+  onClick,
+  busy = false,
+  label = "Проверить заново",
+}: {
+  onClick: () => void;
+  busy?: boolean;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`recheck${busy ? " recheck--busy" : ""}`}
+      title={label}
+      aria-label={label}
+      disabled={busy}
+      onClick={onClick}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        width="15"
+        height="15"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M20 11a8 8 0 0 0-14.3-4.9L4 8" />
+        <path d="M4 3v5h5" />
+        <path d="M4 13a8 8 0 0 0 14.3 4.9L20 16" />
+        <path d="M20 21v-5h-5" />
+      </svg>
+    </button>
+  );
+}
+
 export function LoadingState({ label = "Загрузка…" }: { label?: string }) {
   return (
     <p className="state state--loading" role="status">

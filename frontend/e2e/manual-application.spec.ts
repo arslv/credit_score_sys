@@ -28,7 +28,7 @@ test("оператор заводит заявку вручную с фото п
   await page.getByRole("button", { name: "Создать заявку" }).click();
 
   await expect(page).toHaveURL(/\/applications\/[0-9a-f-]{36}$/);
-  await expect(page.getByText("заведена вручную, в CRM её нет")).toBeVisible();
+  await expect(page.locator(".ah__facts")).toContainText("заведена вручную");
 });
 
 test("наблюдатель не видит кнопку «Новая заявка»", async ({ page }) => {
