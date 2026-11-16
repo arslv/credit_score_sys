@@ -50,8 +50,8 @@ from app.security.audit import record_audit
 from app.security.deps import ROLES_WITH_FULL_PII, get_current_employee, require_roles
 from app.security.pagination import Page, PageParams
 from app.sources.base import Subject
-from app.sources.factory import build_fns_egrip_source, build_fns_inn_source, build_fns_npd_source
-from app.sources.runner import record_check, run_and_record_check
+from app.sources.factory import build_fns_egrip_source, build_fns_npd_source
+from app.sources.runner import record_check
 from app.storage.base import Storage
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
@@ -118,8 +118,15 @@ _DETAIL_PII_ROLES = (*ROLES_WITH_FULL_PII, "operator")
 # у него свой экран с капчей (app/api/fssp.py).
 _RETRYABLE_SOURCES = ("fns_inn", "fns_npd", "fns_egrip")
 # Повтор — когда источник не дал ответа: недоступен или упал с ошибкой
-# (решение владельца 16.11.2026: «ошибка проверки» тоже повторяется).
+# (решение владельца 16.11.2026: «ошибка проверки» тоже повторяется); ИНН —
+# ещё и когда налоговая его не нашла (данные могли поправить в анкете).
 _RETRYABLE_STATUSES = ("source_unavailable", "error")
+
+
+def _can_retry(source: str, status: str) -> bool:
+    if source not in _RETRYABLE_SOURCES:
+        return False
+    return status in _RETRYABLE_STATUSES or (source == "fns_inn" and status == "no_data")
 
 
 def get_storage(request: Request) -> Storage:
@@ -1269,7 +1276,7 @@ async def get_application(
                 error_text=c.error_text,
                 parsed=c.parsed if full_pii else None,
                 response_raw=c.response_raw if full_pii else None,
-                can_retry=(c.source in _RETRYABLE_SOURCES and c.status in _RETRYABLE_STATUSES),
+                can_retry=_can_retry(c.source, c.status),
             )
             for c in checks
         ],
@@ -1388,7 +1395,23 @@ async def view_document(
 
 
 class RetryCheckResult(BaseModel):
-    check: CheckOut
+    check: CheckOut | None = None
+    """Новая строка проверки — когда повтор выполнен сразу (ФНС: НПД, ЕГРИП)."""
+    queued: bool = False
+    """ИНН ищется в фоне (налоговая отвечает до нескольких минут): результат
+    появится новой строкой проверок, карточка подхватит его сама."""
+
+
+def _subject_payload(subject: Subject) -> dict:
+    """Subject → dict для фоновой задачи ФНС (обратно — _subject_from_payload там)."""
+    def iso(value):
+        return value.isoformat() if value is not None else None
+
+    return {
+        "last_name": subject.last_name, "first_name": subject.first_name, "middle_name": subject.middle_name,
+        "birth_date": iso(subject.birth_date), "passport_series": subject.passport_series,
+        "passport_number": subject.passport_number, "passport_issue_date": iso(subject.passport_issue_date),
+    }
 
 
 @router.post("/{application_id}/checks/{check_id}/retry", response_model=RetryCheckResult)
@@ -1413,7 +1436,7 @@ async def retry_check(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="проверка не найдена")
     if check.source not in _RETRYABLE_SOURCES:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="повтор недоступен для этого источника")
-    if check.status not in _RETRYABLE_STATUSES:
+    if not _can_retry(check.source, check.status):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="повтор возможен, только когда источник был недоступен или проверка упала с ошибкой",
@@ -1473,10 +1496,22 @@ async def retry_check(
     await session.commit()
     settings = get_settings()
     if check.source == "fns_inn":
-        new_check = await run_and_record_check(
-            session, build_fns_inn_source(settings), application_id=application_id,
-            subject_type=check.subject_type, subject_id=check.subject_id, subject=subject,
+        # Налоговая отвечает долго (несколько попыток с паузами) — в фоне, той
+        # же задачей, что и после подачи заявки (app/tasks/fns_checks.py);
+        # нашёлся ИНН — она же сразу проверит самозанятость и ИП.
+        from app.tasks.fns_checks import run_fns_checks_task
+
+        await record_audit(
+            session, employee_id=employee.id, action="retry_check",
+            object_type="check", object_id=check_id, request=request,
+            details={"source": check.source, "queued": True},
         )
+        await session.commit()
+        run_fns_checks_task.delay(
+            str(application_id), check.subject_type, str(check.subject_id) if check.subject_id else None,
+            _subject_payload(subject),
+        )
+        return RetryCheckResult(queued=True)
     else:
         # fns_npd/fns_egrip принимают ИНН, не Subject — берём его из самого
         # свежего fns_inn-результата по этому же subject (ваше указание: без
@@ -1520,6 +1555,6 @@ async def retry_check(
             source=new_check.source, status=new_check.status, started_at=new_check.started_at,
             finished_at=new_check.finished_at, duration_ms=new_check.duration_ms,
             error_text=new_check.error_text, parsed=new_check.parsed, response_raw=new_check.response_raw,
-            can_retry=(new_check.source in _RETRYABLE_SOURCES and new_check.status in _RETRYABLE_STATUSES),
+            can_retry=_can_retry(new_check.source, new_check.status),
         )
     )

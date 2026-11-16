@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -66,6 +66,9 @@ export function ApplicationDetailPage() {
   const { employee } = useAuth();
   const queryClient = useQueryClient();
   const [openDocumentId, setOpenDocumentId] = useState<string | null>(null);
+  // Повтор ИНН идёт в фоне (налоговая отвечает минутами): id прежней строки
+  // проверки, пока не появится новая, — значок крутится, карточка опрашивается.
+  const [retryWaiting, setRetryWaiting] = useState<Record<string, number>>({});
 
   const query = useQuery({
     queryKey: ["application", id],
@@ -80,7 +83,8 @@ export function ApplicationDetailPage() {
     // Отчёт БКИ заказан — решение придёт фоновой задачей, обновляем карточку.
     // Заказан отчёт БКИ — опрашиваем, пока не придёт итог (заявка при этом
     // успевает побыть и в awaiting_bki, и в stage_b — pending учитывает оба).
-    refetchInterval: (q) => (q.state.data?.bki_order?.pending ? 3000 : false),
+    refetchInterval: (q) =>
+      q.state.data?.bki_order?.pending || Object.keys(retryWaiting).length > 0 ? 3000 : false,
   });
 
   const retryMutation = useMutation({
@@ -92,10 +96,27 @@ export function ApplicationDetailPage() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data, checkId) => {
+      if (data?.queued) setRetryWaiting((prev) => ({ ...prev, [checkId]: Date.now() }));
       void queryClient.invalidateQueries({ queryKey: ["application", id] });
     },
   });
+
+  // Ждём фоновый повтор, пока прежняя строка проверки остаётся последней по
+  // своему источнику; появилась новая (или прошло 6 минут) — перестаём.
+  useEffect(() => {
+    const checks = query.data?.checks;
+    if (!checks || Object.keys(retryWaiting).length === 0) return;
+    const latestIds = new Set<string>();
+    const latest = new Map<string, string>();
+    for (const c of checks) latest.set(`${c.source}|${c.subject_type}|${c.subject_id ?? ""}`, c.id);
+    for (const value of latest.values()) latestIds.add(value);
+    const now = Date.now();
+    const still = Object.fromEntries(
+      Object.entries(retryWaiting).filter(([checkId, since]) => latestIds.has(checkId) && now - since < 6 * 60_000),
+    );
+    if (Object.keys(still).length !== Object.keys(retryWaiting).length) setRetryWaiting(still);
+  }, [query.data, retryWaiting]);
 
   if (query.isLoading) return <LoadingState />;
   if (query.isError || !query.data) {
@@ -250,7 +271,7 @@ export function ApplicationDetailPage() {
       if (c.can_retry && !rowActions[key]) {
         rowActions[key] = (
           <RecheckButton
-            busy={retryMutation.isPending && retryMutation.variables === c.id}
+            busy={(retryMutation.isPending && retryMutation.variables === c.id) || c.id in retryWaiting}
             onClick={() => retry(c.id)}
           />
         );

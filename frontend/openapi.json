@@ -6605,13 +6605,22 @@
       "RetryCheckResult": {
         "properties": {
           "check": {
-            "$ref": "#/components/schemas/CheckOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "queued": {
+            "type": "boolean",
+            "title": "Queued",
+            "default": false
           }
         },
         "type": "object",
-        "required": [
-          "check"
-        ],
         "title": "RetryCheckResult"
       },
       "RollbackRequest": {

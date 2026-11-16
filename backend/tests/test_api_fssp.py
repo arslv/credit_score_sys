@@ -456,3 +456,38 @@ async def test_site_block_returns_retry_time_and_pauses_requests(
         assert blocked.searches == 1  # во время паузы сайт не трогали
     finally:
         await redis.delete("fssp:block:since", "fssp:block:last", "fssp:block:durations")
+
+
+async def test_fssp_search_does_not_block_other_requests_of_same_employee(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """Регресс (16.11.2026): пока сайт ФССП отвечает, транзакция запроса не
+    должна быть открыта — иначе строка сессии сотрудника заблокирована и все
+    его запросы (в т.ч. «кто вошёл») висят. Источник прямо во время поиска
+    делает второй запрос тем же сотрудником."""
+    import asyncio
+
+    application_id = await _rejected_applicant(partner_admin, partner_client, storage, session_factory, active_ruleset)
+    await create_employee(session_factory, email="fssp_lock@example.com", role="operator")
+    await login(admin_client, "fssp_lock@example.com")
+
+    seen: dict[str, object] = {}
+    inner = FakeFsspCaptchaSource(valid_code=_VALID_CODE)
+
+    class SlowSource:
+        source_name = "fssp"
+
+        async def search(self, subject, *, region_code):
+            try:
+                response = await asyncio.wait_for(admin_client.get("/api/auth/me"), timeout=5)
+                seen["status"] = response.status_code
+            except asyncio.TimeoutError:
+                seen["status"] = "timeout"
+            return await inner.search(subject, region_code=region_code)
+
+    with _patched_source(SlowSource()):
+        response = await admin_client.post(
+            f"/api/applications/{application_id}/fssp/search", json={"subject_type": "applicant", "region_code": "77"},
+        )
+    assert response.status_code == 200, response.text
+    assert seen["status"] == 200

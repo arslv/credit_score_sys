@@ -25,7 +25,6 @@ from app.models import (
     ManualOverride,
 )
 from app.ocr.fake_provider import FakeOcrProvider, build_ocr_result
-from app.sources.fns import FakeFnsInnSource
 from tests._admin_helpers import create_employee, login
 from tests.conftest import unique_valid_passport_series
 from tests.test_engine_pipeline import _age_overrides, _ingest, active_ruleset  # noqa: F401
@@ -197,21 +196,20 @@ async def test_retry_check_succeeds_for_risk_manager_and_writes_audit(
     await login(admin_client, "rm2@example.com")
 
     # Найденный баг (живой прогон, T16): OcrResult.fields — обёртка
-    # {"fields": {...}, ...}, не сами поля; без распаковки retry уходил с
-    # пустым Subject (ФИО/дата рождения — None) к настоящему источнику.
-    # FakeFnsInnSource на пустой Subject тоже отвечает "no_data" (как и на
-    # непустой без совпадения в responses) — статус один и тот же в обоих
-    # случаях, поэтому проверяем сам Subject, а не только итоговый статус.
-    fake_fns_inn = FakeFnsInnSource()
-    with patch("app.api.applications.build_fns_inn_source", return_value=fake_fns_inn):
+    # {"fields": {...}, ...}, не сами поля; без распаковки повтор уходил с
+    # пустым субъектом (ФИО/дата рождения — None). Повтор ИНН теперь в фоне
+    # (налоговая отвечает минутами) — проверяем, что задача получила субъект.
+    queued: list[tuple] = []
+    with patch("app.tasks.fns_checks.run_fns_checks_task.delay", side_effect=lambda *a: queued.append(a)):
         response = await admin_client.post(f"/api/applications/{application_id}/checks/{fns_check.id}/retry")
-    assert response.status_code == 200
-    new_check = response.json()["check"]
-    assert new_check["id"] != str(fns_check.id)
-    assert new_check["source"] == "fns_inn"
-    assert new_check["status"] != "source_unavailable"  # рабочий фейк-источник по умолчанию (без fns_unavailable)
-    assert fake_fns_inn.check_calls[-1].last_name
-    assert fake_fns_inn.check_calls[-1].birth_date is not None
+    assert response.status_code == 200, response.text
+    assert response.json() == {"check": None, "queued": True}
+    assert len(queued) == 1
+    queued_application_id, queued_subject_type, _subject_id, payload = queued[0]
+    assert queued_application_id == str(application_id)
+    assert queued_subject_type == "applicant"
+    assert payload["last_name"]
+    assert payload["birth_date"] is not None
 
     async with session_factory() as session:
         audit_row = (
@@ -253,10 +251,17 @@ async def test_retry_check_rejected_for_wrong_role_wrong_source_and_wrong_status
     response = await admin_client.post(f"/api/applications/{application_id}/checks/{mvd_check.id}/retry")
     assert response.status_code == 409
 
-    # Первый повтор fns удаётся (переводит источник в рабочее состояние) —
-    # повторный повтор ТОГО ЖЕ (уже не source_unavailable) check_id отклоняется.
-    first_retry = await admin_client.post(f"/api/applications/{application_id}/checks/{fns_check.id}/retry")
+    # Первый повтор ставится в фон; когда появилась новая строка ФНС, повтор
+    # СТАРОЙ строки отклоняется — повторять надо по свежему результату.
+    with patch("app.tasks.fns_checks.run_fns_checks_task.delay"):
+        first_retry = await admin_client.post(f"/api/applications/{application_id}/checks/{fns_check.id}/retry")
     assert first_retry.status_code == 200
+    async with session_factory() as session:
+        session.add(Check(
+            application_id=application_id, subject_type=fns_check.subject_type, subject_id=fns_check.subject_id,
+            source="fns_inn", status="ok", started_at=datetime.now(timezone.utc),
+        ))
+        await session.commit()
 
     second_retry = await admin_client.post(f"/api/applications/{application_id}/checks/{fns_check.id}/retry")
     assert second_retry.status_code == 409
@@ -594,50 +599,41 @@ async def test_retry_check_allowed_after_error(
     assert detail.status_code == 200, detail.text
     assert next(c for c in detail.json()["checks"] if c["id"] == str(failed_id))["can_retry"] is True
 
-    with patch("app.api.applications.build_fns_inn_source", return_value=FakeFnsInnSource()):
+    with patch("app.tasks.fns_checks.run_fns_checks_task.delay") as delay:
         response = await admin_client.post(f"/api/applications/{application_id}/checks/{failed_id}/retry")
     assert response.status_code == 200, response.text
-    assert response.json()["check"]["status"] != "error"
+    assert response.json()["queued"] is True
+    assert delay.call_count == 1
 
 
-async def test_retry_check_does_not_block_other_requests_of_same_employee(
+async def test_retry_inn_allowed_when_not_found(
     admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
 ):
-    """Регресс (16.11.2026): пока повтор ФНС ждёт ответа налоговой, транзакция
-    запроса не должна быть открыта — иначе строка сессии сотрудника заблокирована
-    и все его запросы (в т.ч. «кто вошёл») висят до ответа ФНС. Источник ниже
-    прямо во время проверки делает второй запрос тем же сотрудником."""
-    import asyncio
-
-    from app.sources.base import CheckResult, CheckStatus
-
+    """«ИНН не найден» — повтор доступен (решение владельца 17.11.2026): данные
+    могли поправить в анкете, налоговая могла обновить свои."""
     application_id, _ = await _good_applicant(
         partner_admin, partner_client, storage, session_factory, active_ruleset, fns_unavailable=True,
     )
     async with session_factory() as session:
-        fns_check = (
+        first = (
             await session.execute(
                 select(Check).where(Check.application_id == application_id, Check.source == "fns_inn")
             )
         ).scalars().first()
+        not_found = Check(
+            application_id=application_id, subject_type=first.subject_type, subject_id=first.subject_id,
+            source="fns_inn", status="no_data", started_at=datetime.now(timezone.utc),
+        )
+        session.add(not_found)
+        await session.commit()
+        not_found_id = not_found.id
 
-    await create_employee(session_factory, email="retry_lock@example.com", role="admin")
-    await login(admin_client, "retry_lock@example.com")
-
-    seen: dict[str, object] = {}
-
-    class SlowSource:
-        source_name = "fns_inn"
-
-        async def check(self, subject):
-            try:
-                response = await asyncio.wait_for(admin_client.get("/api/auth/me"), timeout=5)
-                seen["status"] = response.status_code
-            except asyncio.TimeoutError:
-                seen["status"] = "timeout"
-            return CheckResult(status=CheckStatus.NO_DATA)
-
-    with patch("app.api.applications.build_fns_inn_source", return_value=SlowSource()):
-        response = await admin_client.post(f"/api/applications/{application_id}/checks/{fns_check.id}/retry")
+    await create_employee(session_factory, email="retry_nodata@example.com", role="admin")
+    await login(admin_client, "retry_nodata@example.com")
+    detail = await admin_client.get(f"/api/applications/{application_id}")
+    assert detail.status_code == 200, detail.text
+    assert next(c for c in detail.json()["checks"] if c["id"] == str(not_found_id))["can_retry"] is True
+    with patch("app.tasks.fns_checks.run_fns_checks_task.delay") as delay:
+        response = await admin_client.post(f"/api/applications/{application_id}/checks/{not_found_id}/retry")
     assert response.status_code == 200, response.text
-    assert seen["status"] == 200
+    assert delay.call_count == 1

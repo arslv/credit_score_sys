@@ -2260,7 +2260,12 @@ export interface components {
         };
         /** RetryCheckResult */
         RetryCheckResult: {
-            check: components["schemas"]["CheckOut"];
+            check?: components["schemas"]["CheckOut"] | null;
+            /**
+             * Queued
+             * @default false
+             */
+            queued: boolean;
         };
         /** RollbackRequest */
         RollbackRequest: {
