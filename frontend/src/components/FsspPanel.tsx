@@ -124,13 +124,14 @@ export function FsspPanel({
   });
 
   const searchMutation = useMutation({
-    mutationFn: async () => {
+    // region — когда регион выбрали уже при открытой капче (запрос сразу с ним).
+    mutationFn: async (region?: string) => {
       const { data, error: err } = await api.POST("/api/applications/{application_id}/fssp/search", {
         params: { path: { application_id: applicationId } },
         body: {
           subject_type: subjectType,
           subject_id: subjectId,
-          region_code: regionCode,
+          region_code: region ?? regionCode,
         },
       });
       if (err) throw err;
@@ -216,6 +217,42 @@ export function FsspPanel({
     fssp_count?: number;
   } | null | undefined;
 
+  // Выбор региона — неприметной ссылкой «все регионы ▾»; список грузится по
+  // клику. requery — капча уже открыта: другой регион сразу запрашивает
+  // новую капчу с ним.
+  const regionLabel =
+    regionCode === ALL_REGIONS ? "все регионы" : (regions.find((r) => r.code === regionCode)?.label ?? "регион");
+  const regionPicker = (requery: boolean) =>
+    regionOpen ? (
+      <select
+        className="fssp-start__region"
+        aria-label="Регион ФССП"
+        value={regionCode}
+        disabled={searchMutation.isPending}
+        onChange={(e) => {
+          setRegionCode(e.target.value);
+          if (requery) searchMutation.mutate(e.target.value);
+        }}
+      >
+        {regions.map((r) => (
+          <option key={r.code} value={r.code}>
+            {r.label}
+          </option>
+        ))}
+      </select>
+    ) : (
+      <button
+        type="button"
+        className="btn-link fssp-start__region-link"
+        disabled={regionsMutation.isPending || searchMutation.isPending}
+        onClick={() => regionsMutation.mutate()}
+        title="Искать в одном регионе"
+      >
+        {(regionsMutation.isPending || (requery && searchMutation.isPending)) && <Spinner />}
+        {regionLabel} ▾
+      </button>
+    );
+
   // Проверка пройдена — сайт ответил (найдено / не найдено); недоступность
   // сайта — не пройдена, нужна обычная кнопка.
   const checked = latestCheck?.status === "ok" || latestCheck?.status === "hit";
@@ -252,35 +289,7 @@ export function FsspPanel({
             {searchMutation.isPending && <Spinner />}
             {searchMutation.isPending ? "Запрашиваем капчу…" : latestCheck ? "Проверить заново" : "Проверить"}
           </button>
-          {/* Регион — на втором плане: по умолчанию все регионы. */}
-          {regionOpen ? (
-            <select
-              className="fssp-start__region"
-              aria-label="Регион ФССП"
-              value={regionCode}
-              onChange={(e) => setRegionCode(e.target.value)}
-            >
-              {regions.map((r) => (
-                <option key={r.code} value={r.code}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <button
-              type="button"
-              className="btn-link fssp-start__region-link"
-              disabled={regionsMutation.isPending || searchMutation.isPending}
-              onClick={() => regionsMutation.mutate()}
-              title="Искать в одном регионе"
-            >
-              {regionsMutation.isPending && <Spinner />}
-              {regionCode === ALL_REGIONS
-                ? "все регионы"
-                : (regions.find((r) => r.code === regionCode)?.label ?? "регион")}{" "}
-              ▾
-            </button>
-          )}
+          {regionPicker(false)}
         </div>
       )}
 
@@ -332,6 +341,8 @@ export function FsspPanel({
               Отмена
             </button>
           </div>
+          {/* Регион — совсем на втором плане; другой регион — новая капча. */}
+          <div className="fssp-captcha__region">{regionPicker(true)}</div>
         </div>
       )}
 

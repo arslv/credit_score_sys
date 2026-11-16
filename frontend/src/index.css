@@ -6807,3 +6807,22 @@ mark {
   font-size: var(--font-sm);
   color: var(--color-text-muted);
 }
+
+/* Регион ФССП — совсем неприметно: «все регионы» по умолчанию, выбор — на
+   всякий случай (решение владельца 16.11.2026). */
+.fssp-start__region-link {
+  opacity: 0.6;
+}
+
+.fssp-start__region-link:hover:not(:disabled),
+.fssp-start__region-link:focus-visible {
+  opacity: 1;
+}
+
+.fssp-captcha__region {
+  margin-top: -2px;
+}
+
+.fssp-captcha__region .fssp-start__region {
+  opacity: 0.85;
+}

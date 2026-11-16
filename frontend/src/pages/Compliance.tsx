@@ -96,22 +96,7 @@ export function CompliancePage() {
   return (
     <section className="pg">
       <header className="pg-head">
-        <div>
-          <h1>Проверка по перечням</h1>
-          <p className="pg-head__sub">Совпадения ФИО с перечнем Росфинмониторинга. Пока не разобрано — клиент заморожен.</p>
-        </div>
-        {query.data && (
-          <div className="pg-stats">
-            <div className={frozenCount > 0 ? "pg-stat pg-stat--bad" : "pg-stat"}>
-              <span className="pg-stat__value">{frozenCount}</span>
-              <span className="pg-stat__label">ждут разбора</span>
-            </div>
-            <div className="pg-stat">
-              <span className="pg-stat__value">{all.length - frozenCount}</span>
-              <span className="pg-stat__label">разобрано</span>
-            </div>
-          </div>
-        )}
+        <h1>Проверка по перечням</h1>
       </header>
 
       <Toolbar>
