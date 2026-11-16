@@ -323,11 +323,6 @@ export function FsspPanel({
               Отмена
             </button>
           </div>
-          {submitMutation.isPending && (
-            <p className="fssp-captcha__wait" role="status">
-              Ищем на сайте ФССП — это может занять до минуты.
-            </p>
-          )}
         </div>
       )}
 

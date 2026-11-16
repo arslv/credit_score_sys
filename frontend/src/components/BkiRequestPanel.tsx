@@ -15,13 +15,16 @@ export function BkiRequestPanel({
   order,
   canOperate,
   retry = false,
+  hasReport = false,
 }: {
   applicationId: string;
   types: ReportType[];
   order: Order | null | undefined;
   canOperate: boolean;
-  /** Отчёт уже был (не получен, без балла…) — запрос повторный. */
+  /** Решение уже было — запрос повторный. */
   retry?: boolean;
+  /** Отчёт уже запрашивали — подпись «ещё раз», иначе «Запросить отчёт». */
+  hasReport?: boolean;
 }) {
   const queryClient = useQueryClient();
   const mutation = useMutation({
@@ -56,7 +59,7 @@ export function BkiRequestPanel({
   }
   return (
     <div className="bki-act" data-testid="bki-request">
-      <span className="bki-act__label">{retry ? "Запросить ещё раз" : "Запросить отчёт"}</span>
+      <span className="bki-act__label">{hasReport ? "Запросить ещё раз" : "Запросить отчёт"}</span>
       <div className="bki-act__buttons">
         {/* Первый вид — основной; остальные дороже и нужны редко — не выделены. */}
         {types.map((t, i) => (

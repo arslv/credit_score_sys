@@ -4171,6 +4171,11 @@ mark {
   align-self: stretch;
 }
 
+/* Кнопки — всегда в правой колонке, даже когда строки решения нет. */
+.ah__top > .ah__actions {
+  grid-column: -2 / -1;
+}
+
 /* Пять главных цифр — в одну строку, разделены линиями. */
 .ah__metrics {
   display: grid;
@@ -5947,12 +5952,6 @@ mark {
 .fssp-captcha__row .input {
   height: var(--control-height-sm);
   margin: 0;
-}
-
-.fssp-captcha__wait {
-  margin: 0;
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
 }
 
 /* «Анализ ИИ» — заглушка «в разработке» (components/AiAnalysis.tsx). */

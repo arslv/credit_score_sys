@@ -267,8 +267,9 @@ async def test_report_not_received_can_be_requested_again(
     assert reasons[0] == "BKI_NOT_CONFIGURED"
     assert [d["status"] for d in await _all_decisions(partner_admin, external_id)][-1] == "approved"
 
+    # Одобрено по отчёту — заказать заново всё равно можно (решение владельца 16.11.2026).
     after = await admin_client.get(f"/api/applications/{application_id}")
-    assert after.json()["bki_request_state"] is None  # отчёт получен — кнопок больше нет
+    assert after.json()["bki_request_state"] == "retry"
 
 
 async def test_no_retry_without_bki_consent(
@@ -308,3 +309,38 @@ async def test_report_without_score_can_be_requested_again(
     assert detail.json()["bki_request_state"] == "retry"
     again = await admin_client.post(f"/api/applications/{application_id}/bki-request", json={"report_type": "detailed"})
     assert again.status_code == 202, again.text
+
+
+async def test_rejected_by_report_can_be_requested_again(
+    manual_mode, queued, admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """Отказ по отчёту БКИ — отчёт можно заказать заново (решение владельца
+    16.11.2026): заявка снова ждёт БКИ, переход пишется в историю статусов."""
+    from app.sources.bki import overdue_history_report
+
+    _external_id, application_id = await _ready_application(partner_admin, partner_client, storage, session_factory)
+    await run_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=FakeBkiProvider())
+    response = await _order(admin_client, session_factory, application_id, "basic", email="bki-rejected@example.com")
+    assert response.status_code == 202, response.text
+    provider = FakeBkiProvider(reports=_bki_reports_for_applicant(overdue_history_report()))
+    assert await finalize_stage_b(
+        session_factory, application_id, partner_client=partner_client, bki_provider=provider,
+    ) == "rejected_b"
+
+    detail = await admin_client.get(f"/api/applications/{application_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["bki_request_state"] == "retry"
+    again = await admin_client.post(f"/api/applications/{application_id}/bki-request", json={"report_type": "detailed"})
+    assert again.status_code == 202, again.text
+
+    async with session_factory() as session:
+        assert (await session.get(Application, application_id)).status == "awaiting_bki"
+        history = (
+            await session.execute(
+                select(StatusHistory.from_status, StatusHistory.to_status)
+                .where(StatusHistory.application_id == application_id)
+                .order_by(StatusHistory.created_at.desc())
+                .limit(1)
+            )
+        ).one()
+    assert tuple(history) == ("rejected_b", "awaiting_bki")

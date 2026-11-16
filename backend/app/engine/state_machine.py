@@ -92,3 +92,25 @@ def reopen_for_edit(session: AsyncSession, application: Application, *, employee
             actor_type="employee", employee_id=employee_id,
         )
     )
+
+
+# Повторный запрос отчёта БКИ после решения по нему (решение владельца
+# 16.11.2026: «всё можно проверить заново», в том числе после отказа и
+# одобрения). Как и правка анкеты — не в ALLOWED_TRANSITIONS: отказ и прочие
+# остаются конечными для автоматики, возврат — осознанное действие сотрудника.
+REOPEN_FOR_BKI_FROM = frozenset({"gray_zone", "rejected_b", "approved"})
+
+
+def reopen_for_bki(session: AsyncSession, application: Application, *, employee_id: UUID) -> None:
+    """Снова ждать отчёт БКИ (awaiting_bki) — сотрудник заказал его заново.
+    Не коммитит."""
+    from_status = application.status
+    if from_status not in REOPEN_FOR_BKI_FROM:
+        raise InvalidTransitionError(from_status, "awaiting_bki")
+    application.status = "awaiting_bki"
+    session.add(
+        StatusHistory(
+            application_id=application.id, from_status=from_status, to_status="awaiting_bki",
+            actor_type="employee", employee_id=employee_id,
+        )
+    )

@@ -33,16 +33,14 @@ test("чёрный список: загрузка CSV, повторная заг
   await expect(second.getByRole("status")).toHaveText("Добавлено: 0 · уже были в списке: 1");
 });
 
-test("решение оператора заказчика — что решила система, итог оператора и причина", async ({ page }) => {
+test("решение оператора CRM — исход цветом, без «Система: …» в шапке", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.application.id}`);
 
-  // Редизайн 16.11.2026: решение в одном месте — в шапке. Итог оператора
-  // CRM сверху, что решила система — строкой ниже.
-  const verdict = page.locator(".ah__verdict");
-  await expect(verdict.getByRole("heading", { name: /Одобрено оператором/ })).toBeVisible();
-  await expect(verdict).toContainText("Решение оператора CRM");
-  await expect(verdict).toContainText("Система: проверки пройдены");
-  await expect(verdict.getByText(/manual_|approve\b/)).toHaveCount(0);
+  // Шапка (16.11.2026): исход — цветом полосы, слово — только для экранного
+  // диктора; строки «Система: …» нет.
+  await expect(page.getByRole("heading", { level: 1, name: /Одобрено оператором/ })).toHaveCount(1);
+  await expect(page.locator(".ah")).not.toContainText("Система:");
+  await expect(page.locator(".ah").getByText(/manual_|approve\b/)).toHaveCount(0);
 });

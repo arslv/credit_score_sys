@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.engine.versions import get_active_ruleset_version, load_config
-from app.engine.state_machine import transition
+from app.engine.state_machine import REOPEN_FOR_BKI_FROM, reopen_for_bki
 from app.models import Application, BkiRequestOrder, Decision, Employee, StatusHistory
 from app.security.audit import record_audit
 from app.security.deps import require_roles
@@ -23,25 +23,19 @@ router = APIRouter(prefix="/api", tags=["bki"])
 
 _BKI_REQUEST_ROLES = ("operator", "admin")
 
-# Серая зона, потому что отчёт БКИ не получен (бюро не подключено, недоступно,
-# ошибка, клиент не определён) или получен, но решения по нему нет: балла нет
-# (SCORE_MISSING — например, после правки анкеты стоит спросить заново) или по
-# этому виду отчёта одобрять нельзя (BKI_REPORT_TYPE_NO_APPROVAL — можно
-# заказать другой) — запрос можно повторить кнопкой (решение владельца
-# 16.11.2026). Нет согласия на КИ — не повторяем (нужно новое согласие от CRM);
-# балл получен и сравнён с порогами — повтор ничего не даст.
-BKI_RETRYABLE_REASONS = frozenset({
-    "BKI_NOT_CONFIGURED", "BKI_SOURCE_UNAVAILABLE", "BKI_ERROR", "BKI_CLIENT_UNKNOWN",
-    "SCORE_MISSING", "BKI_REPORT_TYPE_NO_APPROVAL",
-})
+# Отчёт можно заказать заново после любого решения по нему — серая зона,
+# отказ, одобрение (решение владельца 16.11.2026: «всё можно проверить
+# заново»). Кроме одного: нет согласия на КИ — бюро спрашивать нельзя, нужно
+# новое согласие от CRM.
+BKI_NO_RETRY_REASONS = frozenset({"BKI_CONSENT_MISSING_OR_EXPIRED"})
 
 
 async def bki_request_state(session: AsyncSession, application: Application) -> str | None:
-    """waiting — стадия Б ждёт первого заказа; retry — отчёт не получен, можно
+    """waiting — ждёт первого заказа; retry — решение по отчёту уже было, можно
     запросить ещё раз; None — кнопок нет."""
     if application.status == "awaiting_bki":
         return "waiting"
-    if application.status != "gray_zone":
+    if application.status not in REOPEN_FOR_BKI_FROM:
         return None
     latest = (
         await session.execute(
@@ -49,7 +43,7 @@ async def bki_request_state(session: AsyncSession, application: Application) -> 
             .order_by(Decision.created_at.desc()).limit(1)
         )
     ).scalars().first()
-    if latest is not None and latest.stage == "B" and latest.reason_code in BKI_RETRYABLE_REASONS:
+    if latest is not None and latest.stage == "B" and latest.reason_code not in BKI_NO_RETRY_REASONS:
         return "retry"
     return None
 
@@ -108,9 +102,8 @@ async def request_bki_report(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="отчёт уже заказан — ждём ответа бюро")
 
     if request_state == "retry":
-        # Повтор после неполученного отчёта: снова ждём БКИ — заказ ниже
-        # относится к этому ожиданию.
-        transition(session, application, "awaiting_bki", actor_type="employee", employee_id=employee.id)
+        # Повторный заказ: снова ждём БКИ — заказ ниже относится к этому ожиданию.
+        reopen_for_bki(session, application, employee_id=employee.id)
         await session.flush()
     session.add(BkiRequestOrder(application_id=application_id, report_type=payload.report_type, employee_id=employee.id))
     await record_audit(

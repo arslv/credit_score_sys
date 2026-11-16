@@ -137,13 +137,15 @@ test("ПДН: нет дохода — «не вычислимо», а не 0%; 0
   expect(noBki.unknown).toEqual(["ПДН: не вычислимо (кредитная история не получена)"]);
 });
 
-test("карточка серой зоны: «В норме» отдельно, одна «?» с объяснением этого решения", async ({ page }) => {
+test("карточка серой зоны: исход — цветом, без слов и пояснений в шапке", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.gray_fssp.id}`);
 
-  await expect(page.getByRole("heading", { level: 1, name: /Серая зона/ })).toBeVisible();
-  await expect(page.getByText("Проверка ФССП не пройдена").first()).toBeVisible();
+  // Слово «Серая зона» — только для экранного диктора; причина у серой зоны
+  // в шапке не пишется — её видно по строкам «Проверок» (решение владельца 16.11.2026).
+  await expect(page.getByRole("heading", { level: 1, name: /Серая зона/ })).toHaveCount(1);
+  await expect(page.locator(".ah").getByText("Проверка ФССП не пройдена")).toHaveCount(0);
   await expect(page.getByText(/Сработавшие/)).toHaveCount(0);
   await expect(page.getByTestId("decision-causes")).toHaveCount(0);
 
@@ -159,13 +161,9 @@ test("карточка серой зоны: «В норме» отдельно, 
     .filter({ hasNotText: "поручитель" });
   await expect(fsspRow.getByText("не проверено")).toBeVisible();
 
-  // Подсказка «?» ровно одна, по клику — объяснение этого решения.
-  const toggles = page.locator(".help-toggle");
-  await expect(toggles).toHaveCount(1);
-  await toggles.click();
-  await expect(page.getByRole("note")).toHaveText(
-    "Серая зона: балл 760 выше порога 700 и ПДН 42% в пределах 60%, но ФССП не проверено — без этой проверки одобрить нельзя.",
-  );
+  // Подсказки «?» и строки «Решение принимает…» в шапке нет.
+  await expect(page.locator(".help-toggle")).toHaveCount(0);
+  await expect(page.locator(".verdict-action")).toHaveCount(0);
 });
 
 test("карточка без дохода: «ПДН: не вычислимо», нигде нет «ПДН 0%»", async ({ page }) => {
@@ -174,8 +172,8 @@ test("карточка без дохода: «ПДН: не вычислимо»,
   await page.goto(`/applications/${seed.no_income.id}`);
 
   await expect(page.getByText("ПДН 0%")).toHaveCount(0);
-  // Серая зона не из-за ФССП — решение в CRM: строкой в вердикте, у ФССП пометки нет.
-  await expect(page.locator(".verdict-action")).toHaveText("Решение принимает оператор в CRM.");
+  // Строки «Решение принимает оператор в CRM» в шапке больше нет.
+  await expect(page.locator(".verdict-action")).toHaveCount(0);
   // Платежа в снимке нет — строки «Платёж в месяц» нет (не «0 ₽»).
   await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toHaveCount(0);
 });

@@ -13,7 +13,6 @@ import { BkiRequestPanel } from "../components/BkiRequestPanel";
 import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
-import { VerdictTitle } from "../components/VerdictTitle";
 import { ErrorState, LoadingState } from "../components/ui";
 import { ageYears, clientRows, dealRows, latestStageBPayload, ocrValue } from "../lib/card";
 import { explainDecision } from "../lib/explain";
@@ -149,32 +148,13 @@ export function ApplicationDetailPage() {
     const fed = findLatestCheck("fedresurs", s.type, s.id);
     return { ...s, fssp, fed, fsspDone: fsspPassed(fssp), fedDone: Boolean(fed) };
   });
-  const fsspLeft = manualState.filter((s) => !s.fsspDone).map((s) => s.label);
-  const fedLeft = manualState.filter((s) => !s.fedDone).map((s) => s.label);
-  const grayStageB = latestDecision?.outcome === "manual_review" && latestDecision.stage === "B";
   // Заведена вручную в админке — в CRM её нет, решения туда не уходят.
   const manual = app.source === "manual";
-  // Серая зона «ФССП не пройдена» — действие нужно, пока ФССП у кого-то не
-  // пройдена; прошли — решение не пересчитывается само (новое — после
-  // повторного «Рассмотреть» в CRM), «требуется действие» снимаем.
-  const fsspGray = grayStageB && latestDecision?.reason_code === "FSSP_NOT_CHECKED";
-  const fsspNeedsAction = (fsspGray && fsspLeft.length > 0) || app.fssp_post_decision_alert_subjects.length > 0;
-  const fsspDoneAfterGray = fsspGray && fsspLeft.length === 0;
-  const grayInCrm = grayStageB && !fsspGray;
-  // Банкротство проверяется вручную — пока по заявителю нет отметки и заявка
-  // ещё в работе (после отказа или истечения — незачем).
-  const fedresursNeedsAction =
-    fedLeft.length > 0 && app.decisions.length > 0 && !["rejected_a", "rejected_b", "expired"].includes(app.status);
   // Стадия Б ждёт, пока сотрудник закажет отчёт БКИ (запрос платный).
   const bkiWaiting = app.status === "awaiting_bki";
-  // Отчёт БКИ не получен (бюро не подключено, недоступно…) — серая зона, но
-  // запрос можно повторить теми же кнопками.
+  // Отчёт БКИ можно запросить заново — после любого решения по отчёту (серая
+  // зона, отказ, одобрение; решение владельца 16.11.2026).
   const bkiRetry = app.bki_request_state === "retry";
-  // После отказа или истечения ручные проверки уже ничего не меняют — блок
-  // скрыт (результаты, если были, остаются в «Что проверили»). Проверки, что
-  // ждут действия, показаны выше в «Нужно ваше действие».
-  const manualRelevant = !["rejected_a", "rejected_b", "expired"].includes(app.status);
-  const showManual = manualRelevant || fsspNeedsAction || fedresursNeedsAction;
 
   const clientBlock = clientRows({
     clientName: app.client_name,
@@ -223,10 +203,10 @@ export function ApplicationDetailPage() {
   const innFound = Boolean(innOf("applicant", null));
 
   // Ручные проверки (16.11.2026) — не отдельной карточкой, а кнопками под
-  // своей строкой в «Проверках» → «Долги и банкротство». После отказа или
-  // истечения они ничего не меняют — кнопок нет.
+  // своей строкой в «Проверках» → «Долги и банкротство».
   const rowActions: Record<string, ReactNode> = {};
-  if (showManual) {
+  {
+    // Ручные проверки можно пройти заново при любом статусе (решение владельца 16.11.2026).
     for (const s of manualState) {
       const isGuarantor = s.type === "guarantor";
       rowActions[subjectKey("fssp", s.type, s.id)] = (
@@ -274,6 +254,11 @@ export function ApplicationDetailPage() {
       : null;
   const headerOutcome = operatorFinal ?? latestDecision?.outcome;
 
+  // Причина в шапке — только у отказа и одобрения системы (у серой зоны и
+  // «проверки пройдены» её видно по строкам «Проверок»).
+  const verdictReason =
+    !operatorFinal && latestDecision && latestDecision.outcome !== "manual_review" ? (explanation?.reason ?? null) : null;
+
   // Редизайн 16.11.2026 (решение владельца): сверху — кто клиент и решение
   // с причиной (одно место), кнопки. Ниже — кредитная история, ручные
   // проверки, рейтинг клиента. Стадии, ряд цифр и ход заявки убраны. Анкета, сделка, проверки таблицей,
@@ -316,61 +301,38 @@ export function ApplicationDetailPage() {
             </div>
           </div>
 
-          <div className="ah__verdict">
-            <div className="pf-kicker">
-              {operatorFinal ? `Решение оператора CRM · ${formatDateTime(lastOverride!.created_at)}` : "Решение"}
-            </div>
-            <div className="pf-verdict__title">
-              <VerdictTitle
-                title={
-                  operatorFinal === "approve"
-                    ? "Одобрено оператором"
-                    : operatorFinal === "reject"
-                      ? "Отказ оператора"
-                      : latestDecision
-                        ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome)
-                        : "В обработке"
-                }
-                help={operatorFinal ? null : (explanation?.help ?? null)}
-              />
-              {/* Статус дублирует решение («Серая зона» дважды) — показываем,
-                  только когда он говорит что-то своё (истекла, проверяется…). */}
+          {/* Решение (16.11.2026, решение владельца): без слов «Серая зона» /
+              «Отказ» / «Одобрено» — исход виден цветом полосы сверху; слово —
+              только для экранного диктора. Причина — строкой у отказа и
+              одобрения; у серой зоны всё видно в «Проверках». */}
+          <h1 className="sr-only">
+            {operatorFinal === "approve"
+              ? "Одобрено оператором"
+              : operatorFinal === "reject"
+                ? "Отказ оператора"
+                : latestDecision
+                  ? decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome)
+                  : "В обработке"}
+          </h1>
+          {(verdictReason || lastOverride?.comment || latestDecision?.freeze || !STATUS_MIRRORS_DECISION.has(app.status)) && (
+            <div className="ah__verdict">
               {!STATUS_MIRRORS_DECISION.has(app.status) && (
                 <Badge value={app.status} label={applicationStatusLabel(app.status)} />
               )}
-            </div>
-            {/* Причина — на момент решения. ФССП с тех пор пройдена — так и
-                пишем, а не «не пройдена», как было тогда. */}
-            {operatorFinal && latestDecision ? (
-              <>
-                {lastOverride?.comment && <p className="pf-verdict__reason">Оператор: {lastOverride.comment}</p>}
-                <p className="pf-verdict__reason">
-                  Система: {decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome).toLowerCase()}
-                  {explanation?.reason ? ` — ${explanation.reason}` : ""}
+              {operatorFinal && lastOverride?.comment && (
+                <p className="pf-verdict__reason">Оператор: {lastOverride.comment}</p>
+              )}
+              {verdictReason && <p className="pf-verdict__reason">{verdictReason}</p>}
+              {latestDecision?.freeze && (
+                <p className="verdict-action">
+                  Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.
+                  <Link className="btn btn-primary btn-small" to="/compliance">
+                    К проверке по перечням
+                  </Link>
                 </p>
-              </>
-            ) : fsspDoneAfterGray ? (
-              <p className="pf-verdict__reason">
-                На момент решения ФССП не была пройдена. Сейчас пройдена — новое решение будет при следующей
-                проверке заявки.
-              </p>
-            ) : (
-              explanation?.reason && <p className="pf-verdict__reason">{explanation.reason}</p>
-            )}
-            {grayInCrm && !operatorFinal && (
-              <p className="verdict-action">
-                {manual ? "Решение — за сотрудником: заявки нет в CRM." : "Решение принимает оператор в CRM."}
-              </p>
-            )}
-            {latestDecision?.freeze && (
-              <p className="verdict-action">
-                Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.
-                <Link className="btn btn-primary btn-small" to="/compliance">
-                  К проверке по перечням
-                </Link>
-              </p>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* «Принять» / «Отказать» — будущая отправка решения в CRM по API.
               Пока недоступны: серые, не нажимаются. */}
@@ -409,6 +371,7 @@ export function ApplicationDetailPage() {
               order={app.bki_order}
               canOperate={canOperateFssp}
               retry={bkiRetry}
+              hasReport={Boolean(app.bki_result)}
             />
           ) : null
         }
