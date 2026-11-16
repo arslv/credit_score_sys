@@ -29,6 +29,14 @@ function plural(n: number, forms: [string, string, string]): string {
   return forms[2];
 }
 
+// Место раздела в сетке «Проверок» (grid-template-areas в index.css).
+const AREA: Record<string, string> = {
+  Паспорт: "passport",
+  Перечни: "lists",
+  Налоговая: "tax",
+  "Долги и банкротство": "debts",
+};
+
 const TONE_TEXT: Record<Tone, (n: number) => string> = {
   ok: () => "в порядке",
   bad: (n) => plural(n, ["нарушение", "нарушения", "нарушений"]),
@@ -237,7 +245,7 @@ function GroupCard({ title, rows }: { title: string; rows: Row[] }) {
         : { tone: ok === rows.length && rows.length > 0 ? ("ok" as Tone) : ("none" as Tone), text: `${ok} из ${rows.length}` };
 
   return (
-    <section className={`chk__group chk__group--${stat.tone}`} aria-label={title}>
+    <section className={`chk__group chk__group--${stat.tone} chk__area--${AREA[title] ?? "other"}`} aria-label={title}>
       <header className="chk__group-head">
         <h3 className="chk__group-title">{title}</h3>
         {rows.length > 0 && <span className={`chk__group-stat chk__group-stat--${stat.tone}`}>{stat.text}</span>}
@@ -314,7 +322,7 @@ function BkiTile({ result, tone }: { result: BkiResult | null; tone: Tone }) {
           ? "Бюро не ответило"
           : "Ошибка запроса";
   return (
-    <section className={`chk__group chk__bki chk__bki--${tone}`} aria-label="Кредитная история">
+    <section className={`chk__group chk__bki chk__bki--${tone} chk__area--bki`} aria-label="Кредитная история">
       <header className="chk__group-head">
         <h3 className="chk__group-title">Кредитная история</h3>
         {result?.label && <span className="chk__bki-kind">{result.label}</span>}

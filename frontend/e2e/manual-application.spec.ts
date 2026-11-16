@@ -22,9 +22,9 @@ test("оператор заводит заявку вручную с фото п
   await page.getByLabel("Номер", { exact: true }).fill(String(100000 + Math.floor(Math.random() * 899999)));
   await page.getByLabel("Фото: разворот с фото").setInputFiles({ name: "main.png", mimeType: "image/png", buffer: PNG });
   await page.getByLabel("Товар", { exact: true }).fill("Стиральная машина");
-  await page.getByLabel("Цена, ₽").fill("45000");
-  await page.getByLabel("Срок, мес.").fill("10");
-  await page.getByLabel("Доход в месяц, ₽", { exact: true }).fill("70000");
+  await page.getByLabel("Цена", { exact: true }).fill("45000");
+  await page.getByLabel("Срок", { exact: true }).fill("10");
+  await page.getByLabel("Доход в месяц", { exact: true }).fill("70000");
   await page.getByRole("button", { name: "Создать заявку" }).click();
 
   await expect(page).toHaveURL(/\/applications\/[0-9a-f-]{36}$/);
@@ -53,7 +53,7 @@ test("оператор правит анкету заявки", async ({ page })
   await page.getByLabel("Дата рождения", { exact: true }).fill("1990-05-14");
   await page.getByLabel("Серия", { exact: true }).fill("8215");
   await page.getByLabel("Номер", { exact: true }).fill(String(100000 + Math.floor(Math.random() * 899999)));
-  await page.getByLabel("Доход в месяц, ₽", { exact: true }).fill("123456");
+  await page.getByLabel("Доход в месяц", { exact: true }).fill("123456");
   await page.getByRole("button", { name: "Сохранить и проверить заново" }).click();
 
   await expect(page).toHaveURL(new RegExp(`/applications/${seed.gray_fssp.id}$`));

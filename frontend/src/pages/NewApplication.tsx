@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
-import { PageHeader } from "../components/ui";
+import { formatAmount } from "../lib/format";
 import { employmentLabel } from "../lib/labels";
 
 // Заявка без CRM (решение владельца 09.11.2026): сотрудник вводит анкету и
@@ -119,12 +119,110 @@ function errorText(detail: unknown): string {
   return "Не удалось создать заявку";
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+// Раздел анкеты: номер шага (галочка, когда обязательное заполнено),
+// заголовок с короткой подсказкой и поля в сетке на 6 колонок.
+function Section({
+  step,
+  title,
+  hint,
+  done,
+  children,
+}: {
+  step: number;
+  title: string;
+  hint: string;
+  done: boolean;
+  children: ReactNode;
+}) {
   return (
-    <section className="pf-card new-app__section">
-      <h2 className="pf-section-title">{title}</h2>
-      <div className="form-grid">{children}</div>
+    <section className="pf-card na-section" aria-labelledby={`na-step-${step}`}>
+      <header className="na-section__head">
+        <span className={`na-step${done ? " na-step--done" : ""}`} aria-hidden="true">
+          {done ? <CheckMark /> : step}
+        </span>
+        <div>
+          <h2 id={`na-step-${step}`} className="na-section__title">
+            {title}
+          </h2>
+          <p className="na-section__hint">{hint}</p>
+        </div>
+      </header>
+      <div className="na-grid">{children}</div>
     </section>
+  );
+}
+
+function CheckMark() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="12"
+      height="12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3.5 8.5l3 3 6-7" />
+    </svg>
+  );
+}
+
+// Фото паспорта — плитка: нажать и выбрать файл; выбранное — превью и имя.
+function PhotoInput({
+  label,
+  file,
+  onChange,
+}: {
+  label: string;
+  file: File | null;
+  onChange: (file: File | null) => void;
+}) {
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  return (
+    <label className={`na-photo${file ? " na-photo--set" : ""}`}>
+      <input
+        type="file"
+        accept="image/jpeg,image/png"
+        className="na-photo__input"
+        aria-label={`Фото: ${label.toLowerCase()}`}
+        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+      />
+      <span className="na-photo__thumb" aria-hidden="true">
+        {preview ? (
+          <img src={preview} alt="" />
+        ) : (
+          <svg
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3" y="5" width="18" height="14" rx="2.5" />
+            <circle cx="9" cy="11" r="2" />
+            <path d="M21 16l-5-5-8 8" />
+          </svg>
+        )}
+      </span>
+      <span className="na-photo__text">
+        <span className="na-photo__title">{label}</span>
+        <span className="na-photo__hint">{file ? file.name : "JPG или PNG — нажмите, чтобы выбрать"}</span>
+      </span>
+    </label>
   );
 }
 
@@ -176,12 +274,65 @@ export function NewApplicationPage() {
   if (editId && !current.data) return <p className="muted">Загрузка…</p>;
 
   const set = (key: keyof FormState) => (e: { target: { value: string } }) => setForm({ ...form, [key]: e.target.value });
-  const text = (key: keyof FormState, label: string, props: Record<string, unknown> = {}) => (
-    <label className={`field${props.wide ? " field--wide" : ""}`}>
-      {label}
-      <input value={form[key] as string} onChange={set(key)} {...{ ...props, wide: undefined }} />
+  // Поле: подпись сверху, span — ширина в колонках сетки (из 6), suffix —
+  // единица внутри поля (₽, мес.).
+  const text = (
+    key: keyof FormState,
+    label: string,
+    { span = 3, suffix, ...props }: { span?: number; suffix?: string } & Record<string, unknown> = {},
+  ) => (
+    <label className={`na-field na-span-${span}`}>
+      <span className="na-field__label">
+        {label}
+        {props.required ? (
+          <span className="na-req" aria-hidden="true">
+            {" "}
+            *
+          </span>
+        ) : null}
+      </span>
+      <span className={`na-input${suffix ? " na-input--suffix" : ""}`}>
+        <input aria-label={label} value={form[key] as string} onChange={set(key)} {...props} />
+        {suffix && (
+          <span className="na-input__suffix" aria-hidden="true">
+            {suffix}
+          </span>
+        )}
+      </span>
     </label>
   );
+  const select = (key: keyof FormState, label: string, items: { value: string; label: string }[], span = 3) => (
+    <label className={`na-field na-span-${span}`}>
+      <span className="na-field__label">{label}</span>
+      <span className="na-input">
+        <select aria-label={label} value={form[key] as string} onChange={set(key)}>
+          <option value="">—</option>
+          {items.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      </span>
+    </label>
+  );
+
+  const filled = (...keys: (keyof FormState)[]) => keys.every((k) => String(form[k]).trim() !== "");
+  const steps = [
+    { title: "Клиент", done: filled("last_name", "first_name") && form.phone.trim().length > 4 },
+    { title: "Паспорт", done: filled("birth_date", "passport_series", "passport_number") },
+    { title: "Сделка", done: filled("goods_name", "goods_price", "term_months") },
+    { title: "Доход и работа", done: filled("income") },
+    ...(form.has_guarantor ? [{ title: "Поручитель", done: filled("g_last_name", "g_first_name") }] : []),
+  ];
+  const doneCount = steps.filter((st) => st.done).length;
+  const fullName = [form.last_name, form.first_name, form.middle_name]
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .join(" ");
+  const price = Number(form.goods_price) || 0;
+  const down = Number(form.down_payment) || 0;
+  const rest = price > 0 ? Math.max(price - down, 0) : null;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -213,118 +364,159 @@ export function NewApplicationPage() {
   }
 
   return (
-    <form className="new-app" onSubmit={submit}>
+    <form className="na" onSubmit={submit}>
       <p className="back-link">
         <Link to={editId ? `/applications/${editId}` : "/applications"}>{editId ? "← К заявке" : "← Заявки"}</Link>
       </p>
-      <PageHeader
-        title={editId ? "Изменить анкету" : "Новая заявка"}
-        description={
-          editId
-            ? "После сохранения заявка проверится заново по новым данным. Запрос в БКИ — снова по кнопке."
-            : "Для клиента, которого нет в CRM. После сохранения — проверки, как у заявки из CRM; решение в CRM не уходит, только здесь."
-        }
-      />
-
-      <Section title="Клиент">
-        {text("last_name", "Фамилия", { required: true })}
-        {text("first_name", "Имя", { required: true })}
-        {text("middle_name", "Отчество")}
-        {text("phone", "Телефон", { required: true, type: "tel" })}
-      </Section>
-
-      <Section title="Паспорт">
-        {text("birth_date", "Дата рождения", { required: true, type: "date" })}
-        {text("passport_series", "Серия", { required: true, inputMode: "numeric", placeholder: "4 цифры" })}
-        {text("passport_number", "Номер", { required: true, inputMode: "numeric", placeholder: "6 цифр" })}
-        {text("issue_date", "Дата выдачи", { type: "date" })}
-        {text("department_code", "Код подразделения", { placeholder: "000-000" })}
-        {text("issued_by", "Кем выдан")}
-        {text("registration_address", "Адрес прописки", { wide: true })}
-        <label className="field">
-          Фото: разворот с фото
-          <input type="file" accept="image/jpeg,image/png" onChange={(e) => setPhotoMain(e.target.files?.[0] ?? null)} />
-        </label>
-        <label className="field">
-          Фото: прописка
-          <input type="file" accept="image/jpeg,image/png" onChange={(e) => setPhotoReg(e.target.files?.[0] ?? null)} />
-        </label>
-      </Section>
-
-      <Section title="Сделка">
-        {text("goods_name", "Товар", { required: true, wide: true })}
-        <label className="field">
-          Категория
-          <select value={form.goods_category_code} onChange={set("goods_category_code")}>
-            <option value="">—</option>
-            {options.data?.goods_categories.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {text("goods_price", "Цена, ₽", { required: true, type: "number", min: 1, step: "0.01" })}
-        {text("down_payment", "Первый взнос, ₽", { type: "number", min: 0, step: "0.01" })}
-        {text("term_months", "Срок, мес.", { required: true, type: "number", min: 1, step: 1 })}
-      </Section>
-
-      <Section title="Доход и работа">
-        {text("income", "Доход в месяц, ₽", { required: true, type: "number", min: 0, step: "0.01" })}
-        {text("other_credit_payments", "Платежи по другим кредитам в месяц, ₽", { type: "number", min: 0, step: "0.01" })}
-        <label className="field">
-          Занятость
-          <select value={form.employment_type} onChange={set("employment_type")}>
-            <option value="">—</option>
-            {EMPLOYMENT_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {employmentLabel(t)}
-              </option>
-            ))}
-          </select>
-        </label>
-        {text("employer", "Место работы")}
-        {text("position", "Должность")}
-      </Section>
-
-      <section className="pf-card new-app__section">
-        <label className="field field--check">
-          <input
-            type="checkbox"
-            checked={form.has_guarantor}
-            onChange={(e) => setForm({ ...form, has_guarantor: e.target.checked })}
-          />
-          Есть поручитель
-        </label>
-        {form.has_guarantor && (
-          <div className="form-grid">
-            {text("g_last_name", "Фамилия поручителя", { required: true })}
-            {text("g_first_name", "Имя поручителя", { required: true })}
-            {text("g_middle_name", "Отчество поручителя")}
-            {text("g_phone", "Телефон поручителя", { type: "tel" })}
-            {text("g_birth_date", "Дата рождения", { type: "date" })}
-            {text("g_passport_series", "Серия паспорта", { inputMode: "numeric" })}
-            {text("g_passport_number", "Номер паспорта", { inputMode: "numeric" })}
-            {text("g_issue_date", "Дата выдачи", { type: "date" })}
-            {text("g_registration_address", "Адрес прописки", { wide: true })}
-            {text("g_income", "Доход в месяц, ₽", { type: "number", min: 0, step: "0.01" })}
-          </div>
-        )}
-      </section>
-
-
-      {error && (
-        <p className="alert" role="alert">
-          {error}
+      <header className="na-header">
+        <h1>{editId ? "Изменить анкету" : "Новая заявка"}</h1>
+        <p className="na-header__lead">
+          {editId
+            ? "После сохранения заявка проверится заново по новым данным."
+            : "Для клиента, которого нет в CRM. Решение остаётся здесь и в CRM не уходит."}
         </p>
-      )}
-      <div className="new-app__actions">
-        <button type="submit" className="btn btn-primary" disabled={saving}>
-          {saving ? "Сохраняем…" : editId ? "Сохранить и проверить заново" : "Создать заявку"}
-        </button>
-        <Link className="btn" to={editId ? `/applications/${editId}` : "/applications"}>
-          Отмена
-        </Link>
+      </header>
+
+      <div className="na-layout">
+        <div className="na-main">
+          <Section step={1} title="Клиент" hint="Как в паспорте" done={steps[0]!.done}>
+            {text("last_name", "Фамилия", { required: true, span: 2, autoComplete: "off" })}
+            {text("first_name", "Имя", { required: true, span: 2, autoComplete: "off" })}
+            {text("middle_name", "Отчество", { span: 2, autoComplete: "off" })}
+            {text("phone", "Телефон", { required: true, type: "tel", span: 3 })}
+          </Section>
+
+          <Section step={2} title="Паспорт" hint="Данные и фото разворотов" done={steps[1]!.done}>
+            {text("passport_series", "Серия", { required: true, inputMode: "numeric", placeholder: "0000", span: 2 })}
+            {text("passport_number", "Номер", { required: true, inputMode: "numeric", placeholder: "000000", span: 2 })}
+            {text("department_code", "Код подразделения", { placeholder: "000-000", span: 2 })}
+            {text("birth_date", "Дата рождения", { required: true, type: "date", span: 3 })}
+            {text("issue_date", "Дата выдачи", { type: "date", span: 3 })}
+            {text("issued_by", "Кем выдан", { span: 6 })}
+            {text("registration_address", "Адрес прописки", { span: 6 })}
+            <div className="na-span-6 na-photos">
+              <PhotoInput label="Разворот с фото" file={photoMain} onChange={setPhotoMain} />
+              <PhotoInput label="Прописка" file={photoReg} onChange={setPhotoReg} />
+            </div>
+          </Section>
+
+          <Section step={3} title="Сделка" hint="Товар, цена и срок рассрочки" done={steps[2]!.done}>
+            {text("goods_name", "Товар", { required: true, span: 4 })}
+            {select(
+              "goods_category_code",
+              "Категория",
+              (options.data?.goods_categories ?? []).map((c) => ({ value: c.code, label: c.name })),
+              2,
+            )}
+            {text("goods_price", "Цена", { required: true, type: "number", min: 1, step: "0.01", suffix: "₽", span: 2 })}
+            {text("down_payment", "Первый взнос", { type: "number", min: 0, step: "0.01", suffix: "₽", span: 2 })}
+            {text("term_months", "Срок", { required: true, type: "number", min: 1, step: 1, suffix: "мес.", span: 2 })}
+          </Section>
+
+          <Section step={4} title="Доход и работа" hint="Для расчёта нагрузки" done={steps[3]!.done}>
+            {text("income", "Доход в месяц", { required: true, type: "number", min: 0, step: "0.01", suffix: "₽" })}
+            {text("other_credit_payments", "Платежи по другим кредитам", {
+              type: "number",
+              min: 0,
+              step: "0.01",
+              suffix: "₽/мес.",
+            })}
+            {select(
+              "employment_type",
+              "Занятость",
+              EMPLOYMENT_TYPES.map((t) => ({ value: t, label: employmentLabel(t) })),
+              2,
+            )}
+            {text("employer", "Место работы", { span: 2 })}
+            {text("position", "Должность", { span: 2 })}
+          </Section>
+
+          <section className={`pf-card na-section na-guarantor${form.has_guarantor ? " na-guarantor--on" : ""}`}>
+            <label className="na-switch">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={form.has_guarantor}
+                onChange={(e) => setForm({ ...form, has_guarantor: e.target.checked })}
+              />
+              <span className="na-switch__track" aria-hidden="true" />
+              <span className="na-switch__text">
+                <span className="na-switch__title">Есть поручитель</span>
+                <span className="na-switch__hint">Его данные проверяются вместе с заявкой</span>
+              </span>
+            </label>
+            {form.has_guarantor && (
+              <div className="na-grid na-guarantor__grid">
+                {text("g_last_name", "Фамилия поручителя", { required: true, span: 2 })}
+                {text("g_first_name", "Имя поручителя", { required: true, span: 2 })}
+                {text("g_middle_name", "Отчество поручителя", { span: 2 })}
+                {text("g_phone", "Телефон поручителя", { type: "tel", span: 3 })}
+                {text("g_birth_date", "Дата рождения поручителя", { type: "date", span: 3 })}
+                {text("g_passport_series", "Серия паспорта", { inputMode: "numeric", span: 2 })}
+                {text("g_passport_number", "Номер паспорта", { inputMode: "numeric", span: 2 })}
+                {text("g_issue_date", "Дата выдачи паспорта", { type: "date", span: 2 })}
+                {text("g_registration_address", "Адрес прописки поручителя", { span: 4 })}
+                {text("g_income", "Доход поручителя", { type: "number", min: 0, step: "0.01", suffix: "₽", span: 2 })}
+              </div>
+            )}
+          </section>
+        </div>
+
+        {/* Справа — что заполнено, сумма сделки и кнопки; на месте при прокрутке. */}
+        <aside className="na-side">
+          <div className="pf-card na-side__card">
+            <div className="na-side__eyebrow">{editId ? "Анкета заявки" : "Новая заявка"}</div>
+            <div className={`na-side__name${fullName ? "" : " na-side__name--empty"}`}>{fullName || "ФИО клиента"}</div>
+
+            <div className="na-progress" aria-hidden="true">
+              <span style={{ width: `${(doneCount / steps.length) * 100}%` }} />
+            </div>
+            <ul className="na-steps">
+              {steps.map((st) => (
+                <li key={st.title} className={st.done ? "na-steps__done" : undefined}>
+                  <span className="na-steps__mark">{st.done && <CheckMark />}</span>
+                  {st.title}
+                </li>
+              ))}
+            </ul>
+
+            <dl className="na-sum">
+              <div>
+                <dt>Цена</dt>
+                <dd>{price > 0 ? `${formatAmount(price)} ₽` : "—"}</dd>
+              </div>
+              <div>
+                <dt>Первый взнос</dt>
+                <dd>{down > 0 ? `${formatAmount(down)} ₽` : "—"}</dd>
+              </div>
+              <div className="na-sum__total">
+                <dt>Остаток в рассрочку</dt>
+                <dd>{rest !== null ? `${formatAmount(rest)} ₽` : "—"}</dd>
+              </div>
+              <div>
+                <dt>Срок</dt>
+                <dd>{Number(form.term_months) > 0 ? `${form.term_months} мес.` : "—"}</dd>
+              </div>
+            </dl>
+
+            {error && (
+              <p className="alert" role="alert">
+                {error}
+              </p>
+            )}
+            <button type="submit" className="btn btn-primary na-side__submit" disabled={saving}>
+              {saving ? "Сохраняем…" : editId ? "Сохранить и проверить заново" : "Создать заявку"}
+            </button>
+            <Link className="btn na-side__cancel" to={editId ? `/applications/${editId}` : "/applications"}>
+              Отмена
+            </Link>
+            <p className="na-side__note">
+              {editId
+                ? "Запрос в БКИ после правки — снова по кнопке."
+                : "После создания — те же проверки, что у заявки из CRM."}
+            </p>
+          </div>
+        </aside>
       </div>
     </form>
   );
