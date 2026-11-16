@@ -1465,6 +1465,12 @@ async def retry_check(
             phone=payload.get("phone"),
         )
 
+    # Правило 13 CLAUDE.md: внешний вызов — без открытой транзакции. В ней уже
+    # обновлена отметка активности сессии сотрудника (app/security/sessions.py)
+    # — пока транзакция открыта, строка сессии заблокирована, и любой другой
+    # запрос этого сотрудника ждёт её (сайт висел на «Загрузка…», пока ФНС/ФССП
+    # отвечали — до нескольких минут). expire_on_commit=False — объекты целы.
+    await session.commit()
     settings = get_settings()
     if check.source == "fns_inn":
         new_check = await run_and_record_check(

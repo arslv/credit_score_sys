@@ -598,3 +598,46 @@ async def test_retry_check_allowed_after_error(
         response = await admin_client.post(f"/api/applications/{application_id}/checks/{failed_id}/retry")
     assert response.status_code == 200, response.text
     assert response.json()["check"]["status"] != "error"
+
+
+async def test_retry_check_does_not_block_other_requests_of_same_employee(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset
+):
+    """Регресс (16.11.2026): пока повтор ФНС ждёт ответа налоговой, транзакция
+    запроса не должна быть открыта — иначе строка сессии сотрудника заблокирована
+    и все его запросы (в т.ч. «кто вошёл») висят до ответа ФНС. Источник ниже
+    прямо во время проверки делает второй запрос тем же сотрудником."""
+    import asyncio
+
+    from app.sources.base import CheckResult, CheckStatus
+
+    application_id, _ = await _good_applicant(
+        partner_admin, partner_client, storage, session_factory, active_ruleset, fns_unavailable=True,
+    )
+    async with session_factory() as session:
+        fns_check = (
+            await session.execute(
+                select(Check).where(Check.application_id == application_id, Check.source == "fns_inn")
+            )
+        ).scalars().first()
+
+    await create_employee(session_factory, email="retry_lock@example.com", role="admin")
+    await login(admin_client, "retry_lock@example.com")
+
+    seen: dict[str, object] = {}
+
+    class SlowSource:
+        source_name = "fns_inn"
+
+        async def check(self, subject):
+            try:
+                response = await asyncio.wait_for(admin_client.get("/api/auth/me"), timeout=5)
+                seen["status"] = response.status_code
+            except asyncio.TimeoutError:
+                seen["status"] = "timeout"
+            return CheckResult(status=CheckStatus.NO_DATA)
+
+    with patch("app.api.applications.build_fns_inn_source", return_value=SlowSource()):
+        response = await admin_client.post(f"/api/applications/{application_id}/checks/{fns_check.id}/retry")
+    assert response.status_code == 200, response.text
+    assert seen["status"] == 200

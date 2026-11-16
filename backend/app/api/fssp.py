@@ -207,6 +207,12 @@ async def fssp_search(
     if block is not None:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=block.to_detail(_BLOCK_MESSAGE))
 
+    # Правило 13 CLAUDE.md: внешний вызов — без открытой транзакции. В ней уже
+    # обновлена отметка активности сессии сотрудника (app/security/sessions.py)
+    # — пока транзакция открыта, строка сессии заблокирована, и любой другой
+    # запрос этого сотрудника ждёт её (сайт висел на «Загрузка…», пока ФНС/ФССП
+    # отвечали — до нескольких минут). expire_on_commit=False — объекты целы.
+    await session.commit()
     source = build_fssp_captcha_source(settings)
     try:
         challenge = await source.search(subject, region_code=body.region_code)
@@ -361,6 +367,12 @@ async def fssp_submit_code(
     subject = await _resolve_subject(session, application, captcha_session.subject_type, captcha_session.subject_id)
 
     captcha_session.attempt_count += 1
+    # Правило 13 CLAUDE.md: внешний вызов — без открытой транзакции. В ней уже
+    # обновлена отметка активности сессии сотрудника (app/security/sessions.py)
+    # — пока транзакция открыта, строка сессии заблокирована, и любой другой
+    # запрос этого сотрудника ждёт её (сайт висел на «Загрузка…», пока ФНС/ФССП
+    # отвечали — до нескольких минут). expire_on_commit=False — объекты целы.
+    await session.commit()
     settings = get_settings()
     source = build_fssp_captcha_source(settings)
     code = body.code.strip()
