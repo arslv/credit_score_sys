@@ -56,6 +56,15 @@ from app.storage.base import Storage
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 
 _MASKED_NAME = "Клиент скрыт"
+
+
+def _form_name(application: Application) -> str | None:
+    """ФИО из анкеты new-order (или ручной заявки) — пока клиента ещё нет
+    (паспорт не проверен), чтобы в списке и карточке было видно, кто это."""
+    profile = application.profile or {}
+    parts = [profile.get("last_name"), profile.get("first_name"), profile.get("middle_name")]
+    name = " ".join(p.strip() for p in parts if isinstance(p, str) and p.strip())
+    return name or None
 # T17, часть 4 (ваше указание): оператор видит ФИО в СПИСКЕ заявок тоже (раньше —
 # только в карточке). Остальные списки/экраны по-прежнему по ROLES_WITH_FULL_PII.
 _LIST_PII_ROLES = (*ROLES_WITH_FULL_PII, "operator")
@@ -399,6 +408,8 @@ async def list_applications(
                 client_name = f"{client.last_name} {client.first_name} {client.middle_name or ''}".strip()
         elif application.client_id is not None:
             client_name = _MASKED_NAME
+        elif list_pii:
+            client_name = _form_name(application)
 
         decision_a = await _latest_outcome(session, application.id, "A")
         decision_b = await _latest_outcome(session, application.id, "B")
@@ -967,6 +978,8 @@ async def get_application(
                 client_name = f"{client.last_name} {client.first_name} {client.middle_name or ''}".strip()
         else:
             client_name = _MASKED_NAME
+    elif full_pii:
+        client_name = _form_name(application)
 
     decisions = (
         await session.execute(

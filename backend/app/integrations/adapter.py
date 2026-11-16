@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import get_settings
 from app.integrations.base import (
+    PartnerBadRequestError,
     PartnerConflictError,
     PartnerUnavailableError,
 )
@@ -185,6 +186,24 @@ async def write_decision_status(
             our_status=new_status, actual_status=exc.current_status, operator_reason=exc.reason,
         )
         return "conflict"
+    except PartnerBadRequestError as exc:
+        # CRM отклонила решение (4xx: неверный токен, адрес, формат). Раньше
+        # исключение уходило наружу: ни строки в integration_events, ни
+        # outbox — решение терялось. Теперь — ошибка в журнал (её видно в
+        # «Состоянии системы») и outbox, который повторяет и 4xx.
+        await _log_event(
+            session_factory, application_id=application_id, direction="outbound",
+            operation="write_status", status="error", attempt=1, response={"error": str(exc)},
+        )
+        await _fallback_to_outbox(
+            session_factory, application_id=application_id, external_id=external_id,
+            event_type="decision",
+            payload={
+                "prev_status": expected_current_status, "status": new_status,
+                "reason": comment, "score": int(score) if score is not None else None,
+            },
+        )
+        return "rejected"
     except PartnerUnavailableError:
         await _fallback_to_outbox(
             session_factory, application_id=application_id, external_id=external_id,
@@ -257,6 +276,15 @@ async def send_ocr_result(
             direction="outbound",
             operation="send_ocr_result",
             func=lambda: notifier.send_ocr_result(external_id, fields),
+        )
+    except PartnerBadRequestError as exc:
+        await _log_event(
+            session_factory, application_id=application_id, direction="outbound",
+            operation="send_ocr_result", status="error", attempt=1, response={"error": str(exc)},
+        )
+        await _fallback_to_outbox(
+            session_factory, application_id=application_id, external_id=external_id,
+            event_type="ocr_result", payload={"fields": fields},
         )
     except PartnerUnavailableError:
         await _fallback_to_outbox(

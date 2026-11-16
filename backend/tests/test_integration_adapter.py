@@ -4,6 +4,8 @@
 
 import hashlib
 
+import httpx
+import respx
 from sqlalchemy import select
 
 from app.integrations.adapter import write_decision_status
@@ -268,3 +270,40 @@ async def test_result_body_is_their_scoring_result(partner_admin, partner_client
         "orderId": int(external_id), "status": "approved", "score": 731, "reason": "Одобрено",
     }
     assert "prev_status" not in sent
+
+
+@respx.mock
+async def test_crm_rejecting_decision_with_4xx_is_logged_and_queued_not_lost(
+    partner_admin, partner_client, storage, session_factory,
+):
+    """CRM ответила на решение 4xx (неверный токен, адрес, формат): раньше
+    исключение уходило наружу — ни строки в integration_events, ни outbox,
+    решение терялось. Теперь: ошибка в журнале с ответом CRM и запись в
+    outbox (он повторяет и 4xx)."""
+    external_id, application_id = await _ingest(partner_admin, partner_client, storage, session_factory)
+    respx.post("https://crm.test/v1/integration/scoring/result").mock(
+        return_value=httpx.Response(401, json={"error": "invalid token"}),
+    )
+    notifier = PartnerNotifier("https://crm.test", "wrong-token")
+    try:
+        result = await write_decision_status(
+            session_factory, notifier, application_id=application_id, external_id=external_id,
+            expected_current_status="new", new_status="rejected", comment="тестовый отказ",
+        )
+    finally:
+        await notifier.aclose()
+
+    assert result == "rejected"
+    async with session_factory() as session:
+        event = (
+            await session.execute(
+                select(IntegrationEvent).where(
+                    IntegrationEvent.application_id == application_id, IntegrationEvent.operation == "write_status",
+                )
+            )
+        ).scalar_one()
+        assert event.status == "error" and "401" in event.response["error"]
+        outbox = (
+            await session.execute(select(PartnerOutboxEvent).where(PartnerOutboxEvent.application_id == application_id))
+        ).scalar_one()
+        assert outbox.status == "pending" and outbox.payload["status"] == "rejected"

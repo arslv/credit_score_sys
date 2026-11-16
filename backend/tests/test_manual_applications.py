@@ -108,6 +108,10 @@ async def test_staff_creates_application_with_photos(
 
     detail = (await admin_client.get(f"/api/applications/{body['id']}")).json()
     assert detail["source"] == "manual"
+    # Паспорт ещё не проверен (клиента нет) — ФИО из анкеты, не «Клиент скрыт».
+    assert detail["client_name"] == "Тестов Ручной Заявкович"
+    listed = (await admin_client.get("/api/applications", params={"view": "all"})).json()["items"]
+    assert any(i["id"] == body["id"] and i["client_name"] == "Тестов Ручной Заявкович" for i in listed)
 
 
 async def test_manual_application_runs_stages_and_sends_nothing_to_crm(
