@@ -159,6 +159,9 @@ services:
     build: ./frontend
     environment:
       VITE_API_PROXY_TARGET: http://api:8000
+      # Docker Desktop на Windows не передаёт события изменения файлов в
+      # смонтированную папку — без опроса Vite отдаёт старый код.
+      CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ./frontend:/app
       - /app/node_modules
