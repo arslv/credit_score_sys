@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { Spinner } from "./ui";
 import type { components } from "../api/schema";
 
 type ReportType = components["schemas"]["BkiReportTypeOut"];
@@ -40,7 +41,7 @@ export function BkiRequestPanel({
   if (pending) {
     return (
       <p className="bki-act bki-act__pending" data-testid="bki-request" role="status">
-        <span className="bki-act__spinner" aria-hidden="true" />
+        <Spinner />
         Заказан {pending.label.toLowerCase()} отчёт — ждём ответа бюро
       </p>
     );
@@ -66,6 +67,7 @@ export function BkiRequestPanel({
             disabled={mutation.isPending}
             onClick={() => mutation.mutate(t.code)}
           >
+            {mutation.isPending && mutation.variables === t.code && <Spinner />}
             {t.label}
           </button>
         ))}

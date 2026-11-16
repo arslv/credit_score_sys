@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { Spinner } from "./ui";
 
 // T23: банкротство (Федресурс) — ручная проверка рядом с ФССП. Сайт закрыт
 // защитой от ботов (Qrator), автоматически его не опросить без обхода защиты —
@@ -140,6 +141,7 @@ export function FedresursPanel({
               disabled={saveMutation.isPending}
               onClick={() => saveMutation.mutate("not_found")}
             >
+              {saveMutation.isPending && saveMutation.variables === "not_found" && <Spinner />}
               Банкротства нет
             </button>
             <button
@@ -171,6 +173,7 @@ export function FedresursPanel({
             disabled={saveMutation.isPending || !comment.trim()}
             onClick={() => saveMutation.mutate("found")}
           >
+            {saveMutation.isPending && <Spinner />}
             Сохранить
           </button>
         </div>

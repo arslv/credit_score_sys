@@ -5792,7 +5792,7 @@ mark {
 /* Действия прямо в «Проверках» (16.11.2026): кнопки БКИ — внизу плитки
    кредитной истории, ручные ФССП и Федресурс — под своей строкой. */
 .chk__action {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .chk__bki-action {
@@ -5867,23 +5867,194 @@ mark {
   color: var(--color-text-muted);
 }
 
-.bki-act__spinner {
+/* Кольцо «идёт запрос» (components/ui.tsx Spinner): в кнопке — перед текстом. */
+.spin {
+  display: inline-block;
+  flex: none;
   width: 12px;
   height: 12px;
-  border: 2px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
-  border-top-color: var(--color-accent);
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
   border-radius: 50%;
-  animation: bki-spin 0.9s linear infinite;
+  animation: spin-rotate 0.8s linear infinite;
 }
 
-@keyframes bki-spin {
+.bki-act__pending .spin {
+  color: var(--color-accent);
+}
+
+@keyframes spin-rotate {
   to {
     transform: rotate(360deg);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bki-act__spinner {
+  .spin {
+    animation-duration: 2.4s;
+  }
+}
+
+/* ФССП: «Проверить» и рядом, на втором плане, — регион (по умолчанию все). */
+.fssp-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.fssp-start__region-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.fssp-start__region-link:hover:not(:disabled) {
+  color: var(--color-accent);
+}
+
+.fssp-start__region {
+  height: var(--control-height-sm);
+  max-width: 220px;
+  padding: 0 8px;
+  font-family: inherit;
+  font-size: var(--font-xs);
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+}
+
+.fssp-captcha {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.fssp-captcha > .alert {
+  margin: 0;
+}
+
+.fssp-captcha__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.fssp-captcha__row .input {
+  height: var(--control-height-sm);
+  margin: 0;
+}
+
+.fssp-captcha__wait {
+  margin: 0;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+/* «Анализ ИИ» — заглушка «в разработке» (components/AiAnalysis.tsx). */
+.ai {
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-4) var(--space-5);
+  background:
+    radial-gradient(80% 140% at 0% 0%, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 60%),
+    var(--color-surface);
+}
+
+.ai__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--space-3);
+}
+
+.ai__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.ai__title {
+  margin: 0;
+}
+
+.ai__badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border: 1px dashed var(--color-border-strong);
+}
+
+.ai__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px dashed color-mix(in srgb, var(--color-border-strong) 80%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-subtle) 55%, transparent);
+}
+
+.ai__tile-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.ai__tile-hint {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+/* Полоска-скелет: здесь будет значение. */
+.ai__shimmer {
+  height: 8px;
+  width: 60%;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-border-strong) 50%, transparent) 0%,
+    color-mix(in srgb, var(--color-accent) 25%, transparent) 50%,
+    color-mix(in srgb, var(--color-border-strong) 50%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: ai-shimmer 2.4s ease-in-out infinite;
+}
+
+@keyframes ai-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai__shimmer {
     animation: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .ai__grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

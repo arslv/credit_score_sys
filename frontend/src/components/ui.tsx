@@ -26,6 +26,11 @@ export function PageHeader({
   );
 }
 
+// Индикатор «идёт запрос» — крутящееся кольцо; в кнопке — перед текстом.
+export function Spinner() {
+  return <span className="spin" aria-hidden="true" />;
+}
+
 export function LoadingState({ label = "Загрузка…" }: { label?: string }) {
   return (
     <p className="state state--loading" role="status">

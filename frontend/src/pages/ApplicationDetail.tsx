@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { components } from "../api/schema";
 import { useAuth } from "../auth/AuthProvider";
+import { AiAnalysis } from "../components/AiAnalysis";
 import { Badge } from "../components/Badge";
 import { ChecksOverview, subjectKey } from "../components/ChecksOverview";
 import { ClientRatingPanel } from "../components/ClientRating";
@@ -413,6 +414,9 @@ export function ApplicationDetailPage() {
         }
         rowActions={rowActions}
       />
+
+      {/* Место под ответ ИИ по заявке — модуль в разработке (решение владельца 16.11.2026). */}
+      <AiAnalysis />
 
       {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
 
