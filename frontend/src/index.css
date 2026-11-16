@@ -4908,3 +4908,21 @@ mark {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Карточка после редизайна (16.11.2026): «Изменить анкету» над серыми
+   «Принять / Отказать»; повтор проверки — в таблице «Что проверили». */
+.ah__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.checks-retry {
+  margin-left: var(--space-2);
+}
+
+/* Длинное ФИО без пробелов не залезает на блок решения. */
+.ah__name {
+  overflow-wrap: anywhere;
+}

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -24,16 +23,10 @@ import {
   decisionOutcomeLabel,
   documentKindLabel,
   humanizeFieldPath,
-  overrideOutcomeLabel,
-  passportCheckLabel,
-  passportCheckStatusLabel,
   reasonCodeLabel,
-  sourceMeta,
-  stageLabel,
   subjectTypeLabel,
 } from "../lib/labels";
 
-type Decision = components["schemas"]["DecisionOut"];
 type CheckRow = components["schemas"]["CheckOut"];
 type BureauCheck = components["schemas"]["BureauCheckOut"];
 
@@ -72,43 +65,14 @@ function BureauLines({ checks }: { checks: BureauCheck[] }) {
     </ul>
   );
 }
-type ManualOverride = components["schemas"]["ManualOverrideOut"];
-type EventTone = "ok" | "bad" | "warn" | "info" | "wait";
-type JourneyState = "done" | "bad" | "warn" | "current" | "pending" | "skipped";
-const JOURNEY_ICON: Partial<Record<JourneyState, string>> = { done: "✓", bad: "✕", warn: "!", skipped: "–" };
-
 // Статусы, которые просто повторяют последнее решение системы.
 const STATUS_MIRRORS_DECISION = new Set(["approved", "gray_zone", "rejected_a", "rejected_b", "to_operator"]);
-
-// Числа в карточке — без копеек (780, а не 780.00): баллы и пороги целые.
-function wholeNumber(value: number | string): string {
-  return String(Math.round(Number(value)));
-}
 
 function verdictTone(outcome: string | undefined): string {
   if (outcome === "approve") return "pf-verdict--ok";
   if (outcome === "reject") return "pf-verdict--bad";
   if (outcome === "manual_review") return "pf-verdict--warn";
   return "pf-verdict--wait";
-}
-
-function decisionEventTone(d: Decision): EventTone {
-  if (d.outcome === "approve") return "ok";
-  if (d.outcome === "reject") return "bad";
-  return d.stage === "B" ? "warn" : "info";
-}
-
-const EVENT_ICON: Record<EventTone, string> = { ok: "✓", bad: "✕", warn: "!", info: "→", wait: "…" };
-
-// Последняя проверка по каждой паре «источник + субъект» (порядок — как в исходном списке).
-function latestPerSource(checks: CheckRow[]): CheckRow[] {
-  const latest = new Map<string, CheckRow>();
-  for (const c of checks) {
-    const key = `${c.source}|${c.subject_type}|${c.subject_id ?? ""}`;
-    const prev = latest.get(key);
-    if (!prev || c.started_at > prev.started_at) latest.set(key, c);
-  }
-  return checks.filter((c) => latest.get(`${c.source}|${c.subject_type}|${c.subject_id ?? ""}`) === c);
 }
 
 // Инициалы для аватара: первые буквы фамилии и имени.
@@ -120,111 +84,6 @@ function initials(name: string | null): string {
     .slice(0, 2)
     .map((part) => part[0]!.toUpperCase())
     .join("");
-}
-
-// T23: оператор в CRM сменил статус у себя после решения системы — что
-// решила система, что поставил оператор и почему, обычными словами.
-function OperatorOverride({ override: o }: { override: ManualOverride }) {
-  const tone = o.reason_code === "PARTNER_OPERATOR_OVERRIDE_APPROVE" ? "approve" : "reject";
-  return (
-    <div className={`override override--${tone}`}>
-      <div className="override__head">
-        <span className="override__title">{reasonCodeLabel(o.reason_code)}</span>
-      </div>
-      <dl className="override__rows">
-        <dt>Решение системы</dt>
-        <dd>{overrideOutcomeLabel(o.decision_stage, o.from_outcome)}</dd>
-        <dt>Итог оператора</dt>
-        <dd>
-          <b>{overrideOutcomeLabel(o.decision_stage, o.to_outcome)}</b>
-        </dd>
-        <dt>Причина</dt>
-        <dd>{o.comment ?? "оператор не указал"}</dd>
-      </dl>
-    </div>
-  );
-}
-
-// Проверки стадии — точками в строке события, без пояснений: что не в
-// порядке, видно по цвету, подробности — по «подробнее» у события.
-function CheckChips({
-  checks,
-  passport,
-  bureau = [],
-}: {
-  checks: CheckRow[];
-  passport: PassportCheck[];
-  bureau?: BureauCheck[];
-}) {
-  if (checks.length === 0 && passport.length === 0 && bureau.length === 0) return null;
-  const passportTone = passport.some((i) => i.status === "fail")
-    ? "bad"
-    : passport.some((i) => i.status !== "ok")
-      ? "warn"
-      : "ok";
-  const passportOk = passport.filter((i) => i.status === "ok").length;
-  return (
-    <ul className="ev__chips">
-      {passport.length > 0 && (
-        <li className={`ev__chip ev__chip--${passportTone}`}>
-          Паспорт {passportOk}/{passport.length}
-        </li>
-      )}
-      {checks.map((c) => (
-        <li
-          key={c.id}
-          className={`ev__chip ev__chip--${checkTone(c.status)}`}
-          title={checkResultLabel(c.source, c.status)}
-        >
-          {sourceMeta(c.source).label}
-          {c.subject_type === "guarantor" && " (поручитель)"}
-        </li>
-      ))}
-      {bureau.map((b) => (
-        <li key={b.id} className={`ev__chip ev__chip--${checkTone(b.status)}`} title={checkResultLabel(b.source, b.status)}>
-          {sourceMeta(b.source).label} <BkiTag />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-type FeedEvent = {
-  key: string;
-  at: string | null;
-  tone: EventTone;
-  title: string;
-  chips?: React.ReactNode;
-  details?: React.ReactNode;
-};
-
-// Событие хода заявки — одна строка: значок, что произошло, проверки
-// точками, время. Причины и проверки по пунктам — по «подробнее» (в DOM
-// остаются, только скрыты).
-function FeedRow({ event: e }: { event: FeedEvent }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <li className={`ev ev--${e.tone}`}>
-      <span className="ev__icon" aria-hidden="true">
-        {EVENT_ICON[e.tone]}
-      </span>
-      <div className="ev__line">
-        <h3 className="ev__title">{e.title}</h3>
-        {e.chips}
-        {e.details && (
-          <button type="button" className="btn-link ev__more" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-            {open ? "скрыть" : "подробнее"}
-          </button>
-        )}
-        {e.at && <span className="ev__time">{formatDateTime(e.at)}</span>}
-      </div>
-      {e.details && (
-        <div className="ev__details" hidden={!open}>
-          {e.details}
-        </div>
-      )}
-    </li>
-  );
 }
 
 export function ApplicationDetailPage() {
@@ -288,13 +147,6 @@ export function ApplicationDetailPage() {
   const stageB = latestStageBPayload(app.external_snapshots);
   const explanation = latestDecision ? explainDecision(latestDecision) : null;
 
-  const decisionsA = app.decisions.filter((d) => d.stage === "A");
-  const decisionsB = app.decisions.filter((d) => d.stage === "B");
-  const latestA = decisionsA.length > 0 ? decisionsA[decisionsA.length - 1]! : null;
-  const latestB = decisionsB.length > 0 ? decisionsB[decisionsB.length - 1]! : null;
-  const rejectedAtA = latestA?.outcome === "reject" && !latestB;
-  const reviewSnapshots = app.external_snapshots.filter((s) => s.stage === "B");
-  const reviewedAt = reviewSnapshots.length > 0 ? reviewSnapshots[reviewSnapshots.length - 1]!.received_at : null;
 
   const visibleChecks = app.checks.filter((c) => c.source !== "mvd");
   const bureauChecks = app.bureau_checks ?? [];
@@ -302,19 +154,6 @@ export function ApplicationDetailPage() {
     (b, i) => !bureauChecks.slice(i + 1).some((n) => n.source === b.source && n.subject_type === b.subject_type),
   );
   const bureauFor = (source: string) => bureauLatest.filter((b) => b.source === source);
-  // Поручитель после повторного «Рассмотреть» записывается заново (новый id):
-  // в ленте и на шкале — проверки только текущего; вся история — в таблице.
-  const currentChecks = visibleChecks.filter(
-    (c) => c.subject_type !== "guarantor" || (c.subject_id ?? null) === (app.guarantor_id ?? null),
-  );
-  // Ручные проверки (ФССП, Федресурс) и поручитель — после звонка, к стадии Б.
-  const isManual = (c: CheckRow) => c.source === "fssp" || c.source === "fedresurs";
-  // В ленте — только последняя попытка по каждому источнику и субъекту:
-  // повторные проверки (ФССП с новой капчей, «Повторить») пишутся новыми
-  // строками, вся история — в «Все проверки одной таблицей».
-  const latestChecks = latestPerSource(currentChecks);
-  const checksA = latestChecks.filter((c) => c.subject_type !== "guarantor" && !isManual(c));
-  const checksB = latestChecks.filter((c) => c.subject_type === "guarantor" || isManual(c));
 
   // T23 (по отзыву): отдельного списка дел нет. Что требует действия здесь —
   // в закреплённом блоке «Нужно ваше действие» с самими проверками; что
@@ -370,8 +209,6 @@ export function ApplicationDetailPage() {
   // Отчёт БКИ не получен (бюро не подключено, недоступно…) — серая зона, но
   // запрос можно повторить теми же кнопками.
   const bkiRetry = app.bki_request_state === "retry";
-  const bkiNeedsAction = bkiWaiting && !app.bki_order?.pending;
-  const actionCount = Number(fsspNeedsAction) + Number(fedresursNeedsAction) + Number(bkiNeedsAction);
   // Ручные проверки (ФССП, банкротство) — одна карточка на постоянном месте:
   // отметили одну — вторая не перескакивает.
   const manualActionCount = Number(fsspNeedsAction) + Number(fedresursNeedsAction);
@@ -426,80 +263,6 @@ export function ApplicationDetailPage() {
   const guarantorNeeded = (app.client_rating?.guarantor_reasons.length ?? 0) > 0;
   const profileRows = clientBlock.filter((row) => row.label !== "ФИО");
   const innFound = Boolean(innOf("applicant", null));
-
-  // Ход заявки — от новых к старым, по строке на событие. У последнего
-  // решения каждой стадии — проверки точками; причины и проверки по пунктам
-  // — по «подробнее».
-  const events: FeedEvent[] = [
-    {
-      key: "submitted",
-      at: app.submitted_at,
-      tone: "ok" as const,
-      title: "Заявка подана",
-    },
-    ...app.decisions.map((d): FeedEvent => {
-      const isLatestOfStage = d === (d.stage === "A" ? latestA : latestB);
-      const outcome = decisionOutcomeLabel(d.stage, d.outcome);
-      const stageChecks = d.stage === "A" ? checksA : checksB;
-      const passport = d.stage === "A" ? app.passport_checks : [];
-      const reasons =
-        d === latestDecision && explanation ? (
-          <DecisionReasons explanation={explanation} />
-        ) : (
-          d.reason_text && <p className="ev__text">{d.reason_text}</p>
-        );
-      return {
-        key: `decision-${d.id}`,
-        at: d.created_at,
-        tone: decisionEventTone(d),
-        title: `Стадия ${stageLabel(d.stage)}: ${outcome[0]!.toLowerCase()}${outcome.slice(1)}`,
-        chips: isLatestOfStage ? (
-          <CheckChips checks={stageChecks} passport={passport} bureau={d.stage === "B" ? bureauLatest : []} />
-        ) : undefined,
-        details: isLatestOfStage ? (
-          <>
-            {reasons}
-            {(stageChecks.length > 0 || passport.length > 0) && (
-              <CheckList
-                checks={stageChecks}
-                canRetry={canRetry}
-                retry={retry}
-                busy={retryMutation.isPending}
-                leading={passport.length > 0 ? <PassportRow items={passport} /> : null}
-              />
-            )}
-          </>
-        ) : (
-          reasons || undefined
-        ),
-      };
-    }),
-    ...(reviewedAt ? [{ key: "call", at: reviewedAt, tone: "ok" as const, title: "Оператор нажал «Рассмотреть» в CRM" }] : []),
-    ...app.manual_overrides.map(
-      (o): FeedEvent => ({
-        key: `override-${o.id}`,
-        at: o.created_at,
-        tone: o.reason_code === "PARTNER_OPERATOR_OVERRIDE_APPROVE" ? "ok" : "bad",
-        title: `Оператор CRM: ${overrideOutcomeLabel(o.decision_stage, o.to_outcome).toLowerCase()}`,
-        details: <OperatorOverride override={o} />,
-      }),
-    ),
-  ]
-    // От новых к старым; при одинаковом времени — в порядке хода заявки
-    // (подача → стадия А → звонок → стадия Б), только перевёрнутом.
-    .map((e, order) => ({ e, order }))
-    .sort((a, b) => (b.e.at ?? "").localeCompare(a.e.at ?? "") || b.order - a.order)
-    .map(({ e }) => e);
-  // Что ждём дальше — сверху ленты, без времени.
-  if (!latestA && !reviewedAt && !latestB) {
-    events.unshift({ key: "next", at: null, tone: "wait", title: "Идут проверки стадии А" });
-  } else if (latestA && !rejectedAtA && !reviewedAt && !latestB) {
-    events.unshift({ key: "next", at: null, tone: "wait", title: "Ждём «Рассмотреть» от оператора CRM" });
-  }
-
-  const ptiPercent = latestB?.pti != null ? Math.round(latestB.pti * 100) : null;
-  const ptiMaxPercent = latestB?.pti_max != null ? Math.round(latestB.pti_max * 100) : null;
-  const score = latestDecision?.score ?? null;
 
   const fsspSection = (
     <section className="mc" key="fssp">
@@ -573,58 +336,7 @@ export function ApplicationDetailPage() {
     </section>
   );
 
-  // Путь заявки целиком — что пройдено и что осталось до окончательного решения.
-  const manualHit = manualState.some((s) => s.fssp?.status === "hit" || s.fed?.status === "hit");
   const lastOverride = app.manual_overrides.length > 0 ? app.manual_overrides[app.manual_overrides.length - 1]! : null;
-  const callDone = Boolean(reviewedAt) || Boolean(latestB);
-  const manualLeft = [
-    fsspLeft.length > 0 && `ФССП ${joinRu(fsspLeft)}`,
-    fedLeft.length > 0 && `банкротство ${joinRu(fedLeft)}`,
-  ]
-    .filter(Boolean)
-    .join(", ");
-  const journey: { label: string; note: string; state: JourneyState }[] = [
-    { label: "Подача", note: formatDateTime(app.submitted_at), state: "done" },
-    {
-      label: "Стадия А",
-      note: latestA ? decisionOutcomeLabel("A", latestA.outcome) : callDone ? "нет записи" : "идёт",
-      state: latestA ? (latestA.outcome === "reject" ? "bad" : "done") : callDone ? "skipped" : "current",
-    },
-    {
-      label: "Звонок оператора",
-      // Решение стадии Б без снимка «Рассмотреть» — звонок был, времени нет.
-      note: reviewedAt ? formatDateTime(reviewedAt) : callDone ? "был" : rejectedAtA ? "не понадобился" : latestA ? "ждём" : "впереди",
-      state: callDone ? "done" : rejectedAtA ? "skipped" : latestA ? "current" : "pending",
-    },
-    {
-      label: "Стадия Б",
-      note: bkiWaiting
-        ? app.bki_order?.pending ? "ждём ответа БКИ" : "ждёт запроса КИ"
-        : latestB
-        ? decisionOutcomeLabel("B", latestB.outcome)
-        : app.status === "stage_b" ? "идёт" : rejectedAtA ? "не проводилась" : "впереди",
-      state: bkiWaiting
-        ? app.bki_order?.pending ? "current" : "warn"
-        : latestB
-        ? latestB.outcome === "approve" ? "done" : latestB.outcome === "reject" ? "bad" : "warn"
-        : app.status === "stage_b" ? "current" : rejectedAtA ? "skipped" : "pending",
-    },
-    {
-      label: "ФССП и банкротство",
-      // После отказа ручные проверки уже ничего не меняют.
-      note: manualHit ? "есть находки" : !manualLeft ? "проверены" : latestDecision?.outcome === "reject" ? "не нужны после отказа" : `осталось: ${manualLeft}`,
-      state: manualHit ? "bad" : !manualLeft ? "done" : latestDecision?.outcome === "reject" ? "skipped" : actionCount > 0 ? "warn" : "pending",
-    },
-    {
-      label: manual ? "Решение" : "Решение в CRM",
-      note: lastOverride
-        ? `оператор: ${overrideOutcomeLabel(lastOverride.decision_stage, lastOverride.to_outcome).toLowerCase()}`
-        : latestDecision?.outcome === "reject" ? "отказ" : latestB?.outcome === "approve" ? "одобрено" : grayStageB ? (manual ? "за сотрудником" : "за оператором CRM") : "впереди",
-      state: lastOverride
-        ? "done"
-        : latestDecision?.outcome === "reject" ? "bad" : latestB?.outcome === "approve" ? "done" : grayStageB ? "current" : "pending",
-    },
-  ];
   // Оператор CRM уже решил по последнему решению системы (одобрил / отказал)
   // — сверху показываем его итог и цвет, решение системы — строкой ниже.
   const operatorFinal: "approve" | "reject" | null =
@@ -636,13 +348,10 @@ export function ApplicationDetailPage() {
           : null
       : null;
   const headerOutcome = operatorFinal ?? latestDecision?.outcome;
-  const ratingTone =
-    app.client_rating == null ? "" : app.client_rating.total > 0 ? "ah-metric__value--ok" : app.client_rating.total < 0 ? "ah-metric__value--bad" : "";
 
-  // T23 (по отзыву): сверху — всё, по чему решают «давать или нет»: кто
-  // клиент, решение и его причина, кнопки, главные цифры (балл, ПДН, платёж,
-  // рейтинг, ИИ) и путь заявки с тем, что осталось. Ниже — что нужно сделать
-  // руками, ход заявки и ручные проверки. Анкета, сделка, проверки таблицей,
+  // Редизайн 16.11.2026 (решение владельца): сверху — кто клиент и решение
+  // с причиной (одно место), кнопки. Ниже — кредитная история, ручные
+  // проверки, рейтинг клиента. Стадии, ряд цифр и ход заявки убраны. Анкета, сделка, проверки таблицей,
   // документы и история — свёрнутыми разделами в самом низу.
   return (
     <div className={headerOutcome === "manual_review" ? "ac2 ac2--gray" : "ac2"}>
@@ -684,11 +393,7 @@ export function ApplicationDetailPage() {
 
           <div className="ah__verdict">
             <div className="pf-kicker">
-              {operatorFinal
-                ? `Решение оператора CRM · ${formatDateTime(lastOverride!.created_at)}`
-                : latestDecision
-                  ? `Решение системы · стадия ${stageLabel(latestDecision.stage)}`
-                  : "Решения пока нет"}
+              {operatorFinal ? `Решение оператора CRM · ${formatDateTime(lastOverride!.created_at)}` : "Решение"}
             </div>
             <div className="pf-verdict__title">
               <VerdictTitle
@@ -712,11 +417,13 @@ export function ApplicationDetailPage() {
             {/* Причина — на момент решения. ФССП с тех пор пройдена — так и
                 пишем, а не «не пройдена», как было тогда. */}
             {operatorFinal && latestDecision ? (
-              <p className="pf-verdict__reason">
-                Система, стадия {stageLabel(latestDecision.stage)}:{" "}
-                {decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome).toLowerCase()}
-                {explanation?.reason ? ` — ${explanation.reason}` : ""}
-              </p>
+              <>
+                {lastOverride?.comment && <p className="pf-verdict__reason">Оператор: {lastOverride.comment}</p>}
+                <p className="pf-verdict__reason">
+                  Система: {decisionOutcomeLabel(latestDecision.stage, latestDecision.outcome).toLowerCase()}
+                  {explanation?.reason ? ` — ${explanation.reason}` : ""}
+                </p>
+              </>
             ) : fsspDoneAfterGray ? (
               <p className="pf-verdict__reason">
                 На момент решения ФССП не была пройдена. Сейчас пройдена — новое решение будет, когда оператор
@@ -743,117 +450,22 @@ export function ApplicationDetailPage() {
           {/* «Принять» / «Отказать» — будущая отправка решения в CRM по API.
               Пока недоступны: серые, не нажимаются. */}
           {canOperateFssp && (
-            <div className="ah__actions decision-stub" aria-disabled="true">
-              <div className="decision-stub__row">
-                <button type="button" className="btn decision-stub__btn" disabled aria-describedby="decision-stub-note">
+            <div className="ah__actions">
+              <Link className="btn" to={`/applications/${app.id}/edit`}>
+                Изменить анкету
+              </Link>
+              <div className="decision-stub__row" title="Пока недоступно — появится позже">
+                <button type="button" className="btn decision-stub__btn" disabled>
                   Принять
                 </button>
-                <button type="button" className="btn decision-stub__btn" disabled aria-describedby="decision-stub-note">
+                <button type="button" className="btn decision-stub__btn" disabled>
                   Отказать
                 </button>
               </div>
-              <p id="decision-stub-note" className="decision-stub__note">
-                Пока недоступно — появится позже: решение будет уходить в CRM отсюда.
-              </p>
             </div>
           )}
         </div>
 
-        <div className="ah__metrics">
-          <div className="ah-metric">
-            <div className="ah-metric__label">Балл БКИ</div>
-            <div className="ah-metric__value">{score != null ? wholeNumber(score) : "—"}</div>
-            {score != null &&
-            latestDecision?.score_auto_approve_above != null &&
-            latestDecision.score_auto_reject_below != null ? (
-              <>
-                <div
-                  className="score-scale"
-                  style={
-                    {
-                      "--reject-at": `${(Number(latestDecision.score_auto_reject_below) / 999) * 100}%`,
-                      "--approve-at": `${(Number(latestDecision.score_auto_approve_above) / 999) * 100}%`,
-                    } as React.CSSProperties
-                  }
-                >
-                  <div className="marker" style={{ left: `${Math.min(100, Math.max(0, (Number(score) / 999) * 100))}%` }} />
-                </div>
-                <div className="ah-metric__hint">
-                  отказ &lt; {wholeNumber(latestDecision.score_auto_reject_below)} · одобрение от{" "}
-                  {wholeNumber(latestDecision.score_auto_approve_above)}
-                </div>
-              </>
-            ) : (
-              <div className="ah-metric__hint">{score != null ? "пороги не заданы" : "после стадии Б"}</div>
-            )}
-          </div>
-          <div className="ah-metric">
-            <div className="ah-metric__label">Долговая нагрузка</div>
-            <div className="ah-metric__value">
-              {ptiPercent != null ? `${ptiPercent}%` : "—"}
-              {ptiPercent != null && ptiMaxPercent != null && <span className="ah-metric__of"> из {ptiMaxPercent}%</span>}
-            </div>
-            {ptiPercent != null && ptiMaxPercent != null ? (
-              <div className="pti-bar">
-                <i
-                  className={ptiPercent > ptiMaxPercent ? "pti-bar__fill pti-bar__fill--bad" : "pti-bar__fill"}
-                  style={{ width: `${Math.min(100, ptiPercent)}%` }}
-                />
-                <u className="pti-bar__limit" style={{ left: `${Math.min(100, ptiMaxPercent)}%` }} />
-              </div>
-            ) : (
-              <div className="ah-metric__hint">после стадии Б</div>
-            )}
-          </div>
-          <div className="ah-metric">
-            <div className="ah-metric__label">Платёж в месяц</div>
-            <div className="ah-metric__value">
-              {latestDecision?.installment_payment ? `${formatAmount(latestDecision.installment_payment)} ₽` : "—"}
-            </div>
-            <div className="ah-metric__hint">
-              {app.term_months > 0 ? `взнос ${formatAmount(app.down_payment)} ₽ · ${app.term_months} мес.` : "после «Рассмотреть»"}
-            </div>
-          </div>
-          <div className="ah-metric">
-            <div className="ah-metric__label">Рейтинг клиента</div>
-            <div className={`ah-metric__value ${ratingTone}`}>
-              {app.client_rating ? (app.client_rating.total > 0 ? `+${app.client_rating.total}` : String(app.client_rating.total)) : "—"}
-            </div>
-            <div className="ah-metric__hint">
-              {app.client_rating ? (
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => document.getElementById("client-rating")?.scrollIntoView({ behavior: "smooth" })}
-                >
-                  что повлияло ↓
-                </button>
-              ) : (
-                "после «Рассмотреть»"
-              )}
-            </div>
-          </div>
-          <section className="ah-metric ah-metric--soon">
-            <div className="ah-metric__head">
-              <h3 className="ah-metric__label">Анализ ИИ</h3>
-              <span className="soon-tag">в разработке</span>
-            </div>
-            <div className="ah-metric__value ah-metric__value--muted">—</div>
-            <div className="ah-metric__hint">Анализ пока не проводится и на решение не влияет.</div>
-          </section>
-        </div>
-
-        <ol className="journey" aria-label="Путь заявки">
-          {journey.map((step, i) => (
-            <li key={step.label} className={`journey__step journey__step--${step.state}`}>
-              <span className="journey__dot" aria-hidden="true">
-                {JOURNEY_ICON[step.state] ?? i + 1}
-              </span>
-              <span className="journey__label">{step.label}</span>
-              <span className="journey__note">{step.note}</span>
-            </li>
-          ))}
-        </ol>
       </section>
 
       {/* Кредитная история — отдельным блоком: запрос в БКИ платный, по кнопке. */}
@@ -900,19 +512,10 @@ export function ApplicationDetailPage() {
 
       {app.client_rating && <ClientRatingPanel rating={app.client_rating} />}
 
-      <section className="pf-card pf-feed">
-        <h2 className="pf-section-title">Ход заявки</h2>
-        <ol className="feed">
-          {events.map((e) => (
-            <FeedRow key={e.key} event={e} />
-          ))}
-        </ol>
-        {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
-      </section>
-
       {/* Всё вспомогательное — ниже и свёрнуто: открывают, когда нужно. */}
       <div className="more">
         <h2 className="more__title">Данные заявки</h2>
+        {retryMutation.isError && <p role="alert" className="alert">Не удалось повторить проверку.</p>}
 
         <details className="more__item">
           <summary>
@@ -976,7 +579,18 @@ export function ApplicationDetailPage() {
                     <td className="muted">{subjectTypeLabel(c.subject_type)}</td>
                     <td>{checkResultLabel(c.source, c.status)}</td>
                     <td className="muted">{formatDateTime(c.started_at)}</td>
-                    <td className="muted">{c.error_text ?? "—"}</td>
+                    <td className="muted">
+                      {c.error_text ?? "—"}
+                      {c.can_retry && canRetry && (
+                        <button
+                          className="btn btn-small checks-retry"
+                          disabled={retryMutation.isPending}
+                          onClick={() => retry(c.id)}
+                        >
+                          Повторить
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {bureauChecks.map((b) => (
@@ -1106,142 +720,10 @@ export function ApplicationDetailPage() {
   );
 }
 
-function DecisionReasons({ explanation }: { explanation: NonNullable<ReturnType<typeof explainDecision>> }) {
-  if (explanation.causes.length === 0 && explanation.passed.length === 0 && explanation.unknown.length === 0) {
-    return null;
-  }
-  return (
-    <div className="stage__reasons">
-      {explanation.causes.length > 0 && (
-        <>
-          <h3 className="subhead">Причина</h3>
-          <ul className="reason-list" data-testid="decision-causes">
-            {explanation.causes.map((text) => (
-              <li key={text} className="reason-item reason-item--cause">{text}</li>
-            ))}
-          </ul>
-        </>
-      )}
-      {explanation.passed.length > 0 && (
-        <>
-          <h3 className="subhead">В норме</h3>
-          <ul className="reason-list reason-list--minor" data-testid="decision-passed">
-            {explanation.passed.map((text) => (
-              <li key={text} className="reason-item reason-item--pass">{text}</li>
-            ))}
-          </ul>
-        </>
-      )}
-      {explanation.unknown.length > 0 && (
-        <ul className="reason-list reason-list--minor" data-testid="decision-unknown">
-          {explanation.unknown.map((text) => (
-            <li key={text} className="reason-item">{text}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 function checkTone(status: string): "ok" | "bad" | "warn" {
   if (status === "hit") return "bad";
   if (status === "source_unavailable" || status === "error") return "warn";
   return "ok";
-}
-
-type PassportCheck = components["schemas"]["PassportCheckOut"];
-
-const PASSPORT_TONE: Record<string, "ok" | "bad" | "warn"> = { ok: "ok", fail: "bad", warn: "warn", unknown: "warn" };
-const TONE_ICON = { ok: "✓", bad: "✕", warn: "!" } as const;
-
-// T23: паспорт виден в карточке всегда, а не только при отказе. Одна строка
-// с итогом; по кнопке — что именно проверено и результат каждого пункта.
-function PassportRow({ items }: { items: PassportCheck[] }) {
-  const [open, setOpen] = useState(false);
-  const tone = items.some((i) => i.status === "fail")
-    ? "bad"
-    : items.some((i) => i.status !== "ok")
-      ? "warn"
-      : "ok";
-  const problems = items.filter((i) => i.status !== "ok").length;
-  const summary =
-    tone === "ok"
-      ? `в порядке · ${items.length} из ${items.length}`
-      : tone === "bad"
-        ? "нарушение"
-        : `замечаний: ${problems}`;
-  return (
-    <li className={`checklist__item checklist__item--${tone} passport-row`}>
-      <span className="checklist__icon" aria-hidden="true">
-        {TONE_ICON[tone]}
-      </span>
-      <span className="checklist__source">Паспорт</span>
-      <span className="checklist__result">{summary}</span>
-      <button
-        type="button"
-        className="btn-link passport-row__toggle"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {open ? "скрыть" : "что проверили"}
-      </button>
-      {open && (
-        <ul className="passport-row__items">
-          {items.map((item) => {
-            const itemTone = PASSPORT_TONE[item.status] ?? "warn";
-            return (
-              <li key={item.key} className={`checklist__item checklist__item--${itemTone}`}>
-                <span className="checklist__icon" aria-hidden="true">
-                  {TONE_ICON[itemTone]}
-                </span>
-                <span>{passportCheckLabel(item.key)}</span>
-                <span className="checklist__result">{passportCheckStatusLabel(item.status)}</span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </li>
-  );
-}
-
-function CheckList({
-  checks,
-  canRetry,
-  retry,
-  busy,
-  leading = null,
-}: {
-  checks: CheckRow[];
-  canRetry: boolean;
-  retry: (checkId: string) => void;
-  busy: boolean;
-  /** Строка перед проверками источников (T23: паспорт стадии А). */
-  leading?: React.ReactNode;
-}) {
-  if (checks.length === 0 && !leading) return <p className="stage__reason muted">Проверок пока нет.</p>;
-  return (
-    <ul className="checklist">
-      {leading}
-      {checks.map((c) => (
-        <li key={c.id} className={`checklist__item checklist__item--${checkTone(c.status)}`}>
-          <span className="checklist__icon" aria-hidden="true">
-            {checkTone(c.status) === "ok" ? "✓" : checkTone(c.status) === "bad" ? "✕" : "!"}
-          </span>
-          <span className="checklist__source">
-            <SourceBadge source={c.source} />
-            {c.subject_type === "guarantor" && <span className="muted"> · поручитель</span>}
-          </span>
-          <span className="checklist__result">{checkResultLabel(c.source, c.status)}</span>
-          {c.can_retry && canRetry && (
-            <button className="btn btn-small" disabled={busy} onClick={() => retry(c.id)}>
-              Повторить
-            </button>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
 }
 
 function KeyValue({ rows }: { rows: { label: string; value: string }[] }) {

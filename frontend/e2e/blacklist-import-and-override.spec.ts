@@ -38,14 +38,11 @@ test("решение оператора заказчика — что решил
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.application.id}`);
 
-  // В ходе заявки — строкой «Оператор CRM: …», подробности — по «подробнее».
-  const event = page.locator(".ev", { has: page.getByRole("heading", { name: /^Оператор CRM: / }) }).first();
-  await expect(event).toBeVisible();
-  await event.getByRole("button", { name: "подробнее" }).click();
-  const section = event.locator(".override");
-  await expect(section.getByText("Оператор одобрил заявку вручную в CRM")).toBeVisible();
-  await expect(section.getByText("Решение системы")).toBeVisible();
-  await expect(section.getByText("Итог оператора")).toBeVisible();
-  await expect(section.getByText("Одобрено")).toBeVisible();
-  await expect(section.getByText(/manual_|approve\b/)).toHaveCount(0);
+  // Редизайн 16.11.2026: решение в одном месте — в шапке. Итог оператора
+  // CRM сверху, что решила система — строкой ниже.
+  const verdict = page.locator(".ah__verdict");
+  await expect(verdict.getByRole("heading", { name: /Одобрено оператором/ })).toBeVisible();
+  await expect(verdict).toContainText("Решение оператора CRM");
+  await expect(verdict).toContainText("Система: передано оператору");
+  await expect(verdict.getByText(/manual_|approve\b/)).toHaveCount(0);
 });

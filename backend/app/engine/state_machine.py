@@ -65,3 +65,30 @@ def transition(
             employee_id=employee_id,
         )
     )
+
+
+# Правка анкеты сотрудником (app/api/manual_applications.py, решение владельца
+# 16.11.2026): заявку проверяют заново — стадия А и Б по исправленным
+# данным, поэтому статус возвращается в awaiting_data. Не в ALLOWED_TRANSITIONS:
+# там rejected_* и прочие — конечные (по ним считается «застряла» в
+# app/api/system.py), а возврат — отдельное осознанное действие сотрудника.
+REOPEN_FOR_EDIT_FROM = frozenset({
+    "to_operator", "ocr_failed", "awaiting_bki", "gray_zone", "rejected_a", "rejected_b", "approved",
+})
+
+
+def reopen_for_edit(session: AsyncSession, application: Application, *, employee_id: UUID) -> None:
+    """Вернуть заявку на проверку после правки анкеты. awaiting_data — уже
+    ждёт данных, переход не нужен. Не коммитит."""
+    from_status = application.status
+    if from_status == "awaiting_data":
+        return
+    if from_status not in REOPEN_FOR_EDIT_FROM:
+        raise InvalidTransitionError(from_status, "awaiting_data")
+    application.status = "awaiting_data"
+    session.add(
+        StatusHistory(
+            application_id=application.id, from_status=from_status, to_status="awaiting_data",
+            actor_type="employee", employee_id=employee_id,
+        )
+    )

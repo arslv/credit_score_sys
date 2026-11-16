@@ -31,6 +31,7 @@ export function App() {
           <Route path="/applications" element={<ApplicationsListPage />} />
           <Route path="/applications/new" element={<NewApplicationPage />} />
           <Route path="/applications/:id" element={<ApplicationDetailPage />} />
+          <Route path="/applications/:id/edit" element={<NewApplicationPage />} />
           <Route path="/clients" element={<ClientsListPage />} />
           <Route path="/clients/:id" element={<ClientDetailPage />} />
           <Route path="/contracts" element={<ContractsListPage />} />

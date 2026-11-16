@@ -1,6 +1,6 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { PageHeader } from "../components/ui";
@@ -28,6 +28,39 @@ const EMPTY = {
 type FormState = typeof EMPTY;
 
 const orNull = (value: string) => (value.trim() ? value.trim() : null);
+
+// Анкета с сервера (GET /api/manual-applications/{id}/form) → поля формы.
+type ServerForm = Record<string, unknown> & {
+  passport?: Record<string, unknown> | null;
+  employment?: Record<string, unknown> | null;
+  guarantor?: Record<string, unknown> | null;
+};
+const str = (value: unknown) => (value === null || value === undefined ? "" : String(value));
+
+function formOf(d: ServerForm): FormState {
+  const p = d.passport ?? {};
+  const e = d.employment ?? {};
+  const g = d.guarantor ?? null;
+  const num = (value: unknown) => (str(value) === "0" ? "" : str(value));
+  return {
+    ...EMPTY,
+    last_name: str(d.last_name), first_name: str(d.first_name), middle_name: str(d.middle_name),
+    phone: str(d.phone) || "+7",
+    birth_date: str(p.birth_date), passport_series: str(p.passport_series), passport_number: str(p.passport_number),
+    issue_date: str(p.issue_date), issued_by: str(p.issued_by), department_code: str(p.department_code),
+    registration_address: str(p.registration_address),
+    goods_name: str(d.goods_name), goods_category_code: str(d.goods_category_code),
+    goods_price: num(d.goods_price), down_payment: str(d.down_payment) || "0", term_months: num(d.term_months),
+    income: num(d.income), other_credit_payments: str(d.other_credit_payments) || "0",
+    bki_consent: Boolean(d.bki_consent),
+    employment_type: str(e.type), employer: str(e.employer), position: str(e.position),
+    has_guarantor: g !== null,
+    g_last_name: str(g?.last_name), g_first_name: str(g?.first_name), g_middle_name: str(g?.middle_name),
+    g_phone: str(g?.phone), g_birth_date: str(g?.birth_date), g_passport_series: str(g?.passport_series),
+    g_passport_number: str(g?.passport_number), g_issue_date: str(g?.issue_date),
+    g_registration_address: str(g?.registration_address), g_income: str(g?.income),
+  };
+}
 
 function payloadOf(f: FormState) {
   return {
@@ -96,6 +129,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export function NewApplicationPage() {
+  // /applications/new — новая заявка; /applications/:id/edit — правка анкеты
+  // (любой заявки, решение владельца 16.11.2026): после сохранения проверка заново.
+  const { id: editId } = useParams<{ id: string }>();
   const { employee } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -114,7 +150,30 @@ export function NewApplicationPage() {
     },
   });
 
+  const current = useQuery({
+    queryKey: ["application-form", editId],
+    enabled: Boolean(editId),
+    queryFn: async () => {
+      const response = await fetch(`/api/manual-applications/${editId}/form`, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
+      if (!response.ok) throw new Error(String(response.status));
+      return (await response.json()) as ServerForm;
+    },
+  });
+  useEffect(() => {
+    if (current.data) setForm(formOf(current.data));
+  }, [current.data]);
+
   if (employee && !CREATE_ROLES.includes(employee.role)) return <Navigate to="/applications" replace />;
+  if (editId && current.isError) {
+    return (
+      <p className="alert" role="alert">
+        Не удалось загрузить анкету.
+      </p>
+    );
+  }
+  if (editId && !current.data) return <p className="muted">Загрузка…</p>;
 
   const set = (key: keyof FormState) => (e: { target: { value: string } }) => setForm({ ...form, [key]: e.target.value });
   const text = (key: keyof FormState, label: string, props: Record<string, unknown> = {}) => (
@@ -133,7 +192,7 @@ export function NewApplicationPage() {
     if (photoMain) body.append("passport_main", photoMain);
     if (photoReg) body.append("passport_reg", photoReg);
     try {
-      const response = await fetch("/api/manual-applications", {
+      const response = await fetch(editId ? `/api/manual-applications/${editId}` : "/api/manual-applications", {
         method: "POST",
         body,
         headers: { "X-Requested-With": "XMLHttpRequest" },
@@ -144,6 +203,7 @@ export function NewApplicationPage() {
         return;
       }
       void queryClient.invalidateQueries({ queryKey: ["applications"] });
+      if (editId) void queryClient.invalidateQueries({ queryKey: ["application", editId] });
       navigate(`/applications/${(result as { id: string }).id}`);
     } catch {
       setError("Нет связи с сервером — попробуйте ещё раз");
@@ -155,11 +215,15 @@ export function NewApplicationPage() {
   return (
     <form className="new-app" onSubmit={submit}>
       <p className="back-link">
-        <Link to="/applications">← Заявки</Link>
+        <Link to={editId ? `/applications/${editId}` : "/applications"}>{editId ? "← К заявке" : "← Заявки"}</Link>
       </p>
       <PageHeader
-        title="Новая заявка"
-        description="Для клиента, которого нет в CRM. После сохранения — проверки, как у заявки из CRM; решение в CRM не уходит, только здесь."
+        title={editId ? "Изменить анкету" : "Новая заявка"}
+        description={
+          editId
+            ? "После сохранения заявка проверится заново по новым данным. Запрос в БКИ — снова по кнопке."
+            : "Для клиента, которого нет в CRM. После сохранения — проверки, как у заявки из CRM; решение в CRM не уходит, только здесь."
+        }
       />
 
       <Section title="Клиент">
@@ -267,9 +331,9 @@ export function NewApplicationPage() {
       )}
       <div className="new-app__actions">
         <button type="submit" className="btn btn-primary" disabled={saving}>
-          {saving ? "Сохраняем…" : "Создать заявку"}
+          {saving ? "Сохраняем…" : editId ? "Сохранить и проверить заново" : "Создать заявку"}
         </button>
-        <Link className="btn" to="/applications">
+        <Link className="btn" to={editId ? `/applications/${editId}` : "/applications"}>
           Отмена
         </Link>
       </div>

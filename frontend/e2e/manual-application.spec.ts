@@ -39,3 +39,23 @@ test("наблюдатель не видит кнопку «Новая заяв�
   await expect(page.getByRole("heading", { name: "Заявки" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Новая заявка" })).toHaveCount(0);
 });
+
+// Правка анкеты (решение владельца 16.11.2026): форма открывается
+// заполненной, после сохранения — снова карточка заявки (проверка заново).
+test("оператор правит анкету заявки", async ({ page }) => {
+  const seed = loadSeed();
+  await login(page, seed.operator.email, seed.operator.password);
+  await page.goto(`/applications/${seed.gray_fssp.id}`);
+
+  await page.getByRole("link", { name: "Изменить анкету" }).click();
+  await expect(page.getByRole("heading", { name: "Изменить анкету" })).toBeVisible();
+  await expect(page.getByLabel("Фамилия", { exact: true })).not.toHaveValue("");
+  // У демо-заявки в тестовых данных нет паспорта — заполняем обязательное.
+  await page.getByLabel("Дата рождения", { exact: true }).fill("1990-05-14");
+  await page.getByLabel("Серия", { exact: true }).fill("8215");
+  await page.getByLabel("Номер", { exact: true }).fill(String(100000 + Math.floor(Math.random() * 899999)));
+  await page.getByLabel("Доход в месяц, ₽", { exact: true }).fill("123456");
+  await page.getByRole("button", { name: "Сохранить и проверить заново" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`/applications/${seed.gray_fssp.id}$`));
+});

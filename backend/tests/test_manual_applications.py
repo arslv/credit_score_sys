@@ -165,3 +165,77 @@ async def test_options_list_goods_categories_for_operator(admin_client, session_
 
     assert response.status_code == 200
     assert {"code": "test_manual_cat", "name": "Тестовая категория"} in response.json()["goods_categories"]
+
+
+# --- правка анкеты (решение владельца 16.11.2026) -------------------------------
+
+
+async def test_edit_form_reruns_checks_with_new_data(
+    admin_client, session_factory, app_storage, queued, partner_admin, partner_client, active_ruleset,
+):
+    """Сотрудник открывает анкету, исправляет — заявка возвращается на
+    проверку (awaiting_data) и проходит стадии А и Б заново по новым данным;
+    прежние данные остаются (новые строки, правило 1)."""
+    from sqlalchemy import func
+
+    from app.models import StatusHistory
+
+    await _as(admin_client, session_factory, "operator")
+    created = (await _post(admin_client, _form())).json()
+    await _stage_a_then_b_from_crm_data(session_factory, created["id"], partner_client)
+
+    form = (await admin_client.get(f"{PATH}/{created['id']}/form")).json()
+    assert form["last_name"] == "Тестов" and form["income"] == "90000"
+    assert form["passport"]["department_code"] == "050-001"
+    assert form["employment"]["employer"] == "Школа"
+
+    form["income"] = "150000"
+    form["last_name"] = "Исправленов"
+    response = await admin_client.post(f"{PATH}/{created['id']}", data={"data": json.dumps(form, ensure_ascii=False)})
+    assert response.status_code == 200, response.text
+    assert queued[-1] == created["id"]
+
+    async with session_factory() as session:
+        application = await session.get(Application, created["id"])
+        assert application.status == "awaiting_data"
+        last = (
+            await session.execute(
+                select(StatusHistory).where(StatusHistory.application_id == application.id)
+                .order_by(StatusHistory.created_at.desc()).limit(1)
+            )
+        ).scalar_one()
+        assert (last.from_status, last.to_status, last.actor_type) == ("gray_zone", "awaiting_data", "employee")
+        assert (
+            await session.execute(select(func.count()).select_from(OcrResult).where(OcrResult.application_id == application.id))
+        ).scalar_one() == 2  # прежний паспорт не перезаписан
+        assert (
+            await session.execute(select(AuditLog).where(AuditLog.action == "edit_application", AuditLog.object_id == application.id))
+        ).scalar_one().details == {"number": application.number}
+
+    await _stage_a_then_b_from_crm_data(session_factory, created["id"], partner_client)
+    async with session_factory() as session:
+        stages = (
+            await session.execute(select(Decision.stage).where(Decision.application_id == created["id"]).order_by(Decision.created_at))
+        ).scalars().all()
+    assert stages == ["A", "B", "A", "B"]  # проверено заново
+
+    detail = (await admin_client.get(f"/api/applications/{created['id']}")).json()
+    assert detail["client_name"].startswith("Исправленов")
+
+
+async def test_edit_blocked_while_checking_and_for_viewer(
+    admin_client, session_factory, app_storage, queued, active_ruleset,
+):
+    await _as(admin_client, session_factory, "operator")
+    created = (await _post(admin_client, _form())).json()
+    async with session_factory() as session:
+        application = await session.get(Application, created["id"])
+        application.status = "stage_b"  # идёт проверка
+        await session.commit()
+
+    busy = await admin_client.post(f"{PATH}/{created['id']}", data={"data": json.dumps(_form(), ensure_ascii=False)})
+    assert busy.status_code == 409
+
+    await _as(admin_client, session_factory, "viewer")
+    assert (await admin_client.get(f"{PATH}/{created['id']}/form")).status_code == 403
+    assert (await admin_client.post(f"{PATH}/{created['id']}", data={"data": "{}"})).status_code == 403

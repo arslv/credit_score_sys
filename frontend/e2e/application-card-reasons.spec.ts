@@ -146,10 +146,6 @@ test("карточка серой зоны: «В норме» отдельно, 
   await expect(page.getByText("Проверка ФССП не пройдена").first()).toBeVisible();
   await expect(page.getByText(/Сработавшие/)).toHaveCount(0);
   await expect(page.getByTestId("decision-causes")).toHaveCount(0);
-  const passed = page.getByTestId("decision-passed");
-  await expect(passed).toContainText("Балл БКИ 760 — не ниже порога одобрения 700");
-  await expect(passed).toContainText(`ПДН 42% (с учётом платежа по рассрочке ${formatAmount("4500")} ₽) — порог отказа 60%`);
-  await expect(passed).not.toContainText("рассчитан нами");
 
   // T22: платёж по рассрочке — в «Сделке», с пометкой, что рассчитан по тарифу.
   await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toContainText(
@@ -174,7 +170,6 @@ test("карточка без дохода: «ПДН: не вычислимо»,
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.no_income.id}`);
 
-  await expect(page.getByTestId("decision-unknown")).toHaveText("ПДН: не вычислимо (нет данных о доходе)");
   await expect(page.getByText("ПДН 0%")).toHaveCount(0);
   // Серая зона не из-за ФССП — решение в CRM: строкой в вердикте, у ФССП пометки нет.
   await expect(page.locator(".verdict-action")).toHaveText("Решение принимает оператор в CRM.");
@@ -184,18 +179,18 @@ test("карточка без дохода: «ПДН: не вычислимо»,
   await expect(page.locator(".kv-row", { hasText: "Платёж в месяц" })).toHaveCount(0);
 });
 
-// T23 (вариант «Профиль и лента»): ход заявки — лента событий от новых к
-// старым; у решения стадии — его детали и проверки.
-test("ход заявки: событие стадии Б с деталями, без блока «Нужно сделать»", async ({ page }) => {
+// Редизайн 16.11.2026 (решение владельца): на странице заявки — только то,
+// что касается скоринга. Стадии, ряд цифр и «Ход заявки» убраны; решение —
+// в одном месте, в шапке.
+test("карточка без стадий, ряда цифр и хода заявки; решение — один раз", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.gray_fssp.id}`);
-  const feed = page.getByRole("heading", { name: "Ход заявки" }).locator("xpath=ancestor::section[1]");
-  const stageB = feed.locator(".ev", { hasText: "Стадия Б: серая зона" });
-  await expect(stageB).toHaveCount(1);
-  await expect(stageB.getByTestId("decision-passed")).toContainText("Балл БКИ 760");
-  // У этой заявки решение сразу на стадии Б — события стадии А нет, а не «в обработке».
-  await expect(feed.locator(".ev", { hasText: "Стадия А" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Нужно сделать" })).toHaveCount(0);
+
+  await expect(page.getByRole("heading", { level: 1, name: /Серая зона/ })).toHaveCount(1);
+  await expect(page.locator(".journey")).toHaveCount(0);
+  await expect(page.locator(".ah__metrics")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Ход заявки" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Изменить анкету" })).toBeVisible();
   await expect(page.getByText(/нужно ваше действие/i)).toBeVisible();
 });

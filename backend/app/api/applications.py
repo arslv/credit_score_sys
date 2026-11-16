@@ -58,13 +58,40 @@ router = APIRouter(prefix="/api/applications", tags=["applications"])
 _MASKED_NAME = "Клиент скрыт"
 
 
+def _join_name(parts: list) -> str | None:
+    name = " ".join(p.strip() for p in parts if isinstance(p, str) and p.strip())
+    return name or None
+
+
 def _form_name(application: Application) -> str | None:
     """ФИО из анкеты new-order (или ручной заявки) — пока клиента ещё нет
     (паспорт не проверен), чтобы в списке и карточке было видно, кто это."""
     profile = application.profile or {}
-    parts = [profile.get("last_name"), profile.get("first_name"), profile.get("middle_name")]
-    name = " ".join(p.strip() for p in parts if isinstance(p, str) and p.strip())
-    return name or None
+    return _join_name([profile.get("last_name"), profile.get("first_name"), profile.get("middle_name")])
+
+
+async def _application_name(session: AsyncSession, application: Application) -> str | None:
+    """ФИО этой заявки: из последних паспортных данных (после правки анкеты —
+    уже исправленное), иначе из анкеты. Запись clients хранит данные с
+    первого появления клиента (app/engine/clients.py) и для заявки может
+    быть устаревшей."""
+    ocr_row = (
+        await session.execute(
+            select(OcrResult).where(OcrResult.application_id == application.id)
+            .order_by(OcrResult.created_at.desc()).limit(1)
+        )
+    ).scalars().first()
+    if ocr_row is not None:
+        fields = unwrap_ocr_fields(ocr_row.fields)
+
+        def value(name: str):
+            entry = fields.get(name)
+            return entry.get("value") if isinstance(entry, dict) else entry
+
+        name = _join_name([value("last_name"), value("first_name"), value("middle_name")])
+        if name:
+            return name
+    return _form_name(application)
 # T17, часть 4 (ваше указание): оператор видит ФИО в СПИСКЕ заявок тоже (раньше —
 # только в карточке). Остальные списки/экраны по-прежнему по ROLES_WITH_FULL_PII.
 _LIST_PII_ROLES = (*ROLES_WITH_FULL_PII, "operator")
@@ -402,14 +429,14 @@ async def list_applications(
 
     async def _to_item(application: Application) -> tuple[ApplicationListItem, bool | None]:
         client_name = None
-        if list_pii and application.client_id is not None:
-            client = await session.get(Client, application.client_id)
-            if client is not None:
-                client_name = f"{client.last_name} {client.first_name} {client.middle_name or ''}".strip()
+        if list_pii:
+            client_name = await _application_name(session, application)
+            if client_name is None and application.client_id is not None:
+                client = await session.get(Client, application.client_id)
+                if client is not None:
+                    client_name = f"{client.last_name} {client.first_name} {client.middle_name or ''}".strip()
         elif application.client_id is not None:
             client_name = _MASKED_NAME
-        elif list_pii:
-            client_name = _form_name(application)
 
         decision_a = await _latest_outcome(session, application.id, "A")
         decision_b = await _latest_outcome(session, application.id, "B")
@@ -971,15 +998,14 @@ async def get_application(
 
     full_pii = employee.role in _DETAIL_PII_ROLES
     client_name = None
-    if application.client_id is not None:
-        if full_pii:
+    if full_pii:
+        client_name = await _application_name(session, application)
+        if client_name is None and application.client_id is not None:
             client = await session.get(Client, application.client_id)
             if client is not None:
                 client_name = f"{client.last_name} {client.first_name} {client.middle_name or ''}".strip()
-        else:
-            client_name = _MASKED_NAME
-    elif full_pii:
-        client_name = _form_name(application)
+    elif application.client_id is not None:
+        client_name = _MASKED_NAME
 
     decisions = (
         await session.execute(

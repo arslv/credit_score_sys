@@ -33,6 +33,8 @@ AUDIT_LOG_ACTIONS = (
     "request_bki_report",
     # Заявка заведена вручную в админке, app/api/manual_applications.py.
     "create_application",
+    # Правка анкеты сотрудником (заявка проверяется заново).
+    "edit_application",
 )
 STATUS_HISTORY_ACTOR_TYPES = ("system", "employee", "client")
 
