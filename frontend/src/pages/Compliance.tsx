@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import { EmptyState, ErrorState, LoadingState, PageHeader, SearchInput, Segmented, Toolbar, matches } from "../components/ui";
-import { formatDateTime } from "../lib/format";
+import { ErrorState, LoadingState, SearchInput, Segmented, Spinner, Toolbar, matches } from "../components/ui";
+import { formatDateTime, initialsOf } from "../lib/format";
 import { complianceVerdictLabel } from "../lib/labels";
 
 // T23 (решение владельца): бывший «Комплаенс» — «Проверка по перечням».
@@ -94,17 +94,35 @@ export function CompliancePage() {
   const visible = items.slice(0, shown);
 
   return (
-    <section>
-      <PageHeader
-        title="Проверка по перечням"
-        description="Совпадения ФИО с перечнем Росфинмониторинга. Пока не разобрано — клиент заморожен."
-      />
-      <details className="explain-fold">
+    <section className="pg">
+      <header className="pg-head">
+        <div>
+          <h1>Проверка по перечням</h1>
+          <p className="pg-head__sub">Совпадения ФИО с перечнем Росфинмониторинга. Пока не разобрано — клиент заморожен.</p>
+        </div>
+        {query.data && (
+          <div className="pg-stats">
+            <div className={frozenCount > 0 ? "pg-stat pg-stat--bad" : "pg-stat"}>
+              <span className="pg-stat__value">{frozenCount}</span>
+              <span className="pg-stat__label">ждут разбора</span>
+            </div>
+            <div className="pg-stat">
+              <span className="pg-stat__value">{all.length - frozenCount}</span>
+              <span className="pg-stat__label">разобрано</span>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* Как разобрать — три шага, свёрнуто. */}
+      <details className="wl-howto">
         <summary>Как разобрать совпадение</summary>
-        <ol>
-          <li>Откройте заявку и сравните клиента с записью перечня: дату и место рождения, паспорт. Чаще всего это однофамилец.</li>
+        <ol className="wl-steps">
           <li>
-            <b>Не он</b> — укажите причину («другая дата рождения») и подтвердите снятие: клиент снова может получить
+            <b>Сравните</b> клиента с записью перечня: дату и место рождения, паспорт. Чаще всего это однофамилец.
+          </li>
+          <li>
+            <b>Не он</b> — укажите причину («другая дата рождения») и снимите заморозку: клиент снова может получить
             рассрочку.
           </li>
           <li>
@@ -112,6 +130,7 @@ export function CompliancePage() {
           </li>
         </ol>
       </details>
+
       <Toolbar>
         <SearchInput
           value={search}
@@ -138,70 +157,92 @@ export function CompliancePage() {
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message="Не удалось загрузить совпадения." onRetry={() => void query.refetch()} />}
       {query.data && items.length === 0 && (
-        <EmptyState
-          title={freezeFilter === "frozen" ? "Разбирать нечего — заморозок нет" : "Совпадений нет"}
-          hint="Новые совпадения появятся здесь автоматически после проверки заявки."
-        />
+        <div className="pg-empty">
+          <span className="pg-empty__icon" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              width="22"
+              height="22"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z" />
+              <path d="M9 12l2 2 4-4" />
+            </svg>
+          </span>
+          <div className="pg-empty__title">
+            {freezeFilter === "frozen" ? "Разбирать нечего — заморозок нет" : "Совпадений нет"}
+          </div>
+          <div className="pg-empty__hint">Новые совпадения появятся здесь автоматически после проверки заявки.</div>
+        </div>
       )}
       {visible.length > 0 && (
-        <div className="match-list">
+        <div className="wl-list">
           {visible.map((m) => (
-            <article key={m.decision_id} className={m.freeze_active ? "match match--frozen" : "match"}>
-              <span className="match__status">
-                <span className={m.freeze_active ? "badge badge-danger" : "badge badge-neutral"}>
+            <article key={m.decision_id} className={m.freeze_active ? "wl-card wl-card--frozen" : "wl-card"}>
+              <div className="wl-card__main">
+                <span className="pg-avatar" aria-hidden="true">
+                  {initialsOf(m.client_name)}
+                </span>
+                <div className="wl-card__who">
+                  <div className="wl-card__name">{m.client_name ?? "—"}</div>
+                  <div className="pg-meta">
+                    <Link to={`/applications/${m.application_id}`}>Заявка {m.external_id}</Link>
+                    <span>{formatDateTime(m.decided_at)}</span>
+                    <span>разбор: {complianceVerdictLabel(m.latest_review_verdict)}</span>
+                  </div>
+                </div>
+                <span className={m.freeze_active ? "wl-state wl-state--frozen" : "wl-state"}>
                   {m.freeze_active ? "заморожено" : "снято"}
                 </span>
-              </span>
-              <div className="match__who">
-                <Link to={`/applications/${m.application_id}`}>{m.external_id}</Link>
-                <span className="match__name">{m.client_name ?? "—"}</span>
-              </div>
-              <div className="match__meta">
-                <span>{formatDateTime(m.decided_at)}</span>
-                <span>разбор: {complianceVerdictLabel(m.latest_review_verdict)}</span>
-              </div>
-              <div className="match__actions">
-                <button
-                  className={
-                    m.latest_review_verdict === "false_positive" ? "btn btn-small btn--chosen" : "btn btn-small"
-                  }
-                  aria-label="Не он — пометить ложным"
-                  title="Не он — пометить совпадение ложным"
-                  aria-pressed={m.latest_review_verdict === "false_positive"}
-                  disabled={reviewMutation.isPending}
-                  onClick={() =>
-                    reviewMutation.mutate({
-                      decisionId: m.decision_id, verdict: "false_positive", openLift: m.freeze_active,
-                    })
-                  }
-                >
-                  {pendingFor === m.decision_id && reviewMutation.variables?.verdict === "false_positive"
-                    ? "Сохраняю…"
-                    : "Не он"}
-                </button>
-                <button
-                  className={m.latest_review_verdict === "confirmed" ? "btn btn-small btn--chosen" : "btn btn-small"}
-                  aria-label="Он — подтвердить совпадение"
-                  title="Он — подтвердить совпадение"
-                  aria-pressed={m.latest_review_verdict === "confirmed"}
-                  disabled={reviewMutation.isPending}
-                  onClick={() =>
-                    reviewMutation.mutate({ decisionId: m.decision_id, verdict: "confirmed", openLift: false })
-                  }
-                >
-                  {pendingFor === m.decision_id && reviewMutation.variables?.verdict === "confirmed"
-                    ? "Сохраняю…"
-                    : "Он"}
-                </button>
-                {m.freeze_active && m.client_id && (
-                  <button className="btn btn-small btn-primary" onClick={() => setOpenReasonFor(m.decision_id)}>
-                    Снять заморозку
+                <div className="wl-card__actions">
+                  <button
+                    className={
+                      m.latest_review_verdict === "false_positive" ? "btn btn-small btn--chosen" : "btn btn-small"
+                    }
+                    aria-label="Не он — пометить ложным"
+                    title="Не он — пометить совпадение ложным"
+                    aria-pressed={m.latest_review_verdict === "false_positive"}
+                    disabled={reviewMutation.isPending}
+                    onClick={() =>
+                      reviewMutation.mutate({
+                        decisionId: m.decision_id,
+                        verdict: "false_positive",
+                        openLift: m.freeze_active,
+                      })
+                    }
+                  >
+                    {pendingFor === m.decision_id && reviewMutation.variables?.verdict === "false_positive" && (
+                      <Spinner />
+                    )}
+                    Не он
                   </button>
-                )}
+                  <button
+                    className={m.latest_review_verdict === "confirmed" ? "btn btn-small btn--chosen" : "btn btn-small"}
+                    aria-label="Он — подтвердить совпадение"
+                    title="Он — подтвердить совпадение"
+                    aria-pressed={m.latest_review_verdict === "confirmed"}
+                    disabled={reviewMutation.isPending}
+                    onClick={() =>
+                      reviewMutation.mutate({ decisionId: m.decision_id, verdict: "confirmed", openLift: false })
+                    }
+                  >
+                    {pendingFor === m.decision_id && reviewMutation.variables?.verdict === "confirmed" && <Spinner />}
+                    Он
+                  </button>
+                  {m.freeze_active && m.client_id && (
+                    <button className="btn btn-small btn-primary" onClick={() => setOpenReasonFor(m.decision_id)}>
+                      Снять заморозку
+                    </button>
+                  )}
+                </div>
               </div>
 
               {openReasonFor === m.decision_id && m.client_id && (
-                <div className="match__lift">
+                <div className="wl-card__lift">
                   <label className="field">
                     Причина снятия (обязательна)
                     <input value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -211,6 +252,7 @@ export function CompliancePage() {
                     disabled={liftFreezeMutation.isPending || !reason.trim()}
                     onClick={() => submitLiftFreeze(m.client_id!, m.decision_id)}
                   >
+                    {liftFreezeMutation.isPending && <Spinner />}
                     Подтвердить снятие
                   </button>
                   <button className="btn" onClick={() => setOpenReasonFor(null)}>
@@ -219,12 +261,12 @@ export function CompliancePage() {
                 </div>
               )}
               {reviewError?.decisionId === m.decision_id && (
-                <div className="match__lift" role="alert">
+                <div className="wl-card__lift" role="alert">
                   <ErrorState message={`Не сохранилось: ${reviewError.message}.`} />
                 </div>
               )}
               {openReasonFor === m.decision_id && reasonError && (
-                <div className="match__lift">
+                <div className="wl-card__lift">
                   <ErrorState message={reasonError} />
                 </div>
               )}

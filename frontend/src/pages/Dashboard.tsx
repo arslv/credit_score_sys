@@ -2,7 +2,7 @@ import { useState, type MouseEvent, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { SourceBadge } from "../components/SourceBadge";
-import { EmptyState, ErrorState, LoadingState, PageHeader, Segmented } from "../components/ui";
+import { EmptyState, ErrorState, LoadingState, Segmented } from "../components/ui";
 import { funnelStepLabel, reasonCodeLabel, sourceMeta } from "../lib/labels";
 import { formatDate, formatMonth } from "../lib/format";
 import type { components } from "../api/schema";
@@ -241,11 +241,13 @@ export function DashboardPage() {
   const d = query.data;
 
   return (
-    <section className="dashboard">
-      <PageHeader
-        title="Аналитика"
-        description="Заявки, решения и портфель за период."
-      />
+    <section className="pg dashboard">
+      <header className="pg-head">
+        <div>
+          <h1>Аналитика</h1>
+          <p className="pg-head__sub">Заявки и решения за период.</p>
+        </div>
+      </header>
 
       <div className="dash-period">
         <Segmented
@@ -328,10 +330,15 @@ function DashboardBody({ d }: { d: Summary }) {
         <Kpi
           label="Одобрено"
           value={String(approved)}
-          hint={`${pct(approved, submitted)} поданных · ${pct(weeklyApproved, weeklyDecided)} решений Б`}
-          tone="ok"
+          hint={`${pct(approved, submitted)} поданных · ${pct(weeklyApproved, weeklyDecided)} решений`}
+          tone={approved > 0 ? "ok" : undefined}
         />
-        <Kpi label="Отказов" value={String(rejectedTotal)} hint={reasons[0] ? reasonCodeLabel(reasons[0].reason_code) : "нет"} />
+        <Kpi
+          label="Отказов"
+          value={String(rejectedTotal)}
+          hint={reasons[0] ? `чаще всего: ${reasonCodeLabel(reasons[0].reason_code)}` : "нет"}
+          tone={rejectedTotal > 0 ? "bad" : undefined}
+        />
       </div>
 
       <div className="dash-grid">

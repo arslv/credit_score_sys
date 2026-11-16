@@ -6278,3 +6278,520 @@ mark {
   right: 10px;
   bottom: 10px;
 }
+
+/* ── Страницы в стиле карточки заявки (16.11.2026): Перечни, Аналитика,
+   Клиенты. Шапка страницы с цифрами справа, лёгкие карточки (полупрозрачный
+   фон, мягкая рамка, скругление 12–14px), аватары-инициалы, цвета исхода. */
+.pg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-6);
+  margin-bottom: var(--space-5);
+}
+
+.pg-head h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.pg-head__sub {
+  margin: 4px 0 0;
+  font-size: var(--font-md);
+  color: var(--color-text-muted);
+}
+
+.pg-stats {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.pg-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 112px;
+  padding: 10px 16px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-subtle) 55%, transparent);
+}
+
+.pg-stat__value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.pg-stat__label {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.pg-stat--bad {
+  border-color: color-mix(in srgb, var(--status-bad) 35%, transparent);
+  background: color-mix(in srgb, var(--status-bad) 8%, transparent);
+}
+
+.pg-stat--bad .pg-stat__value {
+  color: var(--status-bad);
+}
+
+.pg-avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
+  color: #3730a3;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pg-meta {
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.pg-meta > *:not(:last-child)::after {
+  content: "·";
+  margin: 0 8px;
+  color: var(--color-border-strong);
+}
+
+.pg-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: var(--space-6) var(--space-4);
+  border: 1px dashed color-mix(in srgb, var(--color-border-strong) 80%, transparent);
+  border-radius: 14px;
+  text-align: center;
+  background: color-mix(in srgb, var(--color-subtle) 35%, transparent);
+}
+
+.pg-empty__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 4px;
+  border-radius: 12px;
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 12%, transparent);
+}
+
+.pg-empty__title {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.pg-empty__hint {
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+/* Перечни: как разобрать — три шага. */
+.wl-howto {
+  margin-bottom: var(--space-4);
+}
+
+.wl-howto > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.wl-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: wl-step;
+}
+
+.wl-steps li {
+  position: relative;
+  padding: 12px 14px 12px 46px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-subtle) 55%, transparent);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+  color: var(--color-text-muted);
+  counter-increment: wl-step;
+}
+
+.wl-steps li::before {
+  content: counter(wl-step);
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.wl-steps b {
+  color: var(--color-text);
+}
+
+/* Перечни: совпадение — карточка. */
+.wl-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.wl-card {
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-subtle) 55%, transparent);
+}
+
+.wl-card--frozen {
+  border-color: color-mix(in srgb, var(--status-bad) 35%, transparent);
+  box-shadow: inset 3px 0 0 var(--status-bad);
+}
+
+.wl-card__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: 14px 18px;
+}
+
+.wl-card__who {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.wl-card__name {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.wl-state {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--status-neutral) 16%, transparent);
+}
+
+.wl-state--frozen {
+  color: var(--status-bad);
+  background: color-mix(in srgb, var(--status-bad) 14%, transparent);
+}
+
+.wl-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wl-card__lift {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: 12px 18px 14px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+.wl-card__lift .field {
+  flex: 1 1 280px;
+  margin: 0;
+}
+
+/* Клиенты: карточки сеткой. */
+.cl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.cl-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 100%;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-subtle) 55%, transparent);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+
+.cl-card:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  background: var(--color-accent-soft);
+  text-decoration: none;
+}
+
+.cl-card:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.cl-card__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cl-card__name {
+  overflow: hidden;
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.cl-card__tag {
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.cl-card__chevron {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--color-text-muted);
+}
+
+/* Карточка клиента. */
+.cd-head {
+  margin-bottom: var(--space-4);
+}
+
+.cd-facts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cd-num--ok {
+  color: var(--status-ok);
+}
+
+.cd-num--bad {
+  color: var(--status-bad);
+}
+
+.cd-history {
+  padding: var(--space-5);
+}
+
+.cd-history .pf-section-title {
+  margin: 0 0 var(--space-3);
+}
+
+.cd-timeline {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cd-timeline::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 6px;
+  width: 2px;
+  background: color-mix(in srgb, var(--color-border) 80%, transparent);
+}
+
+.cd-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cd-item__dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--status-neutral);
+}
+
+.cd-item--ok .cd-item__dot { background: var(--status-ok); }
+.cd-item--bad .cd-item__dot { background: var(--status-bad); }
+.cd-item--warn .cd-item__dot { background: var(--status-gray); }
+
+.cd-item__body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "title status chevron"
+    "meta status chevron";
+  align-items: center;
+  column-gap: var(--space-3);
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-subtle) 55%, transparent);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.cd-item__body:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  background: var(--color-accent-soft);
+  text-decoration: none;
+}
+
+.cd-item__title {
+  grid-area: title;
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.cd-item__meta {
+  grid-area: meta;
+  font-size: var(--font-sm);
+  color: var(--color-text-muted);
+}
+
+.cd-item__status {
+  grid-area: status;
+}
+
+.cd-item__body .cl-card__chevron {
+  grid-area: chevron;
+}
+
+/* Аналитика: те же лёгкие карточки. */
+.dashboard .dash-period {
+  margin-bottom: var(--space-5);
+}
+
+.dashboard .dash-kpis {
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.dashboard .dash-kpi,
+.dashboard .dash-panel {
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-subtle) 55%, transparent);
+}
+
+.dashboard .dash-kpi {
+  padding: 16px 18px;
+}
+
+.dashboard .dash-kpi__label {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.dashboard .dash-kpi__value {
+  margin-top: 6px;
+  font-size: 34px;
+}
+
+.dashboard .dash-kpi__hint {
+  font-size: var(--font-sm);
+}
+
+.dashboard .dash-grid {
+  gap: var(--space-3);
+}
+
+.dashboard .dash-panel {
+  padding: 18px 20px;
+}
+
+.dashboard .dash-panel__title {
+  margin-bottom: var(--space-4);
+  font-size: var(--font-lg);
+  font-weight: 600;
+}
+
+.dashboard .dash-more {
+  margin-top: var(--space-4);
+}
+
+.dashboard .dash-more > summary {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.dashboard .dash-more > .dash-grid {
+  margin-top: var(--space-3);
+}
+
+@media (max-width: 900px) {
+  .wl-steps,
+  .cd-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pg-stats {
+    width: 100%;
+  }
+
+  .pg-stat {
+    flex: 1;
+  }
+}
