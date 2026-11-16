@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { components } from "../api/schema";
 import { useAuth } from "../auth/AuthProvider";
 import { Badge } from "../components/Badge";
+import { ChecksOverview } from "../components/ChecksOverview";
 import { ClientRatingPanel } from "../components/ClientRating";
 import { FedresursPanel } from "../components/FedresursPanel";
 import { BkiRequestPanel } from "../components/BkiRequestPanel";
@@ -467,6 +468,27 @@ export function ApplicationDetailPage() {
         </div>
 
       </section>
+
+      {/* Всё, что проверено по заявке, — на одном экране (решение владельца 16.11.2026). */}
+      <ChecksOverview
+        passport={app.passport_checks}
+        checks={app.checks}
+        bureau={bureauChecks}
+        guarantorId={app.guarantor_id ?? null}
+        bki={
+          app.bki_result
+            ? {
+                value: `${app.bki_result.label ? `${app.bki_result.label} · ` : ""}${bkiResultText(app.bki_result)}`,
+                tone:
+                  app.bki_result.status === "ok"
+                    ? "ok"
+                    : app.bki_result.status === "no_data"
+                      ? "none"
+                      : "warn",
+              }
+            : null
+        }
+      />
 
       {/* Кредитная история — отдельным блоком: запрос в БКИ платный, по кнопке. */}
       {(bkiWaiting || bkiRetry || app.bki_order?.pending) && (

@@ -10,6 +10,6 @@ test("открытие карточки заявки", async ({ page }) => {
   // T17, шаг 3: вместо заголовка «Решения» — вердикт крупно, номер заявки в шапке вердикта.
   await expect(page.getByText(/Заявка №\d+/).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Что проверили" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "История" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "История", exact: true })).toBeVisible();
   await expect(page.getByText(seed.application.last_name).first()).toBeVisible();
 });

@@ -192,5 +192,11 @@ test("карточка без стадий, ряда цифр и хода зая
   await expect(page.locator(".ah__metrics")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Ход заявки" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Изменить анкету" })).toBeVisible();
+  // «Проверки» — всё проверенное на одном экране, по группам.
+  const checks = page.locator(".chk");
+  await expect(checks.getByRole("heading", { name: "Проверки", exact: true })).toBeVisible();
+  for (const group of ["Паспорт", "Перечни", "Налоговая", "Долги и банкротство", "Кредитная история"]) {
+    await expect(checks.getByRole("heading", { name: group, exact: true })).toBeVisible();
+  }
   await expect(page.getByText(/нужно ваше действие/i)).toBeVisible();
 });
