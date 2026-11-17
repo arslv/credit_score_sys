@@ -43,7 +43,10 @@ async def bki_request_state(session: AsyncSession, application: Application) -> 
             .order_by(Decision.created_at.desc()).limit(1)
         )
     ).scalars().first()
-    if latest is not None and latest.stage == "B" and latest.reason_code not in BKI_NO_RETRY_REASONS:
+    # Заявка, заведённая вручную, — согласие есть всегда (решение владельца
+    # 16.11.2026): «нет согласия» у неё — след старой формы, повтор можно.
+    no_retry = latest is not None and latest.reason_code in BKI_NO_RETRY_REASONS and application.source != "manual"
+    if latest is not None and latest.stage == "B" and not no_retry:
         return "retry"
     return None
 
@@ -105,6 +108,12 @@ async def request_bki_report(
         # Повторный заказ: снова ждём БКИ — заказ ниже относится к этому ожиданию.
         reopen_for_bki(session, application, employee_id=employee.id)
         await session.flush()
+    if application.source == "manual" and application.consent_bki_at is None:
+        # Ручная заявка из старой формы без согласия — проставляем: согласие
+        # есть у всех клиентов, иначе отчёт снова упрётся в «нет согласия».
+        from datetime import datetime, timezone
+
+        application.consent_bki_at = datetime.now(timezone.utc)
     session.add(BkiRequestOrder(application_id=application_id, report_type=payload.report_type, employee_id=employee.id))
     await record_audit(
         session, employee_id=employee.id, action="request_bki_report",

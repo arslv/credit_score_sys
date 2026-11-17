@@ -344,3 +344,26 @@ async def test_rejected_by_report_can_be_requested_again(
             )
         ).one()
     assert tuple(history) == ("rejected_b", "awaiting_bki")
+
+
+async def test_manual_application_without_consent_can_request_report(
+    manual_mode, queued, admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """Ручная заявка ушла в «нет согласия на КИ» (старая форма без галочки,
+    сервер 17.11.2026) — запрос отчёта доступен, согласие проставляется при
+    заказе. У заявок из CRM «нет согласия» по-прежнему без повтора."""
+    _external_id, application_id = await _prepare_application_at_stage_b(
+        partner_admin, partner_client, storage, session_factory, consent_bki=False,
+    )
+    assert await run_stage_b(session_factory, application_id, partner_client=partner_client) == "gray_zone"
+    async with session_factory() as session:
+        application = await session.get(Application, application_id)
+        application.source = "manual"
+        await session.commit()
+
+    response = await _order(admin_client, session_factory, application_id, "basic", email="bki-manual-consent@example.com")
+    assert response.status_code == 202, response.text
+    async with session_factory() as session:
+        application = await session.get(Application, application_id)
+        assert application.status == "awaiting_bki"
+        assert application.consent_bki_at is not None
