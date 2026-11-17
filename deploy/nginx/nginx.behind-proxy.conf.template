@@ -2,7 +2,7 @@
 # 80/443 на сервере заняты чужим nginx — он держит HTTPS для нашего поддомена
 # и проксирует его сюда (на NGINX_BIND, по умолчанию 127.0.0.1:8088). Здесь —
 # только HTTP, статика админки и прокси /api на api:8000.
-# Переменные (envsubst): $REQUEST_BODY_MAX_MB, $NGINX_TRUSTED_PROXY.
+# Переменные (envsubst): $REQUEST_BODY_MAX_MB, $NGINX_TRUSTED_PROXY, $NGINX_LISTEN_PORT.
 #
 # Адрес клиента (T12, правило про X-Forwarded-For): берём из заголовка
 # внешнего nginx, но только если запрос пришёл от него — NGINX_TRUSTED_PROXY
@@ -28,7 +28,7 @@ map $http_x_forwarded_proto $forwarded_proto {
 resolver 127.0.0.11 valid=10s ipv6=off;
 
 server {
-    listen 80;
+    listen ${NGINX_LISTEN_PORT};
     server_name _;
 
     # Фото паспортов (base64 в теле вебхука, T18) — тот же лимит, что у api
