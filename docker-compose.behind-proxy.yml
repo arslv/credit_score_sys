@@ -3,23 +3,22 @@
 #
 #   docker compose -f docker-compose.prod.yml -f docker-compose.behind-proxy.yml up -d --build
 #
-# Наш nginx слушает только NGINX_BIND (по умолчанию 127.0.0.1:8088, снаружи
-# сервера недоступен) и без HTTPS; HTTPS и сертификат на наш поддомен — у
+# Наш nginx слушает NGINX_BIND (по умолчанию 0.0.0.0:18087) и без HTTPS; HTTPS и сертификат на наш поддомен — у
 # внешнего nginx, который проксирует поддомен сюда. Прокси на другой машине —
 # NGINX_BIND=<внутренний IP этого сервера>:8088 (порт закрыть фаерволом для
 # всех, кроме прокси) и NGINX_TRUSTED_PROXY=<IP прокси, каким его видит сервер>. Готовый кусок конфига для
 # внешнего nginx — docs/deployment.md, «Сервер общий с CRM».
-# Порт внутри контейнера — NGINX_LISTEN_PORT (по умолчанию 80): сисадмин
-# держит единый вид пробросов на сервере, например
-# NGINX_BIND=0.0.0.0:18087 и NGINX_LISTEN_PORT=8087 → 0.0.0.0:18087->8087/tcp.
+# По умолчанию (по просьбе сисадмина, 17.11.2026) — 0.0.0.0:18087->8087/tcp:
+# NGINX_BIND — внешний адрес:порт (0.0.0.0:18087), NGINX_LISTEN_PORT — порт
+# внутри контейнера (8087). Порт 18087 закрыть фаерволом для всех, кроме прокси.
 # Нужен Docker Compose 2.24.4+ (тег !override).
 
 services:
   nginx:
     environment:
       NGINX_TRUSTED_PROXY: ${NGINX_TRUSTED_PROXY:-127.0.0.1}
-      NGINX_LISTEN_PORT: ${NGINX_LISTEN_PORT:-80}
+      NGINX_LISTEN_PORT: ${NGINX_LISTEN_PORT:-8087}
     volumes:
       - ./deploy/nginx/nginx.behind-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
     ports: !override
-      - "${NGINX_BIND:-127.0.0.1:8088}:${NGINX_LISTEN_PORT:-80}"
+      - "${NGINX_BIND:-0.0.0.0:18087}:${NGINX_LISTEN_PORT:-8087}"
