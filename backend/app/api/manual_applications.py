@@ -210,7 +210,11 @@ def _apply_form(application: Application, payload: "ManualApplicationIn", now: d
     application.term_months = payload.term_months
     application.requested_amount = payload.goods_price - payload.down_payment
     application.profile = form
-    application.consent_bki_at = (application.consent_bki_at or now) if payload.bki_consent else None
+    # Согласие на КИ есть у всех клиентов (решение владельца 16.11.2026) — у
+    # заявки, заведённой вручную, оно ставится всегда, что бы ни прислала
+    # форма: старая форма (из кэша браузера) с выключенной галочкой давала
+    # серую зону «нет согласия» без кнопок запроса КИ.
+    application.consent_bki_at = application.consent_bki_at or now
     return form
 
 

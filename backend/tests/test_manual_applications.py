@@ -239,3 +239,17 @@ async def test_edit_blocked_while_checking_and_for_viewer(
     await _as(admin_client, session_factory, "viewer")
     assert (await admin_client.get(f"{PATH}/{created['id']}/form")).status_code == 403
     assert (await admin_client.post(f"{PATH}/{created['id']}", data={"data": "{}"})).status_code == 403
+
+
+async def test_manual_application_always_has_bki_consent(
+    admin_client, session_factory, app_storage, queued, active_ruleset,
+):
+    """Даже если форма прислала bki_consent=false (старая форма из кэша), у
+    ручной заявки согласие на КИ стоит — иначе серая зона «нет согласия» без
+    возможности запросить отчёт (случай на сервере 17.11.2026)."""
+    await _as(admin_client, session_factory, "operator")
+    response = await _post(admin_client, _form(bki_consent=False))
+    assert response.status_code == 201, response.text
+    async with session_factory() as session:
+        application = await session.get(Application, response.json()["id"])
+        assert application.consent_bki_at is not None
