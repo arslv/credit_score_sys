@@ -3,15 +3,28 @@
 справочнике — не отказ, флаг оператору: справочник может отставать от их
 каталога, это не повод ронять заявку."""
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import GoodsCategory
 
 
 async def find_goods_category(session: AsyncSession, code: str) -> GoodsCategory | None:
-    return (
+    """По коду, а если такого кода нет — по названию без учёта регистра:
+    CRM может прислать в productCategory и код, и подпись из своей формы
+    («Телевизоры»), список кодов CRM ещё не подтверждён (docs/integration_contract.md)."""
+    by_code = (
         await session.execute(select(GoodsCategory).where(GoodsCategory.code == code))
+    ).scalar_one_or_none()
+    if by_code is not None:
+        return by_code
+    return (
+        await session.execute(
+            select(GoodsCategory)
+            .where(func.lower(GoodsCategory.name) == code.strip().lower())
+            .order_by(GoodsCategory.active.desc())
+            .limit(1)
+        )
     ).scalar_one_or_none()
 
 

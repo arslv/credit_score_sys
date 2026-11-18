@@ -121,7 +121,8 @@ async def manual_application_options(
     целиком (app/api/references.py), здесь только код и название."""
     rows = (
         await session.execute(
-            select(GoodsCategory.code, GoodsCategory.name).where(GoodsCategory.active.is_(True)).order_by(GoodsCategory.name)
+            select(GoodsCategory.code, GoodsCategory.name).where(GoodsCategory.active.is_(True))
+            .order_by(GoodsCategory.sort_order.asc().nulls_last(), GoodsCategory.name)
         )
     ).all()
     return ManualOptionsOut(goods_categories=[GoodsCategoryOption(code=code, name=name) for code, name in rows])

@@ -30,6 +30,8 @@ class GoodsCategory(Base):
     liquidity: Mapped[str] = mapped_column(sa.Text, nullable=False)
     lgd_estimate: Mapped[sa.Numeric | None] = mapped_column(sa.Numeric(4, 3))
     active: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.true())
+    # Порядок в списках — как в форме CRM (миграция 0027).
+    sort_order: Mapped[int | None] = mapped_column(sa.Integer)
 
 
 class ReasonCode(Base):

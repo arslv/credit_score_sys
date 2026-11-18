@@ -250,6 +250,7 @@ async def test_full_seed_through_real_pipeline(session_factory, tmp_path, partne
     finally:
         asgi_app.state.storage = previous_storage
         # goods_categories не чистится фикстурой (справочник, см. conftest.REFERENCE_TABLES).
+        # «phones» — базовая категория CRM (миграция 0027), её не трогаем.
         async with session_factory() as session:
-            await session.execute(delete(GoodsCategory).where(GoodsCategory.code.in_(("phones", "auto_parts"))))
+            await session.execute(delete(GoodsCategory).where(GoodsCategory.code == "auto_parts"))
             await session.commit()
