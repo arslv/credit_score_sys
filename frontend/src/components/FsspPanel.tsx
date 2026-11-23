@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { RecheckButton, Spinner } from "./ui";
-import { FsspDetails } from "./FsspDetails";
 import type { components } from "../api/schema";
 
 // T16: капчу решает только человек (жёсткое правило) — ни авторешения, ни
@@ -214,11 +213,6 @@ export function FsspPanel({
   // parsed=null — не "пусто", а "скрыто от этой роли" (operator/admin/viewer
   // не видят ПД ни по одному источнику, см. app/api/applications.py::CheckOut) —
   // нельзя показать "0 ₽" вместо реальной суммы, это выглядело бы как "не найдено".
-  const classification = latestCheck?.parsed as {
-    fssp_credit_debt_amount?: number;
-    fssp_total_amount?: number;
-    fssp_count?: number;
-  } | null | undefined;
 
   // Выбор региона — неприметной ссылкой «все регионы ▾»; список грузится по
   // клику. requery — капча уже открыта: другой регион сразу запрашивает
@@ -264,15 +258,6 @@ export function FsspPanel({
     // Только действия (16.11.2026): итог проверки — строкой «ФССП» в блоке
     // «Проверки», под ней эти кнопки.
     <div className="manual-act">
-      {latestCheck?.status === "hit" && classification?.fssp_total_amount != null && (
-        <p className="manual-check__note">Сумма долга: {classification.fssp_total_amount} ₽</p>
-      )}
-
-      {/* Производства — действующие и оконченные (в том числе оплаченные), с разворотом. */}
-      {latestCheck?.fssp_details && latestCheck.fssp_details.length > 0 && (
-        <FsspDetails details={latestCheck.fssp_details} />
-      )}
-
       {hasPostDecisionAlert && (
         <p className="alert" role="alert">
           Найдено после решения — пересмотрите вручную.

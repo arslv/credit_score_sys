@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { components } from "../api/schema";
-import { formatDateTime } from "../lib/format";
-import { BureauFsspDetails } from "./FsspDetails";
+import { formatAmount, formatDateTime } from "../lib/format";
+import { BureauFsspDetails, FsspDetails } from "./FsspDetails";
 import { checkResultLabel, fsspEndReason, passportCheckLabel, passportCheckStatusLabel, sourceMeta } from "../lib/labels";
 
 type CheckRow = components["schemas"]["CheckOut"];
@@ -73,6 +73,20 @@ const BUREAU_GROUP: Record<string, string> = {
   fssp: "Долги и банкротство",
   fedresurs: "Долги и банкротство",
 };
+
+// Итог нашей проверки на сайте источника. У ФССП — сумма долга прямо в
+// строке и производства разворотом под ней (как у строки «БКИ»), чтобы было
+// видно, к какому источнику что относится (по отзыву 23.11.2026).
+function siteLine(c: CheckRow): Line {
+  const line = fsspEndedLine(c) ?? { value: checkResultLabel(c.source, c.status), tone: checkTone(c.status) };
+  if (c.source !== "fssp") return line;
+  const total = (c.parsed as { fssp_total_amount?: number } | null)?.fssp_total_amount;
+  if (c.status === "hit" && typeof total === "number" && total > 0) {
+    line.value = `${line.value} · ${formatAmount(total)} ₽`;
+  }
+  if (c.fssp_details && c.fssp_details.length > 0) line.details = <FsspDetails details={c.fssp_details} />;
+  return line;
+}
 
 // ФССП: открытых производств нет, но оконченные (в т. ч. оплаченные) были —
 // не «ничего не найдено» зелёным, а жёлтым с итогом (решение владельца 23.11.2026).
@@ -168,7 +182,7 @@ export function ChecksOverview({
         key,
         name: sourceMeta(c.source).label,
         who: c.subject_type === "guarantor" ? guarantorWho : undefined,
-        lines: [fsspEndedLine(c) ?? { value: checkResultLabel(c.source, c.status), tone: checkTone(c.status) }],
+        lines: [siteLine(c)],
       });
     }
     // Ручные проверки — у заявителя и поручителя (если он есть) всегда строкой.

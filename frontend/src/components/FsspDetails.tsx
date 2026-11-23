@@ -36,7 +36,7 @@ export function FsspDetails({ details }: { details: Production[] }) {
   return (
     <div className="fssp-det">
       <button type="button" className="btn-link fssp-det__toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        {open ? "Скрыть производства" : `Производства: ${summary}`}
+        {open ? "Скрыть производства" : `Показать производства (${summary})`}
       </button>
       {open && (
         <div className="fssp-det__list">
@@ -115,6 +115,12 @@ export function BureauFsspDetails({ parsed }: { parsed: Record<string, unknown> 
   const closedItems = (Array.isArray(parsed.closed_items) ? parsed.closed_items : []) as BureauItem[];
   const closedCount = typeof parsed.closed_count === "number" ? parsed.closed_count : closedItems.length;
   if (openItems.length === 0 && closedItems.length === 0) return null;
+  const bureauSummary = [
+    openItems.length > 0 && `${openItems.length} ${plural(openItems.length, ["действующее", "действующих", "действующих"])}`,
+    closedCount > 0 && `${closedCount} ${plural(closedCount, ["оконченное", "оконченных", "оконченных"])}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const row = (item: BureauItem, ended: boolean, key: number) => (
     <li key={key} className={`fssp-det__item fssp-det__item--${ended ? "warn" : "active"}`}>
@@ -138,7 +144,7 @@ export function BureauFsspDetails({ parsed }: { parsed: Record<string, unknown> 
   return (
     <div className="fssp-det">
       <button type="button" className="btn-link fssp-det__toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        {open ? "Скрыть" : "Подробнее"}
+        {open ? "Скрыть производства" : `Показать производства (${bureauSummary})`}
       </button>
       {open && (
         <div className="fssp-det__list">
