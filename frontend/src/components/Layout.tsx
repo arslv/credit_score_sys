@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { BarChart3, Briefcase, ClipboardList, HelpCircle, Settings, ShieldAlert, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { BarChart3, Briefcase, ClipboardList, HelpCircle, LogOut, Settings, ShieldAlert, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import { roleLabel } from "../lib/labels";
 import { Logo } from "./Logo";
@@ -27,8 +27,13 @@ interface NavGroup {
   label: string;
   icon: LucideIcon;
   items: NavItem[];
+  /** Внизу меню, у темы и пользователя (Справка). */
+  foot?: boolean;
 }
 
+// Порядок меню (отзыв владельца 24.11.2026): Заявки, Росфинмониторинг,
+// Правила и пороги, Портфель, Настройки, Аналитика — последней в списке;
+// Справка — внизу, рядом с темой и пользователем.
 const NAV_GROUPS: NavGroup[] = [
   {
     key: "applications",
@@ -38,14 +43,6 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/applications", label: "Заявки", roles: ["admin", "operator", "viewer"] },
     ],
   },
-  // Отзыв 24.11.2026: «Скоринг» и «Перечни» были непонятны — названия по
-  // сути; правила выше, Росфинмониторинг — под ними, перед аналитикой.
-  {
-    key: "scoring",
-    label: "Правила и пороги",
-    icon: SlidersHorizontal,
-    items: [{ to: "/rulesets", label: "Правила и пороги", roles: ["admin"] }],
-  },
   {
     key: "watchlist",
     label: "Росфинмониторинг",
@@ -53,10 +50,10 @@ const NAV_GROUPS: NavGroup[] = [
     items: [{ to: "/compliance", label: "Росфинмониторинг", roles: ["admin", "operator"] }],
   },
   {
-    key: "analytics",
-    label: "Аналитика",
-    icon: BarChart3,
-    items: [{ to: "/dashboard", label: "Аналитика", roles: ["admin", "viewer"] }],
+    key: "scoring",
+    label: "Правила и пороги",
+    icon: SlidersHorizontal,
+    items: [{ to: "/rulesets", label: "Правила и пороги", roles: ["admin"] }],
   },
   {
     key: "portfolio",
@@ -64,17 +61,6 @@ const NAV_GROUPS: NavGroup[] = [
     icon: Briefcase,
     items: [
       { to: "/clients", label: "Клиенты", roles: ["admin", "operator", "viewer"] },
-    ],
-  },
-  {
-    key: "help",
-    label: "Справка",
-    icon: HelpCircle,
-    items: [
-      {
-        to: "/help", label: "Справка",
-        roles: ["admin", "operator", "viewer"],
-      },
     ],
   },
   {
@@ -92,6 +78,19 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/system", label: "Состояние системы", roles: ["admin"] },
     ],
   },
+  {
+    key: "analytics",
+    label: "Аналитика",
+    icon: BarChart3,
+    items: [{ to: "/dashboard", label: "Аналитика", roles: ["admin", "viewer"] }],
+  },
+  {
+    key: "help",
+    label: "Справка",
+    icon: HelpCircle,
+    foot: true,
+    items: [{ to: "/help", label: "Справка", roles: ["admin", "operator", "viewer"] }],
+  },
 ];
 
 export function Layout() {
@@ -108,40 +107,56 @@ export function Layout() {
     group.items.some((item) => location.pathname.startsWith(item.to)),
   );
 
+  // Переход по разделу — на первый доступный этой роли экран внутри него.
+  function navLink(group: (typeof visibleGroups)[number]) {
+    const Icon = group.icon;
+    const isActive = group.key === activeGroup?.key;
+    return (
+      <Link
+        key={group.key}
+        to={group.items[0].to}
+        className={isActive ? "sidebar-item sidebar-item--active" : "sidebar-item"}
+        aria-current={isActive ? "page" : undefined}
+      >
+        <Icon size={19} strokeWidth={1.75} />
+        <span>{group.label}</span>
+      </Link>
+    );
+  }
+
   return (
     <div className="app-shell-v2">
       <nav className="sidebar">
         <div className="sidebar-logo">
           <Logo />
         </div>
-        {visibleGroups.map((group) => {
-          const Icon = group.icon;
-          const isActive = group.key === activeGroup?.key;
-          // Переход по разделу — на первый доступный этой роли экран внутри него.
-          return (
-            <Link
-              key={group.key}
-              to={group.items[0].to}
-              className={isActive ? "sidebar-item sidebar-item--active" : "sidebar-item"}
-            >
-              <Icon size={17} strokeWidth={1.75} />
-              {group.label}
-            </Link>
-          );
-        })}
-        {/* T23: пользователь и «Выйти» — внизу меню; верхняя полоса только
-            под вкладки раздела, без пустой строки ради одной кнопки. */}
+        <div className="sidebar-list">
+          {visibleGroups.filter((group) => !group.foot).map((group) => navLink(group))}
+        </div>
+        {/* Низ меню: Справка, тема, пользователь и «Выйти». */}
         <div className="sidebar-foot">
+          {visibleGroups.filter((group) => group.foot).map((group) => navLink(group))}
           <ThemeSwitch />
           {employee && (
-            <div className="sidebar-foot__user">
-              <div className="sidebar-foot__name" title={employee.full_name}>{employee.full_name}</div>
-              <div>{roleLabel(employee.role)}</div>
+            <div className="sidebar-user">
+              <span className="sidebar-user__avatar" aria-hidden="true">
+                {initials(employee.full_name)}
+              </span>
+              <div className="sidebar-user__text">
+                <div className="sidebar-user__name" title={employee.full_name}>{employee.full_name}</div>
+                <div className="sidebar-user__role">{roleLabel(employee.role)}</div>
+              </div>
+              <button
+                type="button"
+                className="sidebar-user__logout"
+                onClick={() => void logout()}
+                aria-label="Выйти"
+                title="Выйти"
+              >
+                <LogOut size={17} strokeWidth={1.75} />
+              </button>
             </div>
           )}
-          <button className="btn btn-small" onClick={() => void logout()}>
-            Выйти
-          </button>
         </div>
       </nav>
       <div className="app-shell-v2__body">
@@ -189,4 +204,10 @@ export function Layout() {
       </div>
     </div>
   );
+}
+
+// «Арсланов Арслан» → «АА»: кружок с инициалами у пользователя внизу меню.
+function initials(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map((p) => p[0]!.toUpperCase()).join("") || "?";
 }

@@ -30,9 +30,6 @@ function statusTone(status: string): "progress" | "approve" | "gray" | "reject" 
 
 interface Filters {
   status: string;
-  discrepanciesOnly: boolean;
-  ocrFailedOnly: boolean;
-  sourceUnavailableOnly: boolean;
 }
 
 // Заявку без CRM заводят admin и operator (app/api/manual_applications.py).
@@ -62,14 +59,8 @@ export function ApplicationsListPage() {
   const setView = (next: View) => patchParams({ view: next === "new" ? null : next, page: null });
   const setPage = (next: number) => patchParams({ page: next > 1 ? String(next) : null });
   // Фильтры — тоже в адресе: «Назад» из заявки их не сбрасывает.
-  const filters: Filters = {
-    status: params.get("status") ?? "",
-    discrepanciesOnly: params.get("disc") === "1",
-    ocrFailedOnly: params.get("ocr") === "1",
-    sourceUnavailableOnly: params.get("src") === "1",
-  };
-  const hasFilters =
-    filters.status !== "" || filters.discrepanciesOnly || filters.ocrFailedOnly || filters.sourceUnavailableOnly;
+  const filters: Filters = { status: params.get("status") ?? "" };
+  const hasFilters = filters.status !== "";
   // Поиск (решение владельца 16.11.2026): ФИО, телефон, № заявки, № в CRM, паспорт.
   const [search, setSearch] = useState(() => params.get("q") ?? "");
   const q = useDebounced(search.trim());
@@ -96,9 +87,6 @@ export function ApplicationsListPage() {
             view,
             q: q || undefined,
             status: filters.status || undefined,
-            discrepancies_only: filters.discrepanciesOnly || undefined,
-            ocr_failed_only: filters.ocrFailedOnly,
-            source_unavailable_only: filters.sourceUnavailableOnly,
             page,
             page_size: PAGE_SIZE,
           },
@@ -110,21 +98,11 @@ export function ApplicationsListPage() {
   });
 
   function updateFilters(patch: Partial<Filters>) {
-    const flag = (v: boolean | undefined) => (v === undefined ? undefined : v ? "1" : null);
-    const next: Record<string, string | null> = { page: null };
-    if (patch.status !== undefined) next.status = patch.status || null;
-    for (const [key, value] of [
-      ["disc", flag(patch.discrepanciesOnly)],
-      ["ocr", flag(patch.ocrFailedOnly)],
-      ["src", flag(patch.sourceUnavailableOnly)],
-    ] as const) {
-      if (value !== undefined) next[key] = value;
-    }
-    patchParams(next);
+    patchParams({ page: null, status: patch.status || null });
   }
 
   function resetFilters() {
-    patchParams({ status: null, disc: null, ocr: null, src: null, page: null });
+    patchParams({ status: null, page: null });
   }
 
   function selectView(next: View) {
@@ -195,6 +173,26 @@ export function ApplicationsListPage() {
             </button>
           ))}
         </div>
+        <div className="list-filters" role="group" aria-label="Фильтры">
+          <label className={`fpill fpill--select${filters.status ? " fpill--on" : ""}`}>
+            <span className="fpill__label">Статус</span>
+            <select value={filters.status} onChange={(e) => updateFilters({ status: e.target.value })}>
+              <option value="">любой</option>
+              <option value="awaiting_data">{applicationStatusLabel("awaiting_data")}</option>
+              <option value="to_operator">{applicationStatusLabel("to_operator")}</option>
+              <option value="awaiting_bki">{applicationStatusLabel("awaiting_bki")}</option>
+              <option value="gray_zone">{applicationStatusLabel("gray_zone")}</option>
+              <option value="approved">{applicationStatusLabel("approved")}</option>
+              <option value="rejected_a,rejected_b">Отказ</option>
+              <option value="ocr_failed">{applicationStatusLabel("ocr_failed")}</option>
+            </select>
+          </label>
+          {hasFilters && (
+            <button type="button" className="btn-link list-filters__reset" onClick={resetFilters}>
+              Сбросить
+            </button>
+          )}
+        </div>
         <div className="list-bar__search">
           <SearchInput
             value={search}
@@ -210,44 +208,6 @@ export function ApplicationsListPage() {
         </div>
       </div>
 
-      <div className="list-filters" role="group" aria-label="Фильтры">
-        <label className={`fpill fpill--select${filters.status ? " fpill--on" : ""}`}>
-          <span className="fpill__label">Статус</span>
-          <select value={filters.status} onChange={(e) => updateFilters({ status: e.target.value })}>
-            <option value="">любой</option>
-            <option value="awaiting_data">{applicationStatusLabel("awaiting_data")}</option>
-            <option value="to_operator">{applicationStatusLabel("to_operator")}</option>
-            <option value="awaiting_bki">{applicationStatusLabel("awaiting_bki")}</option>
-            <option value="gray_zone">{applicationStatusLabel("gray_zone")}</option>
-            <option value="approved">{applicationStatusLabel("approved")}</option>
-            <option value="rejected_a,rejected_b">Отказ</option>
-            <option value="ocr_failed">{applicationStatusLabel("ocr_failed")}</option>
-          </select>
-        </label>
-        {(
-          [
-            ["discrepanciesOnly", "Оператор изменил статус"],
-            ["sourceUnavailableOnly", "Источник не ответил"],
-            ["ocrFailedOnly", "Паспорт не распознан"],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            className={`fpill${filters[key] ? " fpill--on" : ""}`}
-            aria-pressed={filters[key]}
-            onClick={() => updateFilters({ [key]: !filters[key] })}
-          >
-            {filters[key] && <span aria-hidden="true">✓ </span>}
-            {label}
-          </button>
-        ))}
-        {hasFilters && (
-          <button type="button" className="btn-link list-filters__reset" onClick={resetFilters}>
-            Сбросить фильтры
-          </button>
-        )}
-      </div>
 
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message="Не удалось загрузить список заявок." onRetry={() => void query.refetch()} />}
@@ -258,7 +218,7 @@ export function ApplicationsListPage() {
             view !== "all" || hasFilters ? (
               <button
                 className="btn"
-                onClick={() => patchParams({ status: null, disc: null, ocr: null, src: null, page: null, view: "all" })}
+                onClick={() => patchParams({ status: null, page: null, view: "all" })}
               >
                 Показать все заявки
               </button>

@@ -115,3 +115,15 @@ test("сотрудника можно удалить из окна редакт�
   await expect(edit).toHaveCount(0);
   await expect(row).toHaveCount(0);
 });
+
+test("меню: порядок разделов, Справка — внизу у темы и пользователя", async ({ page }) => {
+  const seed = loadSeed();
+  await login(page, seed.admin.email, seed.admin.password);
+
+  const top = await page.locator(".sidebar-list .sidebar-item").allTextContents();
+  expect(top.map((t) => t.trim())).toEqual([
+    "Заявки", "Росфинмониторинг", "Правила и пороги", "Портфель", "Настройки", "Аналитика",
+  ]);
+  await expect(page.locator(".sidebar-foot .sidebar-item", { hasText: "Справка" })).toBeVisible();
+  await expect(page.locator(".sidebar-foot").getByRole("button", { name: "Выйти" })).toBeVisible();
+});
