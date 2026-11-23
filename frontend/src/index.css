@@ -6883,8 +6883,7 @@ mark {
   border-left-color: var(--status-gray);
 }
 
-.fssp-det__item--none,
-.fssp-det__item--bad {
+.fssp-det__item--none {
   border-left-color: var(--color-border-strong);
 }
 

@@ -59,6 +59,7 @@ from app.models import (
 )
 from app.sources.base import CheckStatus, Subject
 from app.sources.bki import BkiProvider, BkiProviderResult, deserialize_report, serialize_report
+from app.sources.spectrum import extract_bureau_checks
 from app.sources.blacklist import BlacklistSource
 from app.sources.factory import build_bki_provider
 from app.sources.mvd import MvdSource
@@ -628,6 +629,19 @@ async def finalize_stage_b(
                 installment_payment=installment, today=today, range_bound=config.bki.range_bound,
             )
             score = float(cached_row.score) if cached_row.score is not None else report.score
+            # Проверки бюро (ФССП, банкротство, паспорт…) из сохранённого
+            # ответа — и этой заявке: раньше при отчёте из кэша их не было
+            # вовсе, блоки «Проверок» оставались без пометок «БКИ». В той же
+            # транзакции, что и решение: отдельная сессия упёрлась бы в FOR
+            # UPDATE этой заявки (правило 13 CLAUDE.md).
+            cached_raw = (cached_row.report_raw or {}).get("raw")
+            if isinstance(cached_raw, dict):
+                for check in extract_bureau_checks(cached_raw):
+                    session.add(BkiBureauCheck(
+                        application_id=application_id, subject_type="applicant", source=check.source,
+                        block=check.block, status=check.status, parsed=check.parsed,
+                        report_type=cached_row.report_type or report_type,
+                    ))
             return await _write_financial_decision(
                 session, session_factory, application, ruleset_row, config, base_features, carried_features,
                 bki_result_features, score, tariff_offer_comment, partner_client,

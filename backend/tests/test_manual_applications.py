@@ -253,3 +253,33 @@ async def test_manual_application_always_has_bki_consent(
     async with session_factory() as session:
         application = await session.get(Application, response.json()["id"])
         assert application.consent_bki_at is not None
+
+
+async def test_product_fields_and_markup_derive_cost_and_payment(
+    admin_client, session_factory, app_storage, queued, active_ruleset,
+):
+    """Наценка, тип продукта, партнёр и точка продаж (как в карточке CRM) —
+    в анкете; стоимость = цена + наценка, платёж без ввода — из наценки:
+    (стоимость − взнос) / срок. При правке — возвращаются в форму."""
+    await _as(admin_client, session_factory, "operator")
+    form = _form(markup="45096", product_type="Товар", partner="Мах Город", sales_point="Махачкала")
+    form.update(goods_price="189990", down_payment="80000", term_months=12)
+    created = await _post(admin_client, form)
+    assert created.status_code == 201, created.text
+
+    async with session_factory() as session:
+        snapshot_b = (await session.execute(
+            select(ExternalSnapshot).where(
+                ExternalSnapshot.application_id == created.json()["id"], ExternalSnapshot.stage == "B",
+            )
+        )).scalar_one()
+    deal = snapshot_b.payload_raw["stage_b"]["deal"]
+    assert deal["markup"] == "45096"
+    assert deal["total_cost"] == "235086"
+    assert deal["monthly_payment"] == "12923.83"  # (235086 − 80000) / 12
+    assert (deal["product_type"], deal["partner"], deal["sales_point"]) == ("Товар", "Мах Город", "Махачкала")
+
+    back = (await admin_client.get(f"{PATH}/{created.json()['id']}/form")).json()
+    assert (back["markup"], back["partner"], back["sales_point"], back["product_type"]) == (
+        "45096", "Мах Город", "Махачкала", "Товар",
+    )

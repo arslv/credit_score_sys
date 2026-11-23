@@ -88,6 +88,12 @@ class ManualApplicationIn(BaseModel):
     down_payment: Decimal = Field(default=Decimal("0"), ge=0)
     term_months: int = Field(gt=0)
     monthly_payment: Decimal | None = Field(default=None, gt=0)
+    # Как в карточке CRM (решение владельца 23.11.2026); CRM пока не шлёт —
+    # вводят вручную. Стоимость = цена + наценка; платёж без ввода — из наценки.
+    markup: Decimal | None = Field(default=None, ge=0)
+    product_type: str | None = None
+    partner: str | None = None
+    sales_point: str | None = None
 
     income: Decimal = Field(ge=0)
     other_credit_payments: Decimal = Field(default=Decimal("0"), ge=0)
@@ -151,6 +157,12 @@ def _stage_b_payload(payload: ManualApplicationIn) -> dict:
             k: (str(v) if isinstance(v, Decimal) else v)
             for k, v in payload.guarantor.model_dump(exclude_none=True).items()
         }
+    monthly = payload.monthly_payment
+    total_cost = payload.goods_price + payload.markup if payload.markup is not None else None
+    if monthly is None and total_cost is not None:
+        # Платёж из наценки: (стоимость − первый взнос) / срок — точнее, чем
+        # запасной расчёт по тарифу.
+        monthly = ((total_cost - payload.down_payment) / payload.term_months).quantize(Decimal("0.01"))
     return {
         "deal": {
             "goods_category_code": payload.goods_category_code,
@@ -158,7 +170,12 @@ def _stage_b_payload(payload: ManualApplicationIn) -> dict:
             "down_payment": str(payload.down_payment),
             "term_months": payload.term_months,
             "tariff": None,
-            "monthly_payment": str(payload.monthly_payment) if payload.monthly_payment is not None else None,
+            "monthly_payment": str(monthly) if monthly is not None and monthly > 0 else None,
+            "markup": str(payload.markup) if payload.markup is not None else None,
+            "total_cost": str(total_cost) if total_cost is not None else None,
+            "product_type": payload.product_type,
+            "partner": payload.partner,
+            "sales_point": payload.sales_point,
         },
         "employment": payload.employment.model_dump(exclude_none=True) if payload.employment else {},
         "income": {"declared_monthly": str(payload.income)},
@@ -374,6 +391,10 @@ async def get_application_form(
         down_payment=application.down_payment,
         term_months=application.term_months,
         monthly_payment=money(deal.get("monthly_payment"), "0") or None,
+        markup=money(deal.get("markup")) if deal.get("markup") not in (None, "") else None,
+        product_type=deal.get("product_type"),
+        partner=deal.get("partner"),
+        sales_point=deal.get("sales_point"),
         income=money((stage_b.get("income") or {}).get("declared_monthly")),
         other_credit_payments=money((stage_b.get("obligations") or {}).get("monthly_payment_total")),
         bki_consent=application.consent_bki_at is not None,

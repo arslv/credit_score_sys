@@ -63,8 +63,11 @@ function ProductionGroup({ title, items }: { title: string; items: Production[] 
 
 function ProductionRow({ production: p }: { production: Production }) {
   const end = p.status === "active" ? null : fsspEndReason(p.end_reason);
+  // Оконченные — жёлтым, даже оплаченные (решение владельца 23.11.2026): долг
+  // был, это стоит видеть, но он закрыт; красным — действующие и банкротство.
+  const tone = !end ? "active" : end.tone === "bad" ? "bad" : "warn";
   return (
-    <li className={`fssp-det__item fssp-det__item--${end ? end.tone : "active"}`}>
+    <li className={`fssp-det__item fssp-det__item--${tone}`}>
       {p.items.map((item, i) => (
         <div key={i} className="fssp-det__debt">
           <span className="fssp-det__subject">{item.subject}</span>
@@ -72,7 +75,7 @@ function ProductionRow({ production: p }: { production: Production }) {
         </div>
       ))}
       {end && (
-        <div className={`fssp-det__end fssp-det__end--${end.tone}`}>
+        <div className={`fssp-det__end fssp-det__end--${tone}`}>
           Окончено{p.ended_at ? ` ${p.ended_at}` : ""}: {end.label}
           {p.end_reason && <span className="fssp-det__article"> ({p.end_reason})</span>}
         </div>

@@ -298,24 +298,41 @@ export function ApplicationDetailPage() {
   const verdictReason =
     !operatorFinal && latestDecision && latestDecision.outcome !== "manual_review" ? (explanation?.reason ?? null) : null;
 
-  // Продукт для шапки: платёж — из решения (CRM или расчёт по тарифу),
-  // стоимость = первый взнос + платёж × срок, наценка = стоимость − цена.
+  // Продукт для шапки. Наценка, стоимость, тип, партнёр и точка продаж — из
+  // анкеты (ручная заявка; CRM — когда начнёт присылать). Нет наценки —
+  // считаем из платежа решения: стоимость = взнос + платёж × срок; платёж
+  // по тарифу помечен «расчёт».
+  const deal = (stageB?.deal ?? {}) as Record<string, unknown>;
+  const dealNum = (key: string) => (deal[key] != null && deal[key] !== "" ? Number(deal[key]) : null);
+  const dealText = (key: string) => (typeof deal[key] === "string" && deal[key] ? (deal[key] as string) : "");
   const installment = [...app.decisions].reverse().find((d) => d.installment_payment != null) ?? null;
-  const monthly = installment?.installment_payment != null ? Number(installment.installment_payment) : null;
-  const monthlyCalc = installment?.installment_payment_source === "tariff";
   const price = Number(app.goods_price);
   const down = Number(app.down_payment);
-  const totalCost = monthly != null && app.term_months > 0 ? down + monthly * app.term_months : null;
+  const monthlyFromDeal = dealNum("monthly_payment");
+  const monthly =
+    monthlyFromDeal ?? (installment?.installment_payment != null ? Number(installment.installment_payment) : null);
+  const monthlyCalc = monthlyFromDeal == null && installment?.installment_payment_source === "tariff";
+  const markupGiven = dealNum("markup");
+  const totalCost =
+    markupGiven != null
+      ? price + markupGiven
+      : monthly != null && app.term_months > 0
+        ? down + monthly * app.term_months
+        : null;
+  const costCalc = markupGiven == null && monthlyCalc;
   const rub = (v: number) => `${formatAmount(Math.round(v))} ₽`;
   const productFacts: { label: string; value: string; wide?: boolean; calc?: boolean }[] = [
+    { label: "Тип продукта", value: dealText("product_type") },
     { label: "Категория", value: app.goods_category ?? "" },
     { label: "Наименование", value: app.goods_name && app.goods_name !== "—" ? app.goods_name : "", wide: true },
     { label: "Цена", value: price > 0 ? rub(price) : "" },
     { label: "Первый взнос", value: price > 0 ? rub(down) : "" },
-    { label: "Наценка", value: totalCost != null && price > 0 ? rub(totalCost - price) : "", calc: monthlyCalc },
+    { label: "Наценка", value: totalCost != null && price > 0 ? rub(totalCost - price) : "", calc: costCalc },
     { label: "Ежемесячно", value: monthly != null ? rub(monthly) : "", calc: monthlyCalc },
-    { label: "Стоимость", value: totalCost != null ? rub(totalCost) : "", calc: monthlyCalc },
+    { label: "Стоимость", value: totalCost != null ? rub(totalCost) : "", calc: costCalc },
     { label: "Срок", value: app.term_months > 0 ? `${app.term_months} мес.` : "" },
+    { label: "Партнёр", value: dealText("partner") },
+    { label: "Точка продаж", value: dealText("sales_point") },
     { label: "Источник", value: manual ? "заведена вручную" : `CRM · ${app.external_id}` },
   ].filter((f) => f.value);
 

@@ -19,6 +19,7 @@ const EMPTY = {
   birth_date: "", passport_series: "", passport_number: "", issue_date: "", issued_by: "", department_code: "",
   registration_address: "",
   goods_name: "", goods_category_code: "", goods_price: "", down_payment: "0", term_months: "",
+  markup: "", monthly_payment: "", product_type: "Товар", partner: "", sales_point: "",
   income: "", other_credit_payments: "0",
   employment_type: "", employer: "", position: "",
   has_guarantor: false,
@@ -51,6 +52,8 @@ function formOf(d: ServerForm): FormState {
     registration_address: str(p.registration_address),
     goods_name: str(d.goods_name), goods_category_code: str(d.goods_category_code),
     goods_price: num(d.goods_price), down_payment: str(d.down_payment) || "0", term_months: num(d.term_months),
+    markup: str(d.markup), monthly_payment: str(d.monthly_payment), product_type: str(d.product_type) || "Товар",
+    partner: str(d.partner), sales_point: str(d.sales_point),
     income: num(d.income), other_credit_payments: str(d.other_credit_payments) || "0",
     employment_type: str(e.type), employer: str(e.employer), position: str(e.position),
     has_guarantor: g !== null,
@@ -81,6 +84,11 @@ function payloadOf(f: FormState) {
     goods_price: f.goods_price,
     down_payment: f.down_payment || "0",
     term_months: Number(f.term_months),
+    markup: orNull(f.markup),
+    monthly_payment: orNull(f.monthly_payment),
+    product_type: orNull(f.product_type),
+    partner: orNull(f.partner),
+    sales_point: orNull(f.sales_point),
     income: f.income,
     other_credit_payments: f.other_credit_payments || "0",
     // Согласие на КИ есть у всех клиентов (решение владельца 16.11.2026).
@@ -333,6 +341,12 @@ export function NewApplicationPage() {
   const price = Number(form.goods_price) || 0;
   const down = Number(form.down_payment) || 0;
   const rest = price > 0 ? Math.max(price - down, 0) : null;
+  const markup = form.markup.trim() ? Number(form.markup) : null;
+  const term = Number(form.term_months) || 0;
+  const totalCost = markup != null && price > 0 ? price + markup : null;
+  // Платёж без ввода — из наценки: (стоимость − взнос) / срок (так же считает сервер).
+  const monthlyAuto = totalCost != null && term > 0 ? (totalCost - down) / term : null;
+  const monthly = form.monthly_payment.trim() ? Number(form.monthly_payment) : monthlyAuto;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -411,6 +425,27 @@ export function NewApplicationPage() {
             {text("goods_price", "Цена", { required: true, type: "number", min: 1, step: "0.01", suffix: "₽", span: 2 })}
             {text("down_payment", "Первый взнос", { type: "number", min: 0, step: "0.01", suffix: "₽", span: 2 })}
             {text("term_months", "Срок", { required: true, type: "number", min: 1, step: 1, suffix: "мес.", span: 2 })}
+            {/* Как в карточке CRM (решение владельца 23.11.2026); CRM пока это не шлёт. */}
+            {text("markup", "Наценка", { type: "number", min: 0, step: "0.01", suffix: "₽", span: 2 })}
+            {text("monthly_payment", "Ежемесячно", {
+              type: "number",
+              min: 0,
+              step: "0.01",
+              suffix: "₽",
+              span: 2,
+              placeholder: monthlyAuto != null ? `${formatAmount(Math.round(monthlyAuto))} — из наценки` : undefined,
+            })}
+            {select(
+              "product_type",
+              "Тип продукта",
+              [
+                { value: "Товар", label: "Товар" },
+                { value: "Услуга", label: "Услуга" },
+              ],
+              2,
+            )}
+            {text("partner", "Партнёр", { span: 3 })}
+            {text("sales_point", "Точка продаж", { span: 3 })}
           </Section>
 
           <Section step={4} title="Доход и работа" hint="Для расчёта нагрузки" done={steps[3]!.done}>
@@ -497,6 +532,24 @@ export function NewApplicationPage() {
                 <dt>Срок</dt>
                 <dd>{Number(form.term_months) > 0 ? `${form.term_months} мес.` : "—"}</dd>
               </div>
+              {markup != null && (
+                <div>
+                  <dt>Наценка</dt>
+                  <dd>{formatAmount(markup)} ₽</dd>
+                </div>
+              )}
+              {totalCost != null && (
+                <div>
+                  <dt>Стоимость</dt>
+                  <dd>{formatAmount(totalCost)} ₽</dd>
+                </div>
+              )}
+              {monthly != null && monthly > 0 && (
+                <div>
+                  <dt>Ежемесячно</dt>
+                  <dd>{formatAmount(Math.round(monthly))} ₽</dd>
+                </div>
+              )}
             </dl>
 
             {error && (

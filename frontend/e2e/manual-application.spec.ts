@@ -24,11 +24,21 @@ test("оператор заводит заявку вручную с фото п
   await page.getByLabel("Товар", { exact: true }).fill("Стиральная машина");
   await page.getByLabel("Цена", { exact: true }).fill("45000");
   await page.getByLabel("Срок", { exact: true }).fill("10");
+  // Как в карточке CRM: наценка, партнёр, точка продаж (вводятся вручную).
+  await page.getByLabel("Наценка", { exact: true }).fill("9000");
+  await page.getByLabel("Партнёр", { exact: true }).fill("Мах Город");
+  await page.getByLabel("Точка продаж", { exact: true }).fill("Махачкала");
   await page.getByLabel("Доход в месяц", { exact: true }).fill("70000");
   await page.getByRole("button", { name: "Создать заявку" }).click();
 
   await expect(page).toHaveURL(/\/applications\/[0-9a-f-]{36}$/);
-  await expect(page.locator(".ah__facts")).toContainText("заведена вручную");
+  const facts = page.locator(".ah__facts");
+  await expect(facts).toContainText("заведена вручную");
+  await expect(facts).toContainText("Мах Город");
+  await expect(facts).toContainText("Махачкала");
+  await expect(facts.locator(".ah__fact", { hasText: "Стоимость" })).toContainText(/54\s000/);
+  await expect(facts.locator(".ah__fact", { hasText: "Ежемесячно" })).toContainText(/5\s400/);
+  await expect(facts.locator(".ah__calc")).toHaveCount(0); // всё введено, не расчёт
 });
 
 test("наблюдатель не видит кнопку «Новая заявка»", async ({ page }) => {

@@ -335,3 +335,50 @@ async def test_bureau_checks_stored_next_to_ours_and_shown_in_card(
     assert [(c["source"], c["status"], c["block"]) for c in detail.json()["bureau_checks"]] == [
         ("fssp", "ok", "fssp_block"),
     ]
+
+
+class _PremiumProvider:
+    """Подробный пакет: отчёт с проверками бюро; считает платные вызовы."""
+
+    is_configured = True
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def request_report(self, subject, *, report_code=None) -> BkiProviderResult:
+        self.calls += 1
+        status, report = parse_credit_rating(PREMIUM)
+        return BkiProviderResult(
+            status=status, report=report, raw=PREMIUM, extra_checks=spectrum.extract_bureau_checks(PREMIUM),
+        )
+
+
+async def test_cached_report_brings_bureau_checks_to_the_new_application(
+    partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """Отчёт по клиенту уже есть (кэш, второй раз не платим) — проверки бюро
+    из него показываются и у новой заявки. Раньше их не было: на сервере
+    блоки «Проверок» оставались без пометок «БКИ»."""
+    stage_b_payload = {
+        "deal": {"goods_category_code": "household_appliances", "goods_price": 60000.0, "down_payment": 6000.0,
+                 "term_months": 12, "tariff": "standard"},
+        "employment": {"type": "employed"}, "income": {"declared_monthly": "1000000"},
+    }
+    series, number = unique_valid_passport_series(), f"{uuid.uuid4().int % 1000000:06d}"
+    provider = _PremiumProvider()
+    application_ids = []
+    for _ in range(2):
+        _external_id, application_id = await _prepare_application_at_stage_b(
+            partner_admin, partner_client, storage, session_factory, stage_b_payload=stage_b_payload,
+        )
+        await _link_applicant_to_client(session_factory, application_id, series=series, number=number)
+        await _mark_fssp_checked(session_factory, application_id)
+        await run_stage_b(session_factory, application_id, partner_client=partner_client, bki_provider=provider)
+        application_ids.append(application_id)
+
+    assert provider.calls == 1  # второй раз — из кэша
+    async with session_factory() as session:
+        second = (await session.execute(
+            select(BkiBureauCheck).where(BkiBureauCheck.application_id == application_ids[1])
+        )).scalars().all()
+    assert sorted(b.source for b in second) == ["fedresurs", "fssp"]

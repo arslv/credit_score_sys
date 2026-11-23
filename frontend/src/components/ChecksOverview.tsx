@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { components } from "../api/schema";
 import { formatDateTime } from "../lib/format";
-import { checkResultLabel, passportCheckLabel, passportCheckStatusLabel, sourceMeta } from "../lib/labels";
+import { checkResultLabel, fsspEndReason, passportCheckLabel, passportCheckStatusLabel, sourceMeta } from "../lib/labels";
 
 type CheckRow = components["schemas"]["CheckOut"];
 type BureauCheck = components["schemas"]["BureauCheckOut"];
@@ -72,6 +72,19 @@ const BUREAU_GROUP: Record<string, string> = {
   fssp: "Долги и банкротство",
   fedresurs: "Долги и банкротство",
 };
+
+// ФССП: открытых производств нет, но оконченные (в т. ч. оплаченные) были —
+// не «ничего не найдено» зелёным, а жёлтым с итогом (решение владельца 23.11.2026).
+function fsspEndedLine(c: CheckRow): Line | null {
+  if (c.source !== "fssp" || c.status !== "ok" || !c.fssp_details) return null;
+  const ended = c.fssp_details.filter((d) => d.status !== "active");
+  if (ended.length === 0) return null;
+  const paid = ended.filter((d) => fsspEndReason(d.end_reason).paid).length;
+  return {
+    value: `открытых нет · оконченных ${ended.length}${paid > 0 ? `, оплачено ${paid}` : ""}`,
+    tone: "warn",
+  };
+}
 
 function checkTone(status: string): Tone {
   if (status === "ok") return "ok";
@@ -152,7 +165,7 @@ export function ChecksOverview({
         key,
         name: sourceMeta(c.source).label,
         who: c.subject_type === "guarantor" ? guarantorWho : undefined,
-        lines: [{ value: checkResultLabel(c.source, c.status), tone: checkTone(c.status) }],
+        lines: [fsspEndedLine(c) ?? { value: checkResultLabel(c.source, c.status), tone: checkTone(c.status) }],
       });
     }
     // Ручные проверки — у заявителя и поручителя (если он есть) всегда строкой.
