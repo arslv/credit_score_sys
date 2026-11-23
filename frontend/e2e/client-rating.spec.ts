@@ -17,6 +17,8 @@ test("карточка: блок «Рейтинг клиента» с суммо
     await expect(rating.locator(".cr-item__title", { hasText: criterion })).toBeVisible();
   }
   // T23: границы рейтинга по правилам — максимум у суммы и шкала под ней.
-  await expect(rating.locator(".cr__unit")).toHaveText(/^из \d+$/);
-  await expect(rating.locator(".cr__range")).toHaveText(/^шкала от −\d+ до \+\d+$/);
+  // Шкала «худший — 0 — лучший» с меткой клиента вместо текста «шкала от … до …».
+  await expect(rating.locator(".cr-scale__marker")).toHaveCount(1);
+  await expect(rating.locator(".cr-scale__labels")).toContainText(/−\d+/);
+  await expect(rating.locator(".cr-scale__labels")).toContainText(/\+\d+/);
 });

@@ -37,12 +37,9 @@ export function ClientRatingPanel({ rating }: { rating: Rating }) {
         </h2>
         <div className="cr__total">
           <span className={`cr__number cr__number--${tone(rating.total)}`}>{signed(rating.total)}</span>
-          <span className="cr__unit">из {rating.max_total}</span>
+          <span className="cr__unit">баллов</span>
         </div>
-        {/* T23: границы рейтинга по правилам — от худшего до лучшего клиента. */}
-        <div className="cr__range">
-          шкала от {signed(rating.min_total)} до {signed(rating.max_total)}
-        </div>
+        <RatingScale min={rating.min_total} max={rating.max_total} value={rating.total} />
       </div>
 
       <div className="cr__items">
@@ -81,5 +78,38 @@ export function ClientRatingPanel({ rating }: { rating: Rating }) {
         )}
       </div>
     </section>
+  );
+}
+
+// Где клиент между худшим и лучшим возможным (по правилам) — полосой, а не
+// текстом «шкала от … до …» (по отзыву 23.11.2026: было непонятно).
+// Заливка — от нуля к метке: вправо зелёная, влево красная.
+function RatingScale({ min, max, value }: { min: number; max: number; value: number }) {
+  if (max <= min) return null;
+  const pos = (v: number) => Math.min(100, Math.max(0, ((v - min) / (max - min)) * 100));
+  const zero = pos(0);
+  const at = pos(value);
+  return (
+    <div className="cr-scale" aria-label={`Рейтинг ${signed(value)}: от ${signed(min)} (худший) до ${signed(max)} (лучший)`}>
+      <div className="cr-scale__track">
+        <span
+          className={`cr-scale__fill cr-scale__fill--${value >= 0 ? "up" : "down"}`}
+          style={{ left: `${Math.min(zero, at)}%`, width: `${Math.abs(at - zero)}%` }}
+        />
+        <span className="cr-scale__zero" style={{ left: `${zero}%` }} />
+        <span className={`cr-scale__marker cr-scale__marker--${tone(value)}`} style={{ left: `${at}%` }} />
+      </div>
+      <div className="cr-scale__labels">
+        <span title="худший возможный">{signed(min)}</span>
+        <span className="cr-scale__zero-label" style={{ left: `${zero}%` }}>
+          0
+        </span>
+        <span title="лучший возможный">{signed(max)}</span>
+      </div>
+      <div className="cr-scale__hint">
+        <span>← хуже</span>
+        <span>надёжнее →</span>
+      </div>
+    </div>
   );
 }

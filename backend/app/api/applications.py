@@ -1173,6 +1173,24 @@ async def get_application(
         category_row = await session.get(GoodsCategory, application.goods_category_id)
         if category_row is not None:
             goods_category = category_row.name
+    if goods_category is None:
+        # Категорию присылают кодом в анкете (CRM — productCategory, ручная
+        # заявка — из списка), а ссылка у самой заявки не проставляется —
+        # раньше в шапке была «—». Название — из справочника, иначе сам код.
+        latest_b = (
+            await session.execute(
+                select(ExternalSnapshot.payload_raw)
+                .where(ExternalSnapshot.application_id == application.id, ExternalSnapshot.stage == "B")
+                .order_by(ExternalSnapshot.received_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none() or {}
+        code = ((latest_b.get("stage_b") or {}).get("deal") or {}).get("goods_category_code")
+        if code:
+            category_row = (
+                await session.execute(select(GoodsCategory).where(GoodsCategory.code == code))
+            ).scalars().first()
+            goods_category = category_row.name if category_row is not None else str(code)
 
     stage_by_decision_id = {d.id: d.stage for d in decisions}
 

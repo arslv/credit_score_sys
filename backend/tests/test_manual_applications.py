@@ -300,3 +300,20 @@ async def test_list_shows_sales_point_and_anket_count(admin_client, session_fact
     assert item["sales_point"] == "Махачкала, Ленина 1"
     assert item["anket_count"] == 2
     assert item["decided_at"] is None
+
+
+async def test_card_shows_category_chosen_in_form(admin_client, session_factory, app_storage, queued, active_ruleset):
+    """Категория из анкеты видна в карточке названием из справочника (раньше —
+    «—»: ссылка на категорию у самой заявки не проставляется)."""
+    from app.models import GoodsCategory
+
+    await _as(admin_client, session_factory, "operator")
+    created = await _post(admin_client, _form())
+    assert created.status_code == 201, created.text
+    async with session_factory() as session:
+        category = (await session.execute(
+            select(GoodsCategory).where(GoodsCategory.code == "household_appliances")
+        )).scalars().first()
+    card = await admin_client.get(f"/api/applications/{created.json()['id']}")
+    assert card.status_code == 200, card.text
+    assert card.json()["goods_category"] == (category.name if category else "household_appliances")

@@ -7179,3 +7179,86 @@ mark {
 .cr-item--down .cr-item__bar-fill {
   background: var(--status-bad);
 }
+
+/* Рейтинг клиента: шкала «худший — 0 — лучший» с меткой клиента. */
+.cr-scale {
+  display: grid;
+  gap: 4px;
+  margin-top: var(--space-2);
+}
+
+.cr-scale__track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--status-bad) 30%, transparent),
+    color-mix(in srgb, var(--color-subtle) 80%, transparent) 50%,
+    color-mix(in srgb, var(--status-ok) 30%, transparent)
+  );
+}
+
+.cr-scale__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+}
+
+.cr-scale__fill--up {
+  background: var(--status-ok);
+}
+
+.cr-scale__fill--down {
+  background: var(--status-bad);
+}
+
+.cr-scale__zero {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-text-muted);
+}
+
+.cr-scale__marker {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  box-shadow: 0 0 0 1px var(--color-border-strong);
+}
+
+.cr-scale__marker--up {
+  background: var(--status-ok);
+}
+
+.cr-scale__marker--down {
+  background: var(--status-bad);
+}
+
+.cr-scale__labels {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.cr-scale__zero-label {
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.cr-scale__hint {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
