@@ -5,14 +5,6 @@ import { fsspEndReason } from "../lib/labels";
 
 type Production = components["schemas"]["FsspProductionOut"];
 
-const plural = (n: number, forms: [string, string, string]) => {
-  const m10 = n % 10;
-  const m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return forms[0];
-  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return forms[1];
-  return forms[2];
-};
-
 /**
  * ФССП — производства по найденному: за что долг (предмет и сумма), номер и
  * дата производства, документ-основание, отдел; у оконченных — когда и по
@@ -26,9 +18,9 @@ export function FsspDetails({ details }: { details: Production[] }) {
   const ended = details.filter((d) => d.status !== "active");
   const paid = ended.filter((d) => fsspEndReason(d.end_reason).paid).length;
   const summary = [
-    active.length > 0 && `${active.length} ${plural(active.length, ["действующее", "действующих", "действующих"])}`,
+    active.length > 0 && `${active.length} действ.`,
     ended.length > 0 &&
-      `${ended.length} ${plural(ended.length, ["оконченное", "оконченных", "оконченных"])}${paid > 0 ? `, оплачено ${paid}` : ""}`,
+      `${ended.length} оконч.${paid > 0 ? `, оплач. ${paid}` : ""}`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -116,8 +108,8 @@ export function BureauFsspDetails({ parsed }: { parsed: Record<string, unknown> 
   const closedCount = typeof parsed.closed_count === "number" ? parsed.closed_count : closedItems.length;
   if (openItems.length === 0 && closedItems.length === 0) return null;
   const bureauSummary = [
-    openItems.length > 0 && `${openItems.length} ${plural(openItems.length, ["действующее", "действующих", "действующих"])}`,
-    closedCount > 0 && `${closedCount} ${plural(closedCount, ["оконченное", "оконченных", "оконченных"])}`,
+    openItems.length > 0 && `${openItems.length} действ.`,
+    closedCount > 0 && `${closedCount} оконч.`,
   ]
     .filter(Boolean)
     .join(" · ");

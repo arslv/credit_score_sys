@@ -73,6 +73,14 @@ const BUREAU_GROUP: Record<string, string> = {
   fns_npd: "Налоговая",
   fssp: "Долги и банкротство",
   fedresurs: "Долги и банкротство",
+  // Только из отчёта бюро (23.11.2026): реестры — к перечням, суды и залоги — к долгам.
+  wanted: "Перечни",
+  fsin_wanted: "Перечни",
+  inoagent: "Перечни",
+  disqualified: "Перечни",
+  trust_loss: "Перечни",
+  courts: "Долги и банкротство",
+  pledge: "Долги и банкротство",
 };
 
 // Итог нашей проверки на сайте источника. У ФССП — сумма долга прямо в
@@ -319,7 +327,7 @@ function GroupCard({ title, rows, actions }: { title: string; rows: Row[]; actio
                     {row.who && <span className="chk__who">{row.who}</span>}
                   </div>
                   {!row.quiet &&
-                    row.lines.map((line, j) => (
+                    row.lines.map((line, j) => [
                       <div key={j} className={`chk__line chk__line--${line.tone}`}>
                         {line.bureau ? (
                           <span className="bki-tag" title="Проверка из отчёта бюро кредитных историй">
@@ -334,9 +342,13 @@ function GroupCard({ title, rows, actions }: { title: string; rows: Row[]; actio
                           )
                         )}
                         <span className="chk__value">{line.value}</span>
-                        {line.details}
-                      </div>
-                    ))}
+                      </div>,
+                      line.details ? (
+                        <div key={`${j}-details`} className="chk__line-details">
+                          {line.details}
+                        </div>
+                      ) : null,
+                    ])}
                   {actions[row.key] && <div className="chk__action">{actions[row.key]}</div>}
                 </div>
               </li>

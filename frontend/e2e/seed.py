@@ -132,6 +132,16 @@ async def _seed_discrepancy_application(session) -> dict:
                 "score": {"value": "736"}, "src_meta": {"state": "OK"},
             }}}}]}},
         ))
+        # Ещё блоки «Премиум»: розыск, суды, залоги.
+        for source, block, status, summary in (
+            ("wanted", "check_person.wanted", "ok", "в розыске МВД не числится"),
+            ("courts", "check_person.general_jurisdiction_cases", "hit", "дел в судах: 2"),
+            ("pledge", "check_person.pledge", "ok", "залогов: 1, имущество клиента в залоге: 1"),
+        ):
+            session.add(BkiBureauCheck(
+                application_id=application.id, subject_type="applicant", source=source, block=block,
+                status=status, report_type="detailed", parsed={"summary": summary},
+            ))
         # ФССП из отчёта бюро — действующее и оконченное производство.
         session.add(BkiBureauCheck(
             application_id=application.id, subject_type="applicant", source="fssp",

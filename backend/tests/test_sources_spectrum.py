@@ -401,3 +401,28 @@ def test_credit_history_details_open_closed_delays():
     assert details["bad_debt"] is False
     assert details["inquiries"] == {"7d": 0, "14d": 0, "1mo": 1, "all": 100}
     assert spectrum.credit_history_details(NOT_FOUND) is None
+
+
+def test_bureau_wanted_courts_pledge_and_registries():
+    """Блоки «Премиум» сверх основных: розыск, суды, залоги, реестры —
+    по реальной структуре отчёта (23.11.2026)."""
+    response = _premium({
+        "wanted": {"count": 0, "items": [], "src_meta": {"state": "OK"}},
+        "fsin_wanted": [{"name": "запись"}],
+        "general_jurisdiction_cases": {"count": 2, "total_count": 3, "items": [{"case": 1}, {"case": 2}]},
+        "pledge": {"total": 2, "totalAsPledgor": 1, "totalAsPledgee": 0, "pledges": [{}, {}],
+                   "src_meta": {"state": "OK"}},
+        "trust_loss_dismissal": {"total": 0},
+        "inoagent": [],
+        "disqualified_persons_inn_individual": {"src_meta": {"state": "ERROR"}},
+    }, {})
+    by_source = {c.source: c for c in spectrum.extract_bureau_checks(response)}
+    assert (by_source["wanted"].status, by_source["wanted"].parsed["summary"]) == ("ok", "в розыске МВД не числится")
+    assert by_source["fsin_wanted"].status == "hit"
+    assert (by_source["courts"].status, by_source["courts"].parsed["summary"]) == ("hit", "дел в судах: 3")
+    assert by_source["pledge"].status == "ok"
+    assert by_source["pledge"].parsed["summary"] == "залогов: 2, имущество клиента в залоге: 1"
+    assert by_source["trust_loss"].status == "ok"
+    assert by_source["inoagent"].parsed["summary"] == "в реестре иноагентов нет"
+    assert by_source["disqualified"].status == "source_unavailable"
+

@@ -7263,14 +7263,15 @@ mark {
   color: var(--color-text-muted);
 }
 
-/* Разворот производств у итога бюро — отдельной строкой под ним. */
-.chk__line:has(.fssp-det) {
-  flex-wrap: wrap;
+/* Разворот (производства, кредиты) — блоком под строкой итога; ссылки — влево. */
+.chk__line-details {
+  margin: 2px 0 4px;
 }
 
-.chk__line .fssp-det {
-  flex-basis: 100%;
-  margin-left: 0;
+.fssp-det__toggle,
+.crd__toggle {
+  display: block;
+  text-align: left;
 }
 
 /* Рейтинг клиента: плитки фиксированной ширины (не во всю строку) — критериев

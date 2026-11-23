@@ -363,6 +363,70 @@ def _parse_extremists(block: dict) -> tuple[str, dict]:
     return "ok", parsed
 
 
+def _found_count(block: dict) -> int:
+    """Сколько записей нашёл блок: total_count / count / total или длина
+    списка items / pledges (блоки устроены по-разному)."""
+    for key in ("total_count", "count", "total"):
+        value = block.get(key)
+        if isinstance(value, int):
+            return value
+    for key in ("items", "pledges"):
+        if isinstance(block.get(key), list):
+            return len(block[key])
+    return 0
+
+
+def _first_items(block: dict, key: str = "items", limit: int = 20) -> list:
+    items = block.get(key)
+    return [i for i in items[:limit] if isinstance(i, dict)] if isinstance(items, list) else []
+
+
+def _registry_parser(found_text: str, clean_text: str) -> Callable[[dict], tuple[str, dict]]:
+    """Реестр «есть / нет» (розыск, иноагенты, дисквалификация…): нашлась
+    хоть одна запись — hit."""
+
+    def parse(block: dict) -> tuple[str, dict]:
+        count = _found_count(block)
+        parsed = {"count": count, "items": _first_items(block)}
+        if count:
+            parsed["summary"] = f"{found_text}: {count}"
+            return "hit", parsed
+        parsed["summary"] = clean_text
+        return "ok", parsed
+
+    return parse
+
+
+def _parse_courts(block: dict) -> tuple[str, dict]:
+    """Дела в судах общей юрисдикции (поиск по ФИО — бывают однофамильцы)."""
+    count = _found_count(block)
+    parsed = {"count": count, "items": _first_items(block)}
+    if count:
+        parsed["summary"] = f"дел в судах: {count}"
+        return "hit", parsed
+    parsed["summary"] = "дел в судах нет"
+    return "ok", parsed
+
+
+def _parse_pledge(block: dict) -> tuple[str, dict]:
+    """Залоги (реестр уведомлений о залоге движимого имущества). Залог — не
+    нарушение (автокредит и т. п.), только для сведения: всегда ok."""
+    total = _found_count(block)
+    as_pledgor = block.get("totalAsPledgor")
+    parsed = {
+        "total": total,
+        "as_pledgor": as_pledgor if isinstance(as_pledgor, int) else None,
+        "as_pledgee": block.get("totalAsPledgee"),
+        "items": _first_items(block, "pledges"),
+    }
+    if total:
+        own = f", имущество клиента в залоге: {as_pledgor}" if isinstance(as_pledgor, int) else ""
+        parsed["summary"] = f"залогов: {total}{own}"
+    else:
+        parsed["summary"] = "залогов нет"
+    return "ok", parsed
+
+
 @dataclass(frozen=True)
 class BureauBlock:
     path: tuple[str, ...]  # путь от content («Структура отчёта» в описании блока)
@@ -400,6 +464,30 @@ BUREAU_BLOCKS: list[BureauBlock] = [
         path=("check_person", "extremists"), source="rosfinmon",
         source_ids=("check_person/extremist_list",), parse=_parse_extremists,
     ),
+    # Ещё блоки «Проверки соискателя — Премиум» (по реальному отчёту,
+    # 23.11.2026): розыск, суды, залоги, реестры. Только показ.
+    BureauBlock(
+        path=("check_person", "wanted"), source="wanted", source_ids=(),
+        parse=_registry_parser("в розыске МВД, записей", "в розыске МВД не числится"),
+    ),
+    BureauBlock(
+        path=("check_person", "fsin_wanted"), source="fsin_wanted", source_ids=(),
+        parse=_registry_parser("в розыске ФСИН, записей", "в розыске ФСИН не числится"),
+    ),
+    BureauBlock(path=("check_person", "general_jurisdiction_cases"), source="courts", source_ids=(), parse=_parse_courts),
+    BureauBlock(path=("check_person", "pledge"), source="pledge", source_ids=(), parse=_parse_pledge),
+    BureauBlock(
+        path=("check_person", "inoagent"), source="inoagent", source_ids=(),
+        parse=_registry_parser("в реестре иноагентов, записей", "в реестре иноагентов нет"),
+    ),
+    BureauBlock(
+        path=("check_person", "disqualified_persons_inn_individual"), source="disqualified", source_ids=(),
+        parse=_registry_parser("в реестре дисквалифицированных, записей", "в реестре дисквалифицированных нет"),
+    ),
+    BureauBlock(
+        path=("check_person", "trust_loss_dismissal"), source="trust_loss", source_ids=(),
+        parse=_registry_parser("уволен в связи с утратой доверия, записей", "в реестре утраты доверия нет"),
+    ),
 ]
 
 
@@ -434,10 +522,19 @@ def extract_bureau_checks(response: dict) -> list[BureauCheck]:
                 ))
                 continue
             block = _dig(content, spec.path)
+            if isinstance(block, list):
+                block = {"items": block}  # блок-список: записи реестра
             if not isinstance(block, dict):
                 if not source_states:
                     continue
                 block = {}  # источник ответил OK, записей нет
+            meta_state = str((block.get("src_meta") or {}).get("state", "OK")).upper()
+            if meta_state != "OK":
+                checks.append(BureauCheck(
+                    source=spec.source, block=block_key, status="source_unavailable",
+                    parsed={"summary": "источник бюро не ответил", "source_state": meta_state},
+                ))
+                continue
             status, parsed = spec.parse(block)
             checks.append(BureauCheck(source=spec.source, block=block_key, status=status, parsed=parsed))
     return checks

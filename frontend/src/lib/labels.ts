@@ -98,6 +98,14 @@ const SOURCE_META: Record<string, SourceMeta> = {
   fedresurs: { label: "Федресурс — банкротство" },
   fssp: { label: "ФССП" },
   bki: { label: "БКИ" },
+  // Проверки из отчёта бюро «Проверка соискателя — Премиум» (23.11.2026).
+  wanted: { label: "Розыск МВД" },
+  fsin_wanted: { label: "Розыск ФСИН" },
+  courts: { label: "Суды общей юрисдикции" },
+  pledge: { label: "Залоги" },
+  inoagent: { label: "Реестр иноагентов" },
+  disqualified: { label: "Дисквалифицированные лица" },
+  trust_loss: { label: "Утрата доверия" },
 };
 
 // Ключи источников, для которых есть подпись (тест словаря обходит их все).
