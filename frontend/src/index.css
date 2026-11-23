@@ -6930,7 +6930,15 @@ mark {
 /* Шапка заявки: «Продукт» как в CRM — до девяти клеток, переносятся по
    ширине; у расчётных значений — пометка «расчёт». */
 .ah__facts--product {
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+}
+
+.ah__facts--product .ah__fact {
+  padding: 12px 14px;
+}
+
+.ah__facts--product .ah__fact dt {
+  white-space: nowrap;
 }
 
 .ah__facts--product .ah__fact {

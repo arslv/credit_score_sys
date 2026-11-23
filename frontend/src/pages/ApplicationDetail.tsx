@@ -414,15 +414,15 @@ export function ApplicationDetailPage() {
         <dl className="ah__facts ah__facts--product">
           {productFacts.map((f) => (
             <div key={f.label} className={f.wide ? "ah__fact ah__fact--wide" : "ah__fact"}>
-              <dt>
-                {f.label}
+              <dt>{f.label}</dt>
+              <dd>
+                {f.value}
                 {f.calc && (
                   <span className="ah__calc" title="Расчёт по тарифу — CRM пока не присылает это значение">
                     расчёт
                   </span>
                 )}
-              </dt>
-              <dd>{f.value}</dd>
+              </dd>
             </div>
           ))}
         </dl>
