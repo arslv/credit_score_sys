@@ -32,12 +32,13 @@ test("оператор заводит заявку вручную с фото п
   await page.getByRole("button", { name: "Создать заявку" }).click();
 
   await expect(page).toHaveURL(/\/applications\/[0-9a-f-]{36}$/);
-  const facts = page.locator(".ah__facts");
-  await expect(facts).toContainText("заведена вручную");
-  await expect(facts).toContainText("Мах Город");
-  await expect(facts).toContainText("Махачкала");
-  await expect(facts.locator(".ah__fact", { hasText: "Стоимость" })).toContainText(/54\s000/);
-  await expect(facts.locator(".ah__fact", { hasText: "Ежемесячно" })).toContainText(/5\s400/);
+  // Источник — в строке под именем; продукт — два ряда (что продаём, деньги).
+  await expect(page.locator(".ah__meta")).toContainText("заведена вручную");
+  const facts = page.locator(".ah__product");
+  await expect(facts.locator(".ah__pf", { hasText: "Партнёр" })).toContainText("Мах Город");
+  await expect(facts.locator(".ah__pf", { hasText: "Точка продаж" })).toContainText("Махачкала");
+  await expect(facts.locator(".ah__pf", { hasText: "Стоимость" })).toContainText(/54\s000/);
+  await expect(facts.locator(".ah__pf", { hasText: "Ежемесячно" })).toContainText(/5\s400/);
   await expect(facts.locator(".ah__calc")).toHaveCount(0); // всё введено, не расчёт
 });
 

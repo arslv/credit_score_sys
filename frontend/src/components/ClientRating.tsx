@@ -59,7 +59,18 @@ export function ClientRatingPanel({ rating }: { rating: Rating }) {
                   </>
                 )}
               </span>
-              {item.points != null && item.value != null && <span className="cr-item__value">{item.value}</span>}
+              <span className="cr-item__value">{item.points != null && item.value != null ? item.value : "—"}</span>
+              {/* Сколько набрано из возможного по критерию — полоской. */}
+              <span className="cr-item__bar" aria-hidden="true">
+                {item.points != null && item.max_points > item.min_points && (
+                  <span
+                    className="cr-item__bar-fill"
+                    style={{
+                      width: `${Math.max(4, ((item.points - item.min_points) / (item.max_points - item.min_points)) * 100)}%`,
+                    }}
+                  />
+                )}
+              </span>
             </li>
           ))}
         </ul>

@@ -1146,6 +1146,15 @@ export interface components {
             action_text: string | null;
             /** Waiting Since */
             waiting_since: string | null;
+            /** Sales Point */
+            sales_point?: string | null;
+            /**
+             * Anket Count
+             * @default 1
+             */
+            anket_count: number;
+            /** Decided At */
+            decided_at?: string | null;
         };
         /** AuditLogOut */
         AuditLogOut: {

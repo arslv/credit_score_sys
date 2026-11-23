@@ -6982,3 +6982,200 @@ mark {
 .bl-add__row dd {
   margin: 0;
 }
+
+/* Список заявок как в CRM (23.11.2026). */
+.table--crm td,
+.table--crm th {
+  white-space: nowrap;
+}
+
+.table--crm .cell-ellipsis {
+  max-width: 220px;
+}
+
+.crm-tag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-subtle);
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.cell-status {
+  min-width: 250px;
+  white-space: normal !important;
+}
+
+.cell-status__sub {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.cell-menu {
+  width: 1%;
+  text-align: center;
+}
+
+.row-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.row-menu__btn {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--color-text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.row-menu__btn:hover,
+.row-menu__btn[aria-expanded="true"] {
+  background: var(--color-subtle);
+  color: var(--color-text);
+}
+
+.row-menu__list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: grid;
+  min-width: 180px;
+  padding: 4px;
+  border: var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.16);
+}
+
+.row-menu__list button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row-menu__list button:hover {
+  background: var(--color-subtle);
+}
+
+/* Шапка заявки: «Продукт» — два ровных ряда по шесть клеток (что продаём —
+   деньги); текст переносится, а не обрезается. */
+.ah__product {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  background: color-mix(in srgb, var(--color-subtle) 45%, transparent);
+}
+
+.ah__product-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin: 0;
+}
+
+.ah__product-row + .ah__product-row {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+.ah__pf {
+  min-width: 0;
+  padding: 10px 16px;
+}
+
+.ah__pf + .ah__pf {
+  border-left: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+
+.ah__pf--wide {
+  grid-column: span 2;
+}
+
+.ah__pf dt {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.ah__pf dd {
+  margin: 4px 0 0;
+  font-size: var(--font-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.ah__pf dd.ah__pf-empty {
+  color: var(--color-text-muted);
+  font-weight: var(--weight-normal);
+}
+
+@media (max-width: 900px) {
+  .ah__product-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ah__pf + .ah__pf {
+    border-left: 0;
+  }
+}
+
+/* Рейтинг клиента — плитки одной высоты на всю ширину, полоска «набрано из
+   возможного»; «нет данных» — тем же размером, только серым. */
+.cr__grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.cr-item {
+  grid-template-rows: auto auto 4px;
+  align-content: start;
+  min-height: 72px;
+}
+
+.cr-item--none .cr-item__title {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.cr-item--none .cr-item__points {
+  font-size: var(--font-sm);
+}
+
+.cr-item__bar {
+  grid-column: 1 / -1;
+  align-self: end;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-subtle);
+}
+
+.cr-item__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-text-muted);
+}
+
+.cr-item--up .cr-item__bar-fill {
+  background: var(--status-ok);
+}
+
+.cr-item--down .cr-item__bar-fill {
+  background: var(--status-bad);
+}

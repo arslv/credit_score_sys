@@ -3369,6 +3369,34 @@
               }
             ],
             "title": "Waiting Since"
+          },
+          "sales_point": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sales Point"
+          },
+          "anket_count": {
+            "type": "integer",
+            "title": "Anket Count",
+            "default": 1
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
           }
         },
         "type": "object",

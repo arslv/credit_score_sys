@@ -283,3 +283,20 @@ async def test_product_fields_and_markup_derive_cost_and_payment(
     assert (back["markup"], back["partner"], back["sales_point"], back["product_type"]) == (
         "45096", "Мах Город", "Махачкала", "Товар",
     )
+
+
+async def test_list_shows_sales_point_and_anket_count(admin_client, session_factory, app_storage, queued, active_ruleset):
+    """Список как в CRM: точка продаж, сколько анкет (заявитель + поручитель),
+    время решения (пока решения нет — пусто)."""
+    await _as(admin_client, session_factory, "operator")
+    form = _form(sales_point="Махачкала, Ленина 1")
+    form["guarantor"] = {"last_name": "Поручителев", "first_name": "Пётр", "phone": "+79990001122"}
+    created = await _post(admin_client, form)
+    assert created.status_code == 201, created.text
+
+    listed = await admin_client.get("/api/applications", params={"view": "all", "page_size": 100})
+    assert listed.status_code == 200, listed.text
+    item = next(i for i in listed.json()["items"] if i["id"] == created.json()["id"])
+    assert item["sales_point"] == "Махачкала, Ленина 1"
+    assert item["anket_count"] == 2
+    assert item["decided_at"] is None

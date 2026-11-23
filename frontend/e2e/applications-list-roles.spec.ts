@@ -1,11 +1,15 @@
-// T17, часть 4 (баги после скриншотов): у каждой роли список реально грузится
-// (таблица появляется, не «Загрузка…»), а колонки, которые роли всегда пусты,
-// не показываются. T23: ролей три, очереди нет только у наблюдателя.
+// Список заявок как в CRM (решение владельца 23.11.2026): id, точка продаж,
+// клиент, продукт, срок, сумма, анкет, время принятия, статус, действия.
+// Что сделать и сколько ждёт — второй строкой под статусом (в очереди роли).
 import { test, expect } from "@playwright/test";
 import { loadSeed } from "./fixtures";
 import { login } from "./login";
 
-test("оператор: очередь «Требуют действия» грузится и показывает таблицу", async ({ page }) => {
+const CRM_COLUMNS = [
+  "id", "Точка продаж", "Клиент", "Продукт", "Срок", "Сумма", "Анкет", "Время принятия", "Статус", "Действия",
+];
+
+test("оператор: очередь грузится, колонки как в CRM", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.operator.email, seed.operator.password);
   await page.goto("/applications");
@@ -13,31 +17,30 @@ test("оператор: очередь «Требуют действия» гр�
   await expect(page.getByRole("button", { name: /Требуют действия · \d+/ })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Загрузка…")).toHaveCount(0, { timeout: 10_000 });
   await expect(page.getByRole("table")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByRole("columnheader", { name: "Нужно сделать" })).toBeVisible();
+  const headers = await page.getByRole("columnheader").allTextContents();
+  expect(headers.map((h) => h.trim())).toEqual(CRM_COLUMNS);
 });
 
-test("наблюдатель: без очереди, колонок «Нужно сделать» и «Ждёт» нет", async ({ page }) => {
+test("наблюдатель: без очереди, список тот же", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.viewer.email, seed.viewer.password);
   await page.goto("/applications");
 
   await expect(page.getByRole("table")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole("button", { name: /Требуют действия/ })).toHaveCount(0);
-  await expect(page.getByRole("columnheader", { name: "Нужно сделать" })).toHaveCount(0);
-  await expect(page.getByRole("columnheader", { name: "Ждёт" })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "Статус" })).toBeVisible();
 });
 
-test("администратор: «Ждёт» в очереди показывает время ожидания", async ({ page }) => {
+test("администратор: в очереди под статусом — что сделать и сколько ждёт; меню «⋮» открывает заявку", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/applications");
 
   await expect(page.getByRole("table")).toBeVisible({ timeout: 10_000 });
+  const firstRow = page.locator("tbody tr").first();
+  await expect(firstRow.locator(".cell-status__sub").first()).toHaveText(/· \d+ (мин|ч|дн)/);
 
-  const waitIndex = await page.getByRole("columnheader").evaluateAll(
-    (headers) => headers.findIndex((th) => th.textContent?.trim() === "Ждёт"),
-  );
-  expect(waitIndex).toBeGreaterThanOrEqual(0);
-  const firstWait = page.locator("tbody tr").first().locator("td").nth(waitIndex);
-  await expect(firstWait).toHaveText(/\d+ (мин|ч|дн)/);
+  await firstRow.getByRole("button", { name: "Действия с заявкой" }).click();
+  await page.getByRole("menuitem", { name: "Открыть заявку" }).click();
+  await expect(page).toHaveURL(/\/applications\/[0-9a-f-]{36}$/);
 });

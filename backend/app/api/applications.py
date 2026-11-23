@@ -157,6 +157,11 @@ class ApplicationListItem(BaseModel):
     action_kind: str | None
     action_text: str | None
     waiting_since: datetime | None
+    # Как в списке CRM (решение владельца 23.11.2026): точка продаж из анкеты,
+    # сколько анкет (заявитель + поручители) и когда система приняла решение.
+    sales_point: str | None = None
+    anket_count: int = 1
+    decided_at: datetime | None = None
 
 
 async def _latest_outcome(session: AsyncSession, application_id: UUID, stage: str) -> Decision | None:
@@ -537,6 +542,21 @@ async def list_applications(
             employee.role, application.status, decision_b, freeze_at, mismatch_override, status_since,
         )
 
+        snapshot_b = (
+            await session.execute(
+                select(ExternalSnapshot.payload_raw)
+                .where(ExternalSnapshot.application_id == application.id, ExternalSnapshot.stage == "B")
+                .order_by(ExternalSnapshot.received_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none() or {}
+        stage_b_deal = ((snapshot_b.get("stage_b") or {}).get("deal") or {})
+        crm_guarantors = (snapshot_b.get("crm_raw") or {}).get("guarantors")
+        guarantors = (
+            len(crm_guarantors) if isinstance(crm_guarantors, list)
+            else (1 if (snapshot_b.get("stage_b") or {}).get("guarantor") else 0)
+        )
+
         item = ApplicationListItem(
             id=application.id, number=application.number, external_id=application.external_id,
             source=application.source,
@@ -552,6 +572,9 @@ async def list_applications(
             action_kind=entry[0] if entry else None,
             action_text=entry[1] if entry else None,
             waiting_since=entry[2] if entry else None,
+            sales_point=stage_b_deal.get("sales_point") or None,
+            anket_count=1 + guarantors,
+            decided_at=latest_decision.created_at if latest_decision else None,
         )
         return item, override_matches
 

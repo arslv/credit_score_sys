@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination, SearchInput, useDebounced } from "../components/ui";
-import { formatAmount, formatElapsed } from "../lib/format";
+import { formatAmount, formatDateTime, formatElapsed } from "../lib/format";
 import { applicationStatusLabel } from "../lib/labels";
 
 const PAGE_SIZE = 25;
@@ -22,13 +22,6 @@ const VIEW_LABELS: Record<View, string> = {
 };
 
 const QUEUE_ROLES = ["operator", "admin"];
-
-// Колонки, которые у роли всегда пусты, не показываем.
-// T23: ролей три; очереди нет только у наблюдателя — «Нужно сделать» и
-// «Ждёт» у него всегда пусты, не занимаем ими ширину.
-const HIDDEN_COLUMNS_BY_ROLE: Record<string, Set<string>> = {
-  viewer: new Set(["action", "waiting"]),
-};
 
 // Тон пилюли статуса: одобрено — зелёный, отказ — красный, серая зона — янтарный,
 // всё «в процессе» — нейтральный серо-синий. Цвета — токены в index.css.
@@ -108,20 +101,22 @@ export function ApplicationsListPage() {
   }
 
   const counts = countsQuery.data;
-  const hidden = HIDDEN_COLUMNS_BY_ROLE[employee?.role ?? ""] ?? new Set<string>();
   // T23: одна строка на заявку (~36px) — номер у заказчика и товар отдельными
   // колонками, наш порядковый номер — в подсказке; раньше вторая строка под ФИО.
+  // Колонки — как в списке CRM (решение владельца 23.11.2026). Что сделать,
+  // сколько ждёт и «оператор изменил статус» — второй строкой под статусом.
   const columns = [
-    { key: "number", title: "№ в CRM" },
+    { key: "number", title: "id" },
+    { key: "point", title: "Точка продаж" },
     { key: "client", title: "Клиент" },
-    { key: "goods", title: "Товар" },
-    { key: "amount", title: "Сумма / срок" },
+    { key: "goods", title: "Продукт" },
+    { key: "term", title: "Срок", num: true },
+    { key: "amount", title: "Сумма", num: true },
+    { key: "ankets", title: "Анкет", num: true },
+    { key: "decided", title: "Время принятия" },
     { key: "status", title: "Статус" },
-    { key: "score", title: "Балл БКИ" },
-    { key: "action", title: "Нужно сделать" },
-    { key: "waiting", title: "Ждёт" },
-    { key: "override", title: "Итог оператора" },
-  ].filter((column) => !hidden.has(column.key));
+    { key: "menu", title: "Действия" },
+  ];
   const views = (Object.keys(VIEW_LABELS) as View[]).filter((key) => key !== "action" || counts?.action != null);
 
   return (
@@ -241,63 +236,63 @@ export function ApplicationsListPage() {
       )}
 
       {query.data && query.data.items.length > 0 && (
-        <table className="table table--list">
+        <table className="table table--list table--crm">
           <thead>
             <tr>
               {columns.map((column) => (
-                <th key={column.key}>{column.title}</th>
+                <th key={column.key} className={column.num ? "num" : undefined}>
+                  {column.title}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {query.data.items.map((item) => (
               <tr key={item.id}>
-                <td className="muted cell-ellipsis cell-id" title={`Заявка №${item.number}`}>
-                  {item.source === "manual" ? "вручную" : item.external_id}
+                <td className="cell-id" title={`Заявка №${item.number}`}>
+                  {item.source === "manual" ? (
+                    <>
+                      {item.number}
+                      <span className="crm-tag">вручную</span>
+                    </>
+                  ) : (
+                    item.external_id
+                  )}
+                </td>
+                <td className="cell-ellipsis muted" title={item.sales_point ?? undefined}>
+                  {item.sales_point ?? "—"}
                 </td>
                 <td className="cell-ellipsis">
                   <Link to={`/applications/${item.id}`}>{item.client_name ?? "—"}</Link>
                 </td>
-                <td className="cell-ellipsis muted" title={item.goods_name}>
-                  {item.goods_name}
+                <td className="cell-ellipsis" title={item.goods_name}>
+                  {item.goods_name && item.goods_name !== "—" ? item.goods_name : "—"}
                 </td>
-                <td className="num">
-                  {/* До «Рассмотреть» сделки ещё нет (T18: нули-заглушки) — прочерк, не «0 ₽». */}
-                  {item.term_months > 0 ? `${formatAmount(item.requested_amount)} ₽ / ${item.term_months} мес.` : "—"}
-                </td>
-                <td>
+                {/* До «Рассмотреть» сделки ещё нет (нули-заглушки) — прочерк, не «0 ₽». */}
+                <td className="num">{item.term_months > 0 ? item.term_months : "—"}</td>
+                <td className="num">{Number(item.goods_price) > 0 ? `${formatAmount(item.goods_price)} ₽` : "—"}</td>
+                <td className="num">{item.anket_count}</td>
+                <td className="muted">{item.decided_at ? formatDateTime(item.decided_at) : "-"}</td>
+                <td className="cell-status">
                   <span className={`status-pill status-pill--${statusTone(item.status)}`}>
                     {applicationStatusLabel(item.status)}
                   </span>
+                  {item.action_text && (
+                    <span className="cell-status__sub">
+                      <span className={`action-dot action-dot--${item.action_kind}`} aria-hidden="true" />
+                      {item.action_text}
+                      {item.waiting_since && <span className="muted"> · {formatElapsed(item.waiting_since)}</span>}
+                    </span>
+                  )}
+                  {item.has_override && item.override_matches_system === false && (
+                    <span className="cell-status__sub" title="Итог оператора не совпадает с последним решением системы">
+                      Оператор изменил статус
+                    </span>
+                  )}
                 </td>
-                {!hidden.has("score") && (
-                  <td className="num">{item.score != null ? Math.round(Number(item.score)) : ""}</td>
-                )}
-                {!hidden.has("action") && (
-                  <td className="cell-wrap">
-                    {item.action_text && (
-                      <>
-                        <span className={`action-dot action-dot--${item.action_kind}`} aria-hidden="true" />
-                        {item.action_text}
-                      </>
-                    )}
-                  </td>
-                )}
-                {!hidden.has("waiting") && (
-                  <td className="muted num">
-                    {/* «Ждёт» — только у заявок очереди роли: момент встал в очередь. */}
-                    {item.action_text && item.waiting_since ? formatElapsed(item.waiting_since) : ""}
-                  </td>
-                )}
-                {!hidden.has("override") && (
-                  <td className="cell-wrap">
-                    {item.has_override && item.override_matches_system === false ? (
-                      <span title="Итог оператора не совпадает с последним решением системы">
-                        Оператор изменил статус
-                      </span>
-                    ) : null}
-                  </td>
-                )}
+                <td className="cell-menu">
+                  <RowMenu id={item.id} canEdit={CREATE_ROLES.includes(employee?.role ?? "")} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -308,5 +303,46 @@ export function ApplicationsListPage() {
         <Pagination page={page} pageSize={PAGE_SIZE} total={query.data.total} onPage={setPage} />
       )}
     </section>
+  );
+}
+
+// «⋮» у строки — действия с заявкой, как в списке CRM.
+function RowMenu({ id, canEdit }: { id: string; canEdit: boolean }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  return (
+    <div className="row-menu" ref={ref}>
+      <button
+        type="button"
+        className="row-menu__btn"
+        aria-label="Действия с заявкой"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        ⋮
+      </button>
+      {open && (
+        <div className="row-menu__list" role="menu">
+          <button type="button" role="menuitem" onClick={() => navigate(`/applications/${id}`)}>
+            Открыть заявку
+          </button>
+          {canEdit && (
+            <button type="button" role="menuitem" onClick={() => navigate(`/applications/${id}/edit`)}>
+              Изменить анкету
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

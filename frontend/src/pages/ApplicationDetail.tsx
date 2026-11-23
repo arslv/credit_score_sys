@@ -321,20 +321,26 @@ export function ApplicationDetailPage() {
         : null;
   const costCalc = markupGiven == null && monthlyCalc;
   const rub = (v: number) => `${formatAmount(Math.round(v))} ₽`;
-  const productFacts: { label: string; value: string; wide?: boolean; calc?: boolean }[] = [
+  // Два ровных ряда по шесть клеток (по отзыву 23.11.2026: в одну строку
+  // двенадцать клеток обрезались): что продаём — и деньги. Пустое — «—»,
+  // чтобы ряды не съезжали; ряд «что» без единого значения не показываем.
+  type Fact = { label: string; value: string; wide?: boolean; calc?: boolean };
+  const productInfo: Fact[] = [
+    { label: "Наименование", value: app.goods_name && app.goods_name !== "—" ? app.goods_name : "", wide: true },
     { label: "Тип продукта", value: dealText("product_type") },
     { label: "Категория", value: app.goods_category ?? "" },
-    { label: "Наименование", value: app.goods_name && app.goods_name !== "—" ? app.goods_name : "", wide: true },
+    { label: "Партнёр", value: dealText("partner") },
+    { label: "Точка продаж", value: dealText("sales_point") },
+  ];
+  const productMoney: Fact[] = [
     { label: "Цена", value: price > 0 ? rub(price) : "" },
     { label: "Первый взнос", value: price > 0 ? rub(down) : "" },
     { label: "Наценка", value: totalCost != null && price > 0 ? rub(totalCost - price) : "", calc: costCalc },
-    { label: "Ежемесячно", value: monthly != null ? rub(monthly) : "", calc: monthlyCalc },
     { label: "Стоимость", value: totalCost != null ? rub(totalCost) : "", calc: costCalc },
+    { label: "Ежемесячно", value: monthly != null ? rub(monthly) : "", calc: monthlyCalc },
     { label: "Срок", value: app.term_months > 0 ? `${app.term_months} мес.` : "" },
-    { label: "Партнёр", value: dealText("partner") },
-    { label: "Точка продаж", value: dealText("sales_point") },
-    { label: "Источник", value: manual ? "заведена вручную" : `CRM · ${app.external_id}` },
-  ].filter((f) => f.value);
+  ];
+  const productRows = [productInfo, productMoney].filter((row) => row.some((f) => f.value));
 
   // Редизайн 16.11.2026 (решение владельца): сверху — кто клиент и решение
   // с причиной (одно место), кнопки. Ниже — кредитная история, ручные
@@ -372,6 +378,7 @@ export function ApplicationDetailPage() {
                   (app.profile?.phone as string | undefined) ?? null,
                   `Заявка №${app.number}`,
                   formatDateTime(app.submitted_at),
+                  manual ? "заведена вручную" : `CRM · ${app.external_id}`,
                 ]
                   .filter(Boolean)
                   .map((part) => (
@@ -428,21 +435,25 @@ export function ApplicationDetailPage() {
         {/* Продукт — как в карточке CRM (решение владельца 23.11.2026): что, за
             сколько и на каких условиях. Наценка, платёж и стоимость — из CRM,
             когда она их пришлёт; пока — наш расчёт по тарифу (помечен). */}
-        <dl className="ah__facts ah__facts--product">
-          {productFacts.map((f) => (
-            <div key={f.label} className={f.wide ? "ah__fact ah__fact--wide" : "ah__fact"}>
-              <dt>{f.label}</dt>
-              <dd>
-                {f.value}
-                {f.calc && (
-                  <span className="ah__calc" title="Расчёт по тарифу — CRM пока не присылает это значение">
-                    расчёт
-                  </span>
-                )}
-              </dd>
-            </div>
+        <div className="ah__product">
+          {productRows.map((row, i) => (
+            <dl key={i} className="ah__product-row">
+              {row.map((f) => (
+                <div key={f.label} className={f.wide ? "ah__pf ah__pf--wide" : "ah__pf"}>
+                  <dt>{f.label}</dt>
+                  <dd className={f.value ? undefined : "ah__pf-empty"}>
+                    {f.value || "—"}
+                    {f.value && f.calc && (
+                      <span className="ah__calc" title="Расчёт по тарифу — CRM пока не присылает это значение">
+                        расчёт
+                      </span>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           ))}
-        </dl>
+        </div>
 
         {(verdictReason || (operatorFinal && lastOverride?.comment) || latestDecision?.freeze) && (
           <div className="ah__verdict">
