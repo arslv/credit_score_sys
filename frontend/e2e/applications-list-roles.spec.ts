@@ -41,6 +41,8 @@ test("администратор: в очереди под статусом — 
   await expect(firstRow.locator(".cell-status__sub").first()).toHaveText(/· \d+ (мин|ч|дн)/);
 
   await firstRow.getByRole("button", { name: "Действия с заявкой" }).click();
+  // Меню не обрезается рамкой таблицы — видно целиком (отзыв 24.11.2026).
+  await expect(page.getByRole("menuitem", { name: "Изменить анкету" })).toBeInViewport({ ratio: 1 });
   await page.getByRole("menuitem", { name: "Открыть заявку" }).click();
   await expect(page).toHaveURL(/\/applications\/[0-9a-f-]{36}$/);
 });

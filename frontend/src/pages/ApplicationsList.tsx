@@ -312,19 +312,40 @@ export function ApplicationsListPage() {
   );
 }
 
-// «⋮» у строки — действия с заявкой, как в списке CRM.
+// «⋮» у строки — действия с заявкой, как в списке CRM. Меню «плавает»
+// поверх страницы (position: fixed): таблица в рамке с прокруткой и иначе
+// его обрезает. У нижнего края экрана открывается вверх.
 function RowMenu({ id, canEdit }: { id: string; canEdit: boolean }) {
-  const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState<React.CSSProperties | null>(null);
+  const open = place !== null;
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) setPlace(null);
     };
+    const hide = () => setPlace(null);
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
   }, [open]);
+
+  function toggle(e: React.MouseEvent<HTMLButtonElement>) {
+    if (open) return setPlace(null);
+    const r = e.currentTarget.getBoundingClientRect();
+    const right = window.innerWidth - r.right;
+    setPlace(
+      window.innerHeight - r.bottom < 120
+        ? { position: "fixed", right, bottom: window.innerHeight - r.top + 4 }
+        : { position: "fixed", right, top: r.bottom + 4 },
+    );
+  }
   return (
     <div className="row-menu" ref={ref}>
       <button
@@ -333,12 +354,12 @@ function RowMenu({ id, canEdit }: { id: string; canEdit: boolean }) {
         aria-label="Действия с заявкой"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
       >
         ⋮
       </button>
       {open && (
-        <div className="row-menu__list" role="menu">
+        <div className="row-menu__list" role="menu" style={place ?? undefined}>
           <button type="button" role="menuitem" onClick={() => navigate(`/applications/${id}`)}>
             Открыть заявку
           </button>
