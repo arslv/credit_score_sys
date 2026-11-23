@@ -109,3 +109,36 @@ async def test_blacklist_import_api_forbidden_for_operator(admin_client, session
         files={"file": ("x.csv", b"last_name,reason\n\xd0\x90,x\n", "text/csv")},
     )
     assert response.status_code == 403
+
+
+async def test_blacklist_export_round_trips_into_import(admin_client, session_factory):
+    """Выгрузка — тем же форматом, что загрузка: файл заливается обратно
+    без ошибок (всё уже есть — дубли пропускаются)."""
+    from app.models import AuditLog
+    from tests._admin_helpers import create_employee, login
+
+    await create_employee(session_factory, email="bl-export@example.com", role="admin")
+    await login(admin_client, "bl-export@example.com")
+    added = await admin_client.post("/api/references/blacklist", json={
+        "last_name": "Выгрузкин", "first_name": "Тест", "birth_date": "1981-02-03",
+        "passport_series": "8201", "passport_number": "654321", "reason": "проверка выгрузки (синтетические данные)",
+    })
+    assert added.status_code == 201, added.text
+
+    exported = await admin_client.get("/api/references/blacklist/export")
+    assert exported.status_code == 200, exported.text
+    assert exported.headers["content-disposition"].startswith('attachment; filename="blacklist-')
+    text = exported.content.decode("utf-8-sig")
+    header, *lines = text.strip().splitlines()
+    assert header.startswith("last_name;first_name;middle_name;birth_date;passport_series;passport_number")
+    assert any(line.startswith("Выгрузкин;Тест;;03.02.1981;8201;654321;") for line in lines)
+
+    back = await admin_client.post(
+        "/api/references/blacklist/import", files={"file": ("blacklist.csv", exported.content, "text/csv")},
+    )
+    assert back.status_code == 200, back.text
+    assert back.json()["imported"] == 0  # всё уже в списке
+
+    async with session_factory() as session:
+        audits = (await session.execute(select(AuditLog).where(AuditLog.action == "export"))).scalars().all()
+        assert any(a.object_type == "blacklist" for a in audits)

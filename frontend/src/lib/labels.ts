@@ -474,3 +474,27 @@ const PASSPORT_CHECK_STATUS_LABELS: Record<string, string> = {
 export function passportCheckStatusLabel(status: string): string {
   return PASSPORT_CHECK_STATUS_LABELS[status] ?? status;
 }
+
+// ФССП: основание окончания производства (статья 229-ФЗ «Об исполнительном
+// производстве») — простыми словами. paid — долг погашен.
+const FSSP_END_REASONS: Record<string, { label: string; tone: "ok" | "warn" | "bad" | "none"; paid?: boolean }> = {
+  "47.1.1": { label: "оплачено", tone: "ok", paid: true },
+  "47.1.2": { label: "оплачено (взыскано с другого должника)", tone: "ok", paid: true },
+  "46.1.1": { label: "отозвано взыскателем", tone: "none" },
+  "46.1.3": { label: "не нашли должника или имущество — не взыскано", tone: "warn" },
+  "46.1.4": { label: "нет имущества и доходов — не взыскано", tone: "warn" },
+  "47.1.6": { label: "взыскивается по месту работы", tone: "warn" },
+  "47.1.7": { label: "должник признан банкротом", tone: "bad" },
+};
+
+export function fsspEndReason(article: string | null | undefined): {
+  label: string;
+  tone: "ok" | "warn" | "bad" | "none";
+  paid: boolean;
+} {
+  // «ст. 47 ч. 1 п. 1» → «47.1.1»
+  const m = /ст\.?\s*(\d+)\s*ч\.?\s*(\d+)\s*п\.?\s*(\d+)/i.exec(article ?? "");
+  const known = m ? FSSP_END_REASONS[`${m[1]}.${m[2]}.${m[3]}`] : undefined;
+  if (known) return { ...known, paid: Boolean(known.paid) };
+  return { label: article ? "окончено" : "окончено, основание не указано", tone: "none", paid: false };
+}

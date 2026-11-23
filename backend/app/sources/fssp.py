@@ -173,6 +173,54 @@ def _parse_results_table(table_html: str) -> list[dict[str, Any]]:
     return productions
 
 
+_IP_NUMBER_RE = re.compile(r"^(?P<number>.+?)\s+от\s+(?P<date>\d{2}\.\d{2}\.\d{4})")
+
+
+def parse_fssp_details(body_html: str) -> list[dict[str, Any]] | None:
+    """Все производства из живого ответа (таблица is.fssp.gov.ru) — и
+    действующие, и оконченные — с подробностями для карточки: номер и дата
+    ИП, документ-основание, предмет и суммы, отдел; у оконченных — дата и
+    основание окончания (статья 229-ФЗ, например «ст. 47 ч. 1 п. 1» —
+    фактическое исполнение, то есть оплачено).
+
+    Только для показа сотруднику: решение по заявке по-прежнему считается
+    по действующим производствам (parse_fssp_result_html). Должника и
+    пристава не возвращаем — должник и так известен, телефон пристава не
+    нужен. None — таблицы нет (не найдено или старая разметка)."""
+    table = _RESULTS_TABLE_RE.search(body_html)
+    if table is None:
+        return None
+    details: list[dict[str, Any]] = []
+    for row in _ROW_RE.findall(table.group(1)):
+        cells = [_cell_text(c) for c in _CELL_RE.findall(row)]
+        if len(cells) < 6:
+            continue
+        head = cells[1].splitlines()[0] if cells[1] else ""
+        number_match = _IP_NUMBER_RE.match(head)
+        ended_lines = cells[3].splitlines()
+        items = []
+        for line in cells[5].splitlines():
+            m = _AMOUNT_LINE_RE.match(line)
+            if m:
+                items.append({
+                    "subject": m.group("subject").strip(),
+                    "amount": re.sub(r"\s", "", m.group("amount")).replace(",", "."),
+                })
+        if not items and cells[5]:
+            items.append({"subject": cells[5].replace("\n", " "), "amount": None})
+        details.append({
+            "number": number_match.group("number") if number_match else head,
+            "date": number_match.group("date") if number_match else None,
+            "document": " · ".join(cells[2].splitlines()) or None,
+            "status": "ended" if cells[3] else "active",
+            "ended_at": ended_lines[0] if ended_lines else None,
+            "end_reason": " ".join(ended_lines[1:]) or None,
+            "items": items,
+            "department": cells[6].splitlines()[0] if len(cells) > 6 and cells[6] else None,
+        })
+    return details
+
+
 def parse_fssp_result_html(body_html: str) -> list[dict[str, Any]] | None:
     """Разбирает HTML-фрагмент результата (внутри payload["data"]) в список
     открытых производств [{"subject": str, "amount": str}] — тот же вид, что

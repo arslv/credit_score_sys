@@ -1110,6 +1110,26 @@
         }
       }
     },
+    "/api/references/blacklist/export": {
+      "get": {
+        "tags": [
+          "references"
+        ],
+        "summary": "Export Blacklist",
+        "description": "Выгрузка чёрного списка в CSV (UTF-8 с BOM, разделитель «;» — открывается\nв Excel как есть). Персданные — только admin, факт выгрузки — в аудит.",
+        "operationId": "export_blacklist_api_references_blacklist_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/references/blacklist/import": {
       "post": {
         "tags": [
@@ -4106,6 +4126,20 @@
           "can_retry": {
             "type": "boolean",
             "title": "Can Retry"
+          },
+          "fssp_details": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FsspProductionOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fssp Details"
           }
         },
         "type": "object",
@@ -5442,6 +5476,117 @@
           "status"
         ],
         "title": "FedresursManualCheckResponse"
+      },
+      "FsspProductionItemOut": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "subject",
+          "amount"
+        ],
+        "title": "FsspProductionItemOut"
+      },
+      "FsspProductionOut": {
+        "properties": {
+          "number": {
+            "type": "string",
+            "title": "Number"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "end_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Reason"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FsspProductionItemOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          }
+        },
+        "type": "object",
+        "required": [
+          "number",
+          "date",
+          "document",
+          "status",
+          "ended_at",
+          "end_reason",
+          "items",
+          "department"
+        ],
+        "title": "FsspProductionOut"
       },
       "FsspRegionOut": {
         "properties": {

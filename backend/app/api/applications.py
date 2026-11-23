@@ -51,6 +51,7 @@ from app.security.deps import ROLES_WITH_FULL_PII, get_current_employee, require
 from app.security.pagination import Page, PageParams
 from app.sources.base import Subject
 from app.sources.factory import build_fns_egrip_source, build_fns_npd_source
+from app.sources.fssp import parse_fssp_details
 from app.sources.runner import record_check
 from app.storage.base import Storage
 
@@ -727,6 +728,41 @@ class CheckOut(BaseModel):
     parsed: dict[str, Any] | None
     response_raw: dict[str, Any] | None
     can_retry: bool
+    # ФССП: все производства (действующие и оконченные) с подробностями — из
+    # сохранённого ответа сайта, для разворота в карточке. Только показ:
+    # решение считается по действующим (parsed.productions).
+    fssp_details: list["FsspProductionOut"] | None = None
+
+
+class FsspProductionItemOut(BaseModel):
+    subject: str
+    amount: str | None
+
+
+class FsspProductionOut(BaseModel):
+    number: str
+    date: str | None
+    document: str | None
+    status: str  # active | ended
+    ended_at: str | None
+    end_reason: str | None  # статья окончания, например «ст. 47 ч. 1 п. 1»
+    items: list[FsspProductionItemOut]
+    department: str | None
+
+
+def _fssp_details(check, full_pii: bool) -> list[FsspProductionOut] | None:
+    """Разбор сохранённого ответа ФССП (checks.response_raw.html) — и для
+    проверок, сделанных до появления подробностей: ответ хранится целиком."""
+    if check.source != "fssp" or not full_pii:
+        return None
+    html = (check.response_raw or {}).get("html")
+    if not isinstance(html, str):
+        return None
+    details = parse_fssp_details(html)
+    return [FsspProductionOut(**d) for d in details] if details is not None else None
+
+
+CheckOut.model_rebuild()
 
 
 class StatusHistoryOut(BaseModel):
@@ -1277,6 +1313,7 @@ async def get_application(
                 parsed=c.parsed if full_pii else None,
                 response_raw=c.response_raw if full_pii else None,
                 can_retry=_can_retry(c.source, c.status),
+                fssp_details=_fssp_details(c, full_pii),
             )
             for c in checks
         ],

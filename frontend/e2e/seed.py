@@ -99,6 +99,19 @@ async def _seed_discrepancy_application(session) -> dict:
             reason_code="PARTNER_OPERATOR_OVERRIDE_APPROVE",
         )
     )
+    # ФССП: живой ответ сайта — одно действующее и одно оконченное
+    # производство (разворот подробностей в карточке).
+    fixture = "/app/tests/fixtures/fssp_live_found.html"
+    if os.path.exists(fixture):
+        with open(fixture, encoding="utf-8") as handle:
+            html = handle.read()
+        now = datetime.now(timezone.utc)
+        session.add(Check(
+            application_id=application.id, subject_type="applicant", source="fssp", status="hit",
+            request={"e2e": True}, response_raw={"html": html},
+            parsed={"productions": [{"subject": "Задолженность", "amount": "3841.59"}]},
+            started_at=now, finished_at=now, duration_ms=1,
+        ))
     await session.flush()
     return {
         "id": str(application.id), "external_id": application.external_id,

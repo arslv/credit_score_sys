@@ -330,6 +330,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/references/blacklist/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Blacklist
+         * @description Выгрузка чёрного списка в CSV (UTF-8 с BOM, разделитель «;» — открывается
+         *     в Excel как есть). Персданные — только admin, факт выгрузки — в аудит.
+         */
+        get: operations["export_blacklist_api_references_blacklist_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/references/blacklist/import": {
         parameters: {
             query?: never;
@@ -1373,6 +1394,8 @@ export interface components {
             } | null;
             /** Can Retry */
             can_retry: boolean;
+            /** Fssp Details */
+            fssp_details?: components["schemas"]["FsspProductionOut"][] | null;
         };
         /** ClientApplicationItem */
         ClientApplicationItem: {
@@ -1823,6 +1846,32 @@ export interface components {
             check_id: string;
             /** Status */
             status: string;
+        };
+        /** FsspProductionItemOut */
+        FsspProductionItemOut: {
+            /** Subject */
+            subject: string;
+            /** Amount */
+            amount: string | null;
+        };
+        /** FsspProductionOut */
+        FsspProductionOut: {
+            /** Number */
+            number: string;
+            /** Date */
+            date: string | null;
+            /** Document */
+            document: string | null;
+            /** Status */
+            status: string;
+            /** Ended At */
+            ended_at: string | null;
+            /** End Reason */
+            end_reason: string | null;
+            /** Items */
+            items: components["schemas"]["FsspProductionItemOut"][];
+            /** Department */
+            department: string | null;
         };
         /** FsspRegionOut */
         FsspRegionOut: {
@@ -3092,6 +3141,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_blacklist_api_references_blacklist_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { RecheckButton, Spinner } from "./ui";
+import { FsspDetails } from "./FsspDetails";
+import type { components } from "../api/schema";
 
 // T16: капчу решает только человек (жёсткое правило) — ни авторешения, ни
 // внешних сервисов распознавания здесь нет и быть не может. «Проверить» сразу
@@ -61,6 +63,7 @@ interface FsspCheckSummary {
   status: string;
   started_at: string;
   parsed: Record<string, unknown> | null;
+  fssp_details?: components["schemas"]["FsspProductionOut"][] | null;
 }
 
 export function FsspPanel({
@@ -263,6 +266,11 @@ export function FsspPanel({
     <div className="manual-act">
       {latestCheck?.status === "hit" && classification?.fssp_total_amount != null && (
         <p className="manual-check__note">Сумма долга: {classification.fssp_total_amount} ₽</p>
+      )}
+
+      {/* Производства — действующие и оконченные (в том числе оплаченные), с разворотом. */}
+      {latestCheck?.fssp_details && latestCheck.fssp_details.length > 0 && (
+        <FsspDetails details={latestCheck.fssp_details} />
       )}
 
       {hasPostDecisionAlert && (

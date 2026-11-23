@@ -49,11 +49,40 @@ function BlacklistSection() {
   });
   const rows = (query.data?.items ?? []).filter((b) => matches(search, b.last_name, b.first_name, b.reason));
 
+  // Выгрузка — тем же форматом, что загрузка (файл можно залить обратно).
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  async function exportBlacklist() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const response = await fetch("/api/references/blacklist/export", {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
+      if (!response.ok) {
+        setExportError(`Не удалось выгрузить: HTTP ${response.status}`);
+        return;
+      }
+      const name = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "blacklist.csv";
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      link.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <>
       <Toolbar>
         <SearchInput value={search} onChange={setSearch} placeholder="Фамилия, имя или причина" />
         <span className="toolbar__spacer" />
+        <button className="btn" onClick={() => void exportBlacklist()} disabled={exporting}>
+          {exporting ? "Выгружаю…" : "Выгрузить в файл"}
+        </button>
         <button className="btn" onClick={() => setImporting(true)}>
           Загрузить из файла
         </button>
@@ -61,6 +90,11 @@ function BlacklistSection() {
           Добавить в список
         </button>
       </Toolbar>
+      {exportError && (
+        <p className="alert" role="alert">
+          {exportError}
+        </p>
+      )}
       {query.isLoading && <LoadingState />}
       {query.isError && (
         <ErrorState message="Не удалось загрузить чёрный список." onRetry={() => void query.refetch()} />

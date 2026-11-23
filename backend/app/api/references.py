@@ -1,11 +1,13 @@
 """T12: справочники — категории товаров, причины, чёрный список (ТЗ,
 «Справочники»: меняют risk_manager и admin). T23: только admin."""
 
-from datetime import date
+import csv
+import io
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -176,6 +178,46 @@ async def list_blacklist(
 class BlacklistImportOut(BaseModel):
     imported: int
     skipped: int
+
+
+# Колонки выгрузки — те же, что понимает загрузка (app/importers/blacklist.py),
+# плюс «действует» и дата добавления: выгруженный файл можно залить обратно.
+_BLACKLIST_EXPORT_COLUMNS = (
+    "last_name", "first_name", "middle_name", "birth_date", "passport_series", "passport_number", "phone",
+    "reason", "active", "added_at",
+)
+
+
+@router.get("/blacklist/export")
+async def export_blacklist(
+    request: Request,
+    employee: Employee = Depends(require_roles(*_VIEW_ROLES)),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Выгрузка чёрного списка в CSV (UTF-8 с BOM, разделитель «;» — открывается
+    в Excel как есть). Персданные — только admin, факт выгрузки — в аудит."""
+    rows = (await session.execute(select(Blacklist).order_by(Blacklist.added_at))).scalars().all()
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";")
+    writer.writerow(_BLACKLIST_EXPORT_COLUMNS)
+    for r in rows:
+        writer.writerow([
+            r.last_name or "", r.first_name or "", r.middle_name or "",
+            r.birth_date.strftime("%d.%m.%Y") if r.birth_date else "",
+            r.passport_series or "", r.passport_number or "", r.phone or "", r.reason,
+            "да" if r.active else "нет", r.added_at.astimezone(timezone.utc).strftime("%d.%m.%Y"),
+        ])
+    await record_audit(
+        session, employee_id=employee.id, action="export", object_type="blacklist", request=request,
+        details={"kind": "blacklist", "rows": len(rows)},
+    )
+    await session.commit()
+    filename = f"blacklist-{datetime.now(timezone.utc):%Y%m%d}.csv"
+    return Response(
+        content=("﻿" + buffer.getvalue()).encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/blacklist/import", response_model=BlacklistImportOut)

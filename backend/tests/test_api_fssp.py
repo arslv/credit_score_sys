@@ -491,3 +491,33 @@ async def test_fssp_search_does_not_block_other_requests_of_same_employee(
         )
     assert response.status_code == 200, response.text
     assert seen["status"] == 200
+
+
+async def test_card_shows_fssp_details_from_saved_site_response(
+    admin_client, partner_admin, partner_client, storage, session_factory, active_ruleset,
+):
+    """Подробности ФССП (действующие и оконченные производства) считаются из
+    сохранённого ответа сайта — и для проверок, сделанных раньше."""
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    application_id = await _rejected_applicant(partner_admin, partner_client, storage, session_factory, active_ruleset)
+    html = (Path(__file__).parent / "fixtures" / "fssp_live_found.html").read_text(encoding="utf-8")
+    now = datetime.now(timezone.utc)
+    async with session_factory() as session:
+        session.add(Check(
+            application_id=application_id, subject_type="applicant", source="fssp", status="hit",
+            request={}, response_raw={"html": html}, parsed={"productions": []},
+            started_at=now, finished_at=now, duration_ms=1,
+        ))
+        await session.commit()
+    await create_employee(session_factory, email="admin-fssp-details@example.com", role="admin")
+    await login(admin_client, "admin-fssp-details@example.com")
+
+    card = await admin_client.get(f"/api/applications/{application_id}")
+    assert card.status_code == 200, card.text
+    fssp = [c for c in card.json()["checks"] if c["source"] == "fssp"]
+    details = fssp[-1]["fssp_details"]
+    assert [d["status"] for d in details] == ["active", "ended"]
+    assert details[1]["end_reason"] == "ст. 46 ч. 1 п. 3"
+    assert details[0]["items"][0]["amount"] == "3841.59"

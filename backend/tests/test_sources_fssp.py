@@ -401,3 +401,24 @@ async def test_new_protocol_session_cookie_and_jpeg_captcha():
     second = route.calls[1].request
     assert "connect.sid=s%3Aabc" in second.headers.get("cookie", "")
     assert "code=12345" in str(second.url) and "code_id" not in str(second.url)
+
+
+def test_parse_fssp_details_lists_active_and_ended_with_reason():
+    """Подробности для карточки: и действующие, и оконченные производства —
+    с номером, документом, суммами, отделом и основанием окончания."""
+    from app.sources.fssp import parse_fssp_details
+
+    html = (Path(__file__).parent / "fixtures" / "fssp_live_found.html").read_text(encoding="utf-8")
+    details = parse_fssp_details(html)
+    assert [d["status"] for d in details] == ["active", "ended"]
+    active, ended = details
+    assert active["number"].endswith("-ИП") and active["date"] == "16.07.2025"
+    assert active["ended_at"] is None and active["end_reason"] is None
+    assert active["items"][0]["amount"] == "3841.59"
+    assert active["document"] and active["department"]
+    assert ended["ended_at"] == "15.06.2023"
+    assert ended["end_reason"] == "ст. 46 ч. 1 п. 3"
+    assert ended["items"] == [{"subject": "Штраф ГИБДД", "amount": "500"}]
+    # Решение по-прежнему — только по действующим.
+    assert len(parse_fssp_result_html(html)) == len([i for i in active["items"]])
+    assert parse_fssp_details("<div>ничего</div>") is None

@@ -6833,3 +6833,145 @@ mark {
 .fssp-captcha__region .fssp-start__region {
   opacity: 0.85;
 }
+
+/* ФССП: производства с разворотом — за что долг, сумма, окончание. */
+.fssp-det {
+  margin-top: 4px;
+}
+
+.fssp-det__toggle {
+  font-size: var(--font-sm);
+}
+
+.fssp-det__list {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.fssp-det__group-title {
+  margin: 0 0 4px;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.fssp-det__items {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fssp-det__item {
+  padding: 8px 10px;
+  border: var(--line);
+  border-left: 3px solid var(--status-bad);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  font-size: var(--font-sm);
+}
+
+.fssp-det__item--ok {
+  border-left-color: var(--status-ok);
+}
+
+.fssp-det__item--warn {
+  border-left-color: var(--status-gray);
+}
+
+.fssp-det__item--none,
+.fssp-det__item--bad {
+  border-left-color: var(--color-border-strong);
+}
+
+.fssp-det__debt {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.fssp-det__amount {
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+}
+
+.fssp-det__end {
+  margin-top: 2px;
+  font-weight: var(--weight-medium);
+}
+
+.fssp-det__end--ok {
+  color: var(--status-ok);
+}
+
+.fssp-det__end--warn {
+  color: var(--status-gray);
+}
+
+.fssp-det__end--bad {
+  color: var(--status-bad);
+}
+
+.fssp-det__article,
+.fssp-det__meta {
+  color: var(--color-text-muted);
+  font-weight: var(--weight-normal);
+}
+
+.fssp-det__meta {
+  margin-top: 2px;
+  font-size: var(--font-xs);
+}
+
+/* Шапка заявки: «Продукт» как в CRM — до девяти клеток, переносятся по
+   ширине; у расчётных значений — пометка «расчёт». */
+.ah__facts--product {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+
+.ah__facts--product .ah__fact {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  margin-top: -1px;
+}
+
+.ah__facts--product .ah__fact--wide {
+  grid-column: span 2;
+}
+
+.ah__calc {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* «В чёрный список» из заявки — кого добавляем. */
+.bl-add__rows {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 var(--space-3);
+}
+
+.bl-add__row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: var(--space-2);
+  font-size: var(--font-sm);
+}
+
+.bl-add__row dt {
+  color: var(--color-text-muted);
+}
+
+.bl-add__row dd {
+  margin: 0;
+}

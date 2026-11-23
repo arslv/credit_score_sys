@@ -10,6 +10,7 @@ import { ChecksOverview, subjectKey } from "../components/ChecksOverview";
 import { ClientRatingPanel } from "../components/ClientRating";
 import { FedresursPanel } from "../components/FedresursPanel";
 import { BkiRequestPanel } from "../components/BkiRequestPanel";
+import { BlacklistAddButton } from "../components/BlacklistAddButton";
 import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
@@ -297,6 +298,27 @@ export function ApplicationDetailPage() {
   const verdictReason =
     !operatorFinal && latestDecision && latestDecision.outcome !== "manual_review" ? (explanation?.reason ?? null) : null;
 
+  // Продукт для шапки: платёж — из решения (CRM или расчёт по тарифу),
+  // стоимость = первый взнос + платёж × срок, наценка = стоимость − цена.
+  const installment = [...app.decisions].reverse().find((d) => d.installment_payment != null) ?? null;
+  const monthly = installment?.installment_payment != null ? Number(installment.installment_payment) : null;
+  const monthlyCalc = installment?.installment_payment_source === "tariff";
+  const price = Number(app.goods_price);
+  const down = Number(app.down_payment);
+  const totalCost = monthly != null && app.term_months > 0 ? down + monthly * app.term_months : null;
+  const rub = (v: number) => `${formatAmount(Math.round(v))} ₽`;
+  const productFacts: { label: string; value: string; wide?: boolean; calc?: boolean }[] = [
+    { label: "Категория", value: app.goods_category ?? "" },
+    { label: "Наименование", value: app.goods_name && app.goods_name !== "—" ? app.goods_name : "", wide: true },
+    { label: "Цена", value: price > 0 ? rub(price) : "" },
+    { label: "Первый взнос", value: price > 0 ? rub(down) : "" },
+    { label: "Наценка", value: totalCost != null && price > 0 ? rub(totalCost - price) : "", calc: monthlyCalc },
+    { label: "Ежемесячно", value: monthly != null ? rub(monthly) : "", calc: monthlyCalc },
+    { label: "Стоимость", value: totalCost != null ? rub(totalCost) : "", calc: monthlyCalc },
+    { label: "Срок", value: app.term_months > 0 ? `${app.term_months} мес.` : "" },
+    { label: "Источник", value: manual ? "заведена вручную" : `CRM · ${app.external_id}` },
+  ].filter((f) => f.value);
+
   // Редизайн 16.11.2026 (решение владельца): сверху — кто клиент и решение
   // с причиной (одно место), кнопки. Ниже — кредитная история, ручные
   // проверки, рейтинг клиента. Стадии, ряд цифр и ход заявки убраны. Анкета, сделка, проверки таблицей,
@@ -360,6 +382,20 @@ export function ApplicationDetailPage() {
               <Link className="btn" to={`/applications/${app.id}/edit`}>
                 Изменить анкету
               </Link>
+              {employee?.role === "admin" && (
+                <BlacklistAddButton
+                  applicationNumber={app.number}
+                  person={{
+                    last_name: ocrValue(app.ocr_result?.fields ?? null, "last_name"),
+                    first_name: ocrValue(app.ocr_result?.fields ?? null, "first_name"),
+                    middle_name: ocrValue(app.ocr_result?.fields ?? null, "middle_name"),
+                    birth_date: birthDate,
+                    passport_series: ocrValue(app.ocr_result?.fields ?? null, "passport_series"),
+                    passport_number: ocrValue(app.ocr_result?.fields ?? null, "passport_number"),
+                    phone: (app.profile?.phone as string | undefined) ?? null,
+                  }}
+                />
+              )}
               <div className="decision-stub__row" title="Пока недоступно — появится позже">
                 <button type="button" className="btn decision-stub__btn" disabled>
                   Принять
@@ -372,23 +408,23 @@ export function ApplicationDetailPage() {
           )}
         </div>
 
-        <dl className="ah__facts">
-          <div className="ah__fact ah__fact--wide">
-            <dt>Товар</dt>
-            <dd>{app.goods_name && app.goods_name !== "—" ? app.goods_name : "уточняется"}</dd>
-          </div>
-          <div className="ah__fact">
-            <dt>Сумма</dt>
-            <dd>{app.term_months > 0 ? `${formatAmount(app.requested_amount)} ₽` : "—"}</dd>
-          </div>
-          <div className="ah__fact">
-            <dt>Срок</dt>
-            <dd>{app.term_months > 0 ? `${app.term_months} мес.` : "—"}</dd>
-          </div>
-          <div className="ah__fact">
-            <dt>Источник</dt>
-            <dd>{manual ? "заведена вручную" : `CRM · ${app.external_id}`}</dd>
-          </div>
+        {/* Продукт — как в карточке CRM (решение владельца 23.11.2026): что, за
+            сколько и на каких условиях. Наценка, платёж и стоимость — из CRM,
+            когда она их пришлёт; пока — наш расчёт по тарифу (помечен). */}
+        <dl className="ah__facts ah__facts--product">
+          {productFacts.map((f) => (
+            <div key={f.label} className={f.wide ? "ah__fact ah__fact--wide" : "ah__fact"}>
+              <dt>
+                {f.label}
+                {f.calc && (
+                  <span className="ah__calc" title="Расчёт по тарифу — CRM пока не присылает это значение">
+                    расчёт
+                  </span>
+                )}
+              </dt>
+              <dd>{f.value}</dd>
+            </div>
+          ))}
         </dl>
 
         {(verdictReason || (operatorFinal && lastOverride?.comment) || latestDecision?.freeze) && (
