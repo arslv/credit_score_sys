@@ -24,7 +24,9 @@ from app.config import get_settings
 from app.db import new_sessionmaker
 from app.engine.versions import get_active_ruleset_version
 from app.engine.stage_b_pipeline import STAGE_B_FEATURE_SET_VERSION
-from app.models import Application, Check, Client, Decision, Employee, FeatureSnapshot, Guarantor, ManualOverride
+from app.models import (
+    Application, BkiBureauCheck, Check, Client, Decision, Employee, FeatureSnapshot, Guarantor, ManualOverride,
+)
 from app.security.passwords import hash_password
 
 # T22: global-setup сеет ДВЕ базы (dev и отдельную dialog_e2e) одним и тем же
@@ -111,6 +113,19 @@ async def _seed_discrepancy_application(session) -> dict:
             request={"e2e": True}, response_raw={"html": html},
             parsed={"productions": [{"subject": "Задолженность", "amount": "3841.59"}]},
             started_at=now, finished_at=now, duration_ms=1,
+        ))
+        # ФССП из отчёта бюро — действующее и оконченное производство.
+        session.add(BkiBureauCheck(
+            application_id=application.id, subject_type="applicant", source="fssp",
+            block="check_person.proceeding_v2.executive_v2", status="hit", report_type="detailed",
+            parsed={
+                "summary": "открытых производств: 1, долг 500.00 ₽", "open_count": 1, "closed_count": 1,
+                "open_items": [{"ep_number": "01010/11/10102-ИП", "subject": "Страховые взносы, включая пени",
+                                "debt_total": "500", "started": "2016-11-18", "office": "Тестовое РОСП"}],
+                "closed_items": [{"ep_number": "01010/11/10101-ИП", "subject": "Налог на имущество",
+                                  "debt_total": "0", "started": "2016-11-08", "ended": "2017-02-10",
+                                  "office": "Тестовое РОСП"}],
+            },
         ))
     await session.flush()
     return {

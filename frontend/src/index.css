@@ -7262,3 +7262,13 @@ mark {
   font-size: 11px;
   color: var(--color-text-muted);
 }
+
+/* Разворот производств у итога бюро — отдельной строкой под ним. */
+.chk__line:has(.fssp-det) {
+  flex-wrap: wrap;
+}
+
+.chk__line .fssp-det {
+  flex-basis: 100%;
+  margin-left: 0;
+}

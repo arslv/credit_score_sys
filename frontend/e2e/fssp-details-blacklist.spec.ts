@@ -17,6 +17,18 @@ test("ФССП: производства разворачиваются, у ок
   await expect(page.getByText("(ст. 46 ч. 1 п. 3)")).toBeVisible();
 });
 
+test("ФССП от бюро: «Подробнее» — действующие и оконченные производства", async ({ page }) => {
+  const seed = loadSeed();
+  await login(page, seed.admin.email, seed.admin.password);
+  await page.goto(`/applications/${seed.application.id}`);
+
+  const bureau = page.locator(".chk__line", { hasText: "открытых производств: 1, долг 500.00" });
+  await bureau.getByRole("button", { name: "Подробнее" }).click();
+  await expect(bureau.getByText("Страховые взносы, включая пени")).toBeVisible();
+  await expect(bureau.getByText("Окончено 10.02.2017")).toBeVisible();
+  await expect(bureau.getByText(/ИП 01010\/11\/10101-ИП от 08\.11\.2016/)).toBeVisible();
+});
+
 test("«В чёрный список» из заявки — данные подставлены, нужна только причина", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);

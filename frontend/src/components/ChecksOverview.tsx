@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { components } from "../api/schema";
 import { formatDateTime } from "../lib/format";
+import { BureauFsspDetails } from "./FsspDetails";
 import { checkResultLabel, fsspEndReason, passportCheckLabel, passportCheckStatusLabel, sourceMeta } from "../lib/labels";
 
 type CheckRow = components["schemas"]["CheckOut"];
@@ -11,7 +12,7 @@ type BkiResult = components["schemas"]["BkiResultOut"];
 export type Tone = "ok" | "bad" | "warn" | "none";
 
 // Итог одной находки: что показал источник; bureau — из отчёта БКИ.
-type Line = { value: string; tone: Tone; bureau?: boolean };
+type Line = { value: string; tone: Tone; bureau?: boolean; details?: ReactNode };
 // Строка — одна проверка (источник + субъект). Наша проверка и та же
 // проверка из отчёта бюро — в одной строке двумя итогами, а не двумя строками.
 type Row = { key: string; name: string; who?: string; hint?: string; lines: Line[]; quiet?: boolean };
@@ -153,6 +154,8 @@ export function ChecksOverview({
     value: typeof b.parsed?.summary === "string" ? b.parsed.summary : checkResultLabel(b.source, b.status),
     tone: checkTone(b.status),
     bureau: true,
+    // ФССП от бюро — производства с разворотом (23.11.2026).
+    details: b.source === "fssp" && b.parsed ? <BureauFsspDetails parsed={b.parsed} /> : undefined,
   });
 
   // Строки раздела: наши проверки, «не проверено» для ручных и итоги бюро —
@@ -316,6 +319,7 @@ function GroupCard({ title, rows, actions }: { title: string; rows: Row[]; actio
                           )
                         )}
                         <span className="chk__value">{line.value}</span>
+                        {line.details}
                       </div>
                     ))}
                   {actions[row.key] && <div className="chk__action">{actions[row.key]}</div>}

@@ -190,6 +190,19 @@ def _parse_fssp(block: dict) -> tuple[str, dict]:
             }
             for i in open_items
         ],
+        # Оконченные — тоже для разворота в карточке (решение владельца 23.11.2026).
+        "closed_items": [
+            {
+                "ep_number": i.get("epNumber"),
+                "subject": i.get("weSubjTypeName"),
+                "debt_total": str(_money(i.get("debtBalanceTotal"))),
+                "started": i.get("weRisedate"),
+                "ended": i.get("endDate") or None,
+                "office": i.get("bailiffOfficeTerotdel"),
+            }
+            for i in items
+            if i.get("isOpen") is not True
+        ],
     }
     if open_count:
         parsed["summary"] = f"открытых производств: {open_count}, долг {debt:.2f} ₽"

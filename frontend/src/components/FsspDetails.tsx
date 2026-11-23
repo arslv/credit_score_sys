@@ -89,3 +89,75 @@ function ProductionRow({ production: p }: { production: Production }) {
     </li>
   );
 }
+
+type BureauItem = {
+  ep_number?: string | null;
+  subject?: string | null;
+  debt_total?: string | null;
+  started?: string | null;
+  ended?: string | null;
+  office?: string | null;
+};
+
+const ruDate = (iso: string | null | undefined) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : (iso ?? "");
+};
+
+/**
+ * ФССП из отчёта бюро — те же производства с разворотом: действующие
+ * (красным) и оконченные (жёлтым). У отчётов до 23.11.2026 оконченные
+ * сохранены только числом.
+ */
+export function BureauFsspDetails({ parsed }: { parsed: Record<string, unknown> }) {
+  const [open, setOpen] = useState(false);
+  const openItems = (Array.isArray(parsed.open_items) ? parsed.open_items : []) as BureauItem[];
+  const closedItems = (Array.isArray(parsed.closed_items) ? parsed.closed_items : []) as BureauItem[];
+  const closedCount = typeof parsed.closed_count === "number" ? parsed.closed_count : closedItems.length;
+  if (openItems.length === 0 && closedItems.length === 0) return null;
+
+  const row = (item: BureauItem, ended: boolean, key: number) => (
+    <li key={key} className={`fssp-det__item fssp-det__item--${ended ? "warn" : "active"}`}>
+      <div className="fssp-det__debt">
+        <span className="fssp-det__subject">{item.subject ?? "предмет не указан"}</span>
+        {item.debt_total != null && Number(item.debt_total) > 0 && (
+          <span className="fssp-det__amount">{formatAmount(item.debt_total)} ₽</span>
+        )}
+      </div>
+      {ended && (
+        <div className="fssp-det__end fssp-det__end--warn">Окончено{item.ended ? ` ${ruDate(item.ended)}` : ""}</div>
+      )}
+      <div className="fssp-det__meta">
+        {item.ep_number ? `ИП ${item.ep_number}` : "ИП"}
+        {item.started ? ` от ${ruDate(item.started)}` : ""}
+        {item.office && ` · ${item.office}`}
+      </div>
+    </li>
+  );
+
+  return (
+    <div className="fssp-det">
+      <button type="button" className="btn-link fssp-det__toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {open ? "Скрыть" : "Подробнее"}
+      </button>
+      {open && (
+        <div className="fssp-det__list">
+          {openItems.length > 0 && (
+            <section className="fssp-det__group">
+              <h4 className="fssp-det__group-title">Действующие</h4>
+              <ul className="fssp-det__items">{openItems.map((i, k) => row(i, false, k))}</ul>
+            </section>
+          )}
+          {closedItems.length > 0 ? (
+            <section className="fssp-det__group">
+              <h4 className="fssp-det__group-title">Оконченные</h4>
+              <ul className="fssp-det__items">{closedItems.map((i, k) => row(i, true, k))}</ul>
+            </section>
+          ) : (
+            closedCount > 0 && <p className="fssp-det__meta">Оконченных: {closedCount} (подробности — в новых отчётах)</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

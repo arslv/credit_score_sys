@@ -191,6 +191,11 @@ def test_bureau_fssp_counts_only_open_proceedings():
     assert fssp.parsed["open_count"] == 1 and fssp.parsed["open_debt_total"] == "500"
     assert [i["ep_number"] for i in fssp.parsed["open_items"]] == ["01010/11/10102-ИП"]  # закрытое — не в счёт
     assert "1" in fssp.parsed["summary"] and "500" in fssp.parsed["summary"]
+    # Оконченные — для разворота в карточке, с датой окончания.
+    assert fssp.parsed["closed_items"] == [{
+        "ep_number": "01010/11/10101-ИП", "subject": "Страховые взносы, включая пени", "debt_total": "0",
+        "started": "2016-11-08", "ended": "2017-02-10", "office": "Клинцовское РОСП",
+    }]
 
     assert bankruptcy.source == "fedresurs" and bankruptcy.status == "hit"
     assert bankruptcy.parsed["debtor_status"] == "IS_LISTED"
