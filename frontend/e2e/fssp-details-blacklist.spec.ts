@@ -38,14 +38,15 @@ test("кредитная история: «Показать кредиты» —
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto(`/applications/${seed.application.id}`);
 
-  await page.getByRole("button", { name: "Показать кредиты (действующих: 3–4 · закрытых видов: 1)" }).click();
+  await page.getByRole("button", { name: "Показать кредиты (сейчас от 3 до 4, закрытых видов 1)" }).click();
   const body = page.locator(".crd__body");
-  await expect(body.getByText("Потребительский кредит")).toBeVisible();
-  await expect(body.getByText("Ипотека")).toBeVisible();
-  await expect(body.locator(".crd__row", { hasText: "Худшая просрочка за всю историю" })).toContainText(
-    "Просрочка от 30 до 59 дней",
-  );
-  await expect(body.locator(".crd__row", { hasText: "Плохие долги" })).toContainText("не было");
+  // Сверху — три сигнала цветом: сейчас, за всю историю, плохие долги.
+  await expect(body.locator(".crd__signal--ok", { hasText: "Сейчас: без просрочек" })).toBeVisible();
+  await expect(body.locator(".crd__signal--bad", { hasText: "За всю историю: просрочка от 30 до 59 дней" })).toBeVisible();
+  await expect(body.getByText("Плохих долгов и коллекторов не было")).toBeVisible();
+  await expect(body.locator(".crd__fact", { hasText: "Сейчас кредитов" })).toContainText("от 3 до 4 — потребительский кредит");
+  await expect(body.locator(".crd__fact", { hasText: "Закрытые кредиты" })).toContainText("Ипотека");
+  await expect(body.locator(".crd__fact", { hasText: "Поручительств" })).toContainText("до 2");
 });
 
 test("проверки бюро: розыск — в «Перечнях», суды и залоги — в «Долгах и банкротстве»", async ({ page }) => {

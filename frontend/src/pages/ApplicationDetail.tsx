@@ -300,8 +300,8 @@ export function ApplicationDetailPage() {
 
   // Продукт для шапки. Наценка, стоимость, тип, партнёр и точка продаж — из
   // анкеты (ручная заявка; CRM — когда начнёт присылать). Нет наценки —
-  // считаем из платежа решения: стоимость = взнос + платёж × срок; платёж
-  // по тарифу помечен «расчёт».
+  // считаем из платежа решения: стоимость = взнос + платёж × срок (пометку
+  // «расчёт» убрали по отзыву 23.11.2026).
   const deal = (stageB?.deal ?? {}) as Record<string, unknown>;
   const dealNum = (key: string) => (deal[key] != null && deal[key] !== "" ? Number(deal[key]) : null);
   const dealText = (key: string) => (typeof deal[key] === "string" && deal[key] ? (deal[key] as string) : "");
@@ -311,7 +311,6 @@ export function ApplicationDetailPage() {
   const monthlyFromDeal = dealNum("monthly_payment");
   const monthly =
     monthlyFromDeal ?? (installment?.installment_payment != null ? Number(installment.installment_payment) : null);
-  const monthlyCalc = monthlyFromDeal == null && installment?.installment_payment_source === "tariff";
   const markupGiven = dealNum("markup");
   const totalCost =
     markupGiven != null
@@ -319,12 +318,12 @@ export function ApplicationDetailPage() {
       : monthly != null && app.term_months > 0
         ? down + monthly * app.term_months
         : null;
-  const costCalc = markupGiven == null && monthlyCalc;
-  const rub = (v: number) => `${formatAmount(Math.round(v))} ₽`;
+  // «|| 0» — без «−0 ₽» после округления.
+  const rub = (v: number) => `${formatAmount(Math.round(v) || 0)} ₽`;
   // Два ровных ряда по шесть клеток (по отзыву 23.11.2026: в одну строку
   // двенадцать клеток обрезались): что продаём — и деньги. Пустое — «—»,
   // чтобы ряды не съезжали; ряд «что» без единого значения не показываем.
-  type Fact = { label: string; value: string; wide?: boolean; calc?: boolean };
+  type Fact = { label: string; value: string; wide?: boolean };
   const productInfo: Fact[] = [
     { label: "Наименование", value: app.goods_name && app.goods_name !== "—" ? app.goods_name : "", wide: true },
     { label: "Тип продукта", value: dealText("product_type") },
@@ -335,9 +334,10 @@ export function ApplicationDetailPage() {
   const productMoney: Fact[] = [
     { label: "Цена", value: price > 0 ? rub(price) : "" },
     { label: "Первый взнос", value: price > 0 ? rub(down) : "" },
-    { label: "Наценка", value: totalCost != null && price > 0 ? rub(totalCost - price) : "", calc: costCalc },
-    { label: "Стоимость", value: totalCost != null ? rub(totalCost) : "", calc: costCalc },
-    { label: "Ежемесячно", value: monthly != null ? rub(monthly) : "", calc: monthlyCalc },
+    // Наценка не бывает меньше нуля (платёж по тарифу округлён).
+    { label: "Наценка", value: totalCost != null && price > 0 ? rub(Math.max(0, totalCost - price)) : "" },
+    { label: "Стоимость", value: totalCost != null ? rub(totalCost) : "" },
+    { label: "Ежемесячно", value: monthly != null ? rub(monthly) : "" },
     { label: "Срок", value: app.term_months > 0 ? `${app.term_months} мес.` : "" },
   ];
   const productRows = [productInfo, productMoney].filter((row) => row.some((f) => f.value));
@@ -433,8 +433,8 @@ export function ApplicationDetailPage() {
         </div>
 
         {/* Продукт — как в карточке CRM (решение владельца 23.11.2026): что, за
-            сколько и на каких условиях. Наценка, платёж и стоимость — из CRM,
-            когда она их пришлёт; пока — наш расчёт по тарифу (помечен). */}
+            сколько и на каких условиях. Наценка, платёж и стоимость — из анкеты
+            или из платежа решения. */}
         <div className="ah__product">
           {productRows.map((row, i) => (
             <dl key={i} className="ah__product-row">
@@ -443,11 +443,6 @@ export function ApplicationDetailPage() {
                   <dt>{f.label}</dt>
                   <dd className={f.value ? undefined : "ah__pf-empty"}>
                     {f.value || "—"}
-                    {f.value && f.calc && (
-                      <span className="ah__calc" title="Расчёт по тарифу — CRM пока не присылает это значение">
-                        расчёт
-                      </span>
-                    )}
                   </dd>
                 </div>
               ))}

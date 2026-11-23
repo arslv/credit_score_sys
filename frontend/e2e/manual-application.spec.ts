@@ -39,7 +39,6 @@ test("оператор заводит заявку вручную с фото п
   await expect(facts.locator(".ah__pf", { hasText: "Точка продаж" })).toContainText("Махачкала");
   await expect(facts.locator(".ah__pf", { hasText: "Стоимость" })).toContainText(/54\s000/);
   await expect(facts.locator(".ah__pf", { hasText: "Ежемесячно" })).toContainText(/5\s400/);
-  await expect(facts.locator(".ah__calc")).toHaveCount(0); // всё введено, не расчёт
 });
 
 test("наблюдатель не видит кнопку «Новая заявка»", async ({ page }) => {

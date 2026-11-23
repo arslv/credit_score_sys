@@ -6949,18 +6949,6 @@ mark {
   grid-column: span 2;
 }
 
-.ah__calc {
-  margin-left: 6px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
 /* «В чёрный список» из заявки — кого добавляем. */
 .bl-add__rows {
   display: grid;
@@ -7366,4 +7354,57 @@ mark {
 
 .crd__val--bad {
   color: var(--status-bad);
+}
+
+/* Кредиты — понятными фразами (23.11.2026): сигналы цветом, ниже — факты. */
+.crd__signals {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crd__signal {
+  padding: 6px 10px;
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-subtle);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.crd__signal--ok {
+  border-left-color: var(--status-ok);
+  color: var(--status-ok);
+  background: color-mix(in srgb, var(--status-ok) 8%, transparent);
+}
+
+.crd__signal--warn {
+  border-left-color: var(--status-gray);
+  color: var(--status-gray);
+  background: color-mix(in srgb, var(--status-gray) 10%, transparent);
+}
+
+.crd__signal--bad {
+  border-left-color: var(--status-bad);
+  color: var(--status-bad);
+  background: color-mix(in srgb, var(--status-bad) 10%, transparent);
+}
+
+.crd__facts {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.crd__fact dt {
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.crd__fact dd {
+  margin: 1px 0 0;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
 }
