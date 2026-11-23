@@ -448,7 +448,7 @@ export function NewApplicationPage() {
             {text("sales_point", "Точка продаж", { span: 3 })}
           </Section>
 
-          <Section step={4} title="Доход и работа" hint="Для расчёта нагрузки" done={steps[3]!.done}>
+          <Section step={4} title="Доход и работа" hint="Для оценки нагрузки" done={steps[3]!.done}>
             {text("income", "Доход в месяц", { required: true, type: "number", min: 0, step: "0.01", suffix: "₽" })}
             {text("other_credit_payments", "Платежи по другим кредитам", {
               type: "number",
