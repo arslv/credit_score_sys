@@ -319,13 +319,19 @@ function RowMenu({ id, canEdit }: { id: string; canEdit: boolean }) {
   const [place, setPlace] = useState<React.CSSProperties | null>(null);
   const open = place !== null;
   const ref = useRef<HTMLDivElement>(null);
+  const anchor = useRef<{ el: HTMLElement; top: number; left: number } | null>(null);
   const navigate = useNavigate();
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setPlace(null);
     };
-    const hide = () => setPlace(null);
+    // Прокрутили так, что «⋮» сдвинулась, — меню отстало бы от кнопки: закрываем.
+    const hide = () => {
+      const a = anchor.current;
+      const r = a?.el.getBoundingClientRect();
+      if (!a || !r || Math.abs(r.top - a.top) > 2 || Math.abs(r.left - a.left) > 2) setPlace(null);
+    };
     document.addEventListener("mousedown", close);
     window.addEventListener("scroll", hide, true);
     window.addEventListener("resize", hide);
@@ -339,6 +345,7 @@ function RowMenu({ id, canEdit }: { id: string; canEdit: boolean }) {
   function toggle(e: React.MouseEvent<HTMLButtonElement>) {
     if (open) return setPlace(null);
     const r = e.currentTarget.getBoundingClientRect();
+    anchor.current = { el: e.currentTarget, top: r.top, left: r.left };
     const right = window.innerWidth - r.right;
     setPlace(
       window.innerHeight - r.bottom < 120
