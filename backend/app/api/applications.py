@@ -254,6 +254,12 @@ def _latest_override_at_expr():
 # Заявка, которую роль ничего сделать не может, в её очередь не попадает.
 _QUEUE_ROLES = ("operator", "admin")
 
+# «Новые» (решение владельца 23.11.2026): заявка ещё в работе — итога нет.
+# Серая зона — своей вкладкой, отказ/одобрение/договор/просрочка — итог.
+_NEW_STATUSES = (
+    "received", "awaiting_data", "ocr", "ocr_failed", "stage_a", "to_operator", "stage_b", "awaiting_bki",
+)
+
 
 def _application_search(token: str):
     """Слово нашлось в заявке: ФИО и телефон из анкеты, клиент по паспорту,
@@ -408,6 +414,7 @@ async def quick_counts(
     return {
         # None — у роли нет своей очереди (наблюдатель, администратор): чип не показываем.
         "action": await _count(queue) if queue is not None else None,
+        "new": await _count(Application.status.in_(_NEW_STATUSES)),
         "gray": await _count(Application.status == "gray_zone"),
         "today": await _count(Application.submitted_at >= _service_today_start_utc()),
         "all": await _count(),
@@ -435,7 +442,7 @@ async def list_applications(
     discrepancies_only: bool = False,
     # Быстрые фильтры макета: action — «Требуют действия», gray — «Серая зона»,
     # today — «Сегодня» (по Москве), all — без ограничения.
-    view: str = Query("all", pattern="^(action|gray|today|all)$"),
+    view: str = Query("all", pattern="^(action|new|gray|today|all)$"),
     # Поиск (решение владельца 16.11.2026): ФИО, телефон, № заявки, № в CRM,
     # паспортные данные — см. _application_search.
     q: str | None = Query(None, max_length=200),
@@ -451,6 +458,8 @@ async def list_applications(
         if queue is None:
             return Page(items=[], total=0, page=params.page, page_size=params.page_size)
         stmt = stmt.where(queue)
+    elif view == "new":
+        stmt = stmt.where(Application.status.in_(_NEW_STATUSES))
     elif view == "gray":
         stmt = stmt.where(Application.status == "gray_zone")
     elif view == "today":

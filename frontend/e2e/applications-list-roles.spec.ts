@@ -14,20 +14,19 @@ test("оператор: очередь грузится, колонки как �
   await login(page, seed.operator.email, seed.operator.password);
   await page.goto("/applications");
 
-  await expect(page.getByRole("button", { name: /Требуют действия · \d+/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: /^Новые · \d+/ })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Загрузка…")).toHaveCount(0, { timeout: 10_000 });
   await expect(page.getByRole("table")).toBeVisible({ timeout: 10_000 });
   const headers = await page.getByRole("columnheader").allTextContents();
   expect(headers.map((h) => h.trim())).toEqual(CRM_COLUMNS);
 });
 
-test("наблюдатель: без очереди, список тот же", async ({ page }) => {
+test("наблюдатель: список тот же", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.viewer.email, seed.viewer.password);
   await page.goto("/applications");
 
   await expect(page.getByRole("table")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByRole("button", { name: /Требуют действия/ })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "Статус" })).toBeVisible();
 });
 
@@ -35,6 +34,7 @@ test("администратор: в очереди под статусом — 
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
   await page.goto("/applications");
+  await page.getByRole("button", { name: /^Серая зона · \d+/ }).click();
 
   await expect(page.getByRole("table")).toBeVisible({ timeout: 10_000 });
   const firstRow = page.locator("tbody tr").first();

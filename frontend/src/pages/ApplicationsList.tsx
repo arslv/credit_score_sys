@@ -4,24 +4,20 @@ import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination, SearchInput, useDebounced } from "../components/ui";
-import { formatAmount, formatDateTime, formatElapsed } from "../lib/format";
+import { formatAmount, formatDateTime, formatElapsed, formatShortDateTime } from "../lib/format";
 import { applicationStatusLabel } from "../lib/labels";
 
 const PAGE_SIZE = 25;
 
-// T17, часть 4 (макет «Заявки»). Быстрые фильтры и их счётчики — с сервера.
-// «Требуют действия» — очередь РОЛИ (T23: оператор / админ);
-// у наблюдателя и администратора очереди нет, чипа нет.
-type View = "action" | "gray" | "today" | "all";
+// Быстрые фильтры и их счётчики — с сервера. Решение владельца 23.11.2026:
+// три вкладки — «Новые» (итога ещё нет), «Серая зона», «Все».
+type View = "new" | "gray" | "all";
 
 const VIEW_LABELS: Record<View, string> = {
-  action: "Требуют действия",
+  new: "Новые",
   gray: "Серая зона",
-  today: "Сегодня",
   all: "Все",
 };
-
-const QUEUE_ROLES = ["operator", "admin"];
 
 // Тон пилюли статуса: одобрено — зелёный, отказ — красный, серая зона — янтарный,
 // всё «в процессе» — нейтральный серо-синий. Цвета — токены в index.css.
@@ -51,8 +47,8 @@ const CREATE_ROLES = ["admin", "operator"];
 
 export function ApplicationsListPage() {
   const { employee } = useAuth();
-  const hasQueue = QUEUE_ROLES.includes(employee?.role ?? "");
-  const [view, setView] = useState<View>(hasQueue ? "action" : "all");
+  const navigate = useNavigate();
+  const [view, setView] = useState<View>("new");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   // Поиск (решение владельца 16.11.2026): ФИО, телефон, № заявки, № в CRM, паспорт.
@@ -117,7 +113,17 @@ export function ApplicationsListPage() {
     { key: "status", title: "Статус" },
     { key: "menu", title: "Действия" },
   ];
-  const views = (Object.keys(VIEW_LABELS) as View[]).filter((key) => key !== "action" || counts?.action != null);
+  const views = Object.keys(VIEW_LABELS) as View[];
+
+  // Строка целиком — ссылка на заявку; Ctrl/⌘ — в новой вкладке. Клики по
+  // ссылке и меню «⋮» строка не перехватывает.
+  function openRow(e: React.MouseEvent, id: string) {
+    if ((e.target as HTMLElement).closest("a, button, [role='menu']")) return;
+    if (window.getSelection()?.toString()) return; // выделяли текст — не открываем
+    const url = `/applications/${id}`;
+    if (e.ctrlKey || e.metaKey) window.open(url, "_blank");
+    else navigate(url);
+  }
 
   return (
     <section>
@@ -130,11 +136,7 @@ export function ApplicationsListPage() {
             </Link>
           ) : undefined
         }
-        description={
-          hasQueue
-            ? "«Требуют действия» — ваша очередь: то, что ждёт именно вашей роли. Остальные вкладки — вся картина."
-            : "Все заявки, пришедшие из CRM, и решения по ним."
-        }
+        description="«Новые» — заявки, по которым ещё нет итога: идут проверки или нужно действие."
       />
 
       <div className="list-search">
@@ -218,7 +220,7 @@ export function ApplicationsListPage() {
       {query.isError && <ErrorState message="Не удалось загрузить список заявок." onRetry={() => void query.refetch()} />}
       {query.data && query.data.items.length === 0 && (
         <EmptyState
-          title={view === "action" ? "Очередь пуста — всё разобрано" : "Заявок не нашлось"}
+          title={view === "new" ? "Новых заявок нет — всё разобрано" : "Заявок не нашлось"}
           action={
             view !== "all" || filters !== EMPTY_FILTERS ? (
               <button
@@ -236,6 +238,7 @@ export function ApplicationsListPage() {
       )}
 
       {query.data && query.data.items.length > 0 && (
+        <div className="crm-card">
         <table className="table table--list table--crm">
           <thead>
             <tr>
@@ -248,7 +251,7 @@ export function ApplicationsListPage() {
           </thead>
           <tbody>
             {query.data.items.map((item) => (
-              <tr key={item.id}>
+              <tr key={item.id} className={`crm-row crm-row--${statusTone(item.status)}`} onClick={(e) => openRow(e, item.id)}>
                 <td className="cell-id" title={`Заявка №${item.number}`}>
                   {item.source === "manual" ? (
                     <>
@@ -262,7 +265,7 @@ export function ApplicationsListPage() {
                 <td className="cell-ellipsis muted" title={item.sales_point ?? undefined}>
                   {item.sales_point ?? "—"}
                 </td>
-                <td className="cell-ellipsis">
+                <td className="cell-ellipsis cell-client">
                   <Link to={`/applications/${item.id}`}>{item.client_name ?? "—"}</Link>
                 </td>
                 <td className="cell-ellipsis" title={item.goods_name}>
@@ -270,9 +273,11 @@ export function ApplicationsListPage() {
                 </td>
                 {/* До «Рассмотреть» сделки ещё нет (нули-заглушки) — прочерк, не «0 ₽». */}
                 <td className="num">{item.term_months > 0 ? item.term_months : "—"}</td>
-                <td className="num">{Number(item.goods_price) > 0 ? `${formatAmount(item.goods_price)} ₽` : "—"}</td>
+                <td className="num cell-amount">{Number(item.goods_price) > 0 ? `${formatAmount(item.goods_price)} ₽` : "—"}</td>
                 <td className="num">{item.anket_count}</td>
-                <td className="muted">{item.decided_at ? formatDateTime(item.decided_at) : "-"}</td>
+                <td className="muted" title={item.decided_at ? formatDateTime(item.decided_at) : undefined}>
+                  {item.decided_at ? formatShortDateTime(item.decided_at) : "—"}
+                </td>
                 <td className="cell-status">
                   <span className={`status-pill status-pill--${statusTone(item.status)}`}>
                     {applicationStatusLabel(item.status)}
@@ -297,6 +302,7 @@ export function ApplicationsListPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {query.data && (

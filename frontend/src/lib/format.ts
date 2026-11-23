@@ -30,6 +30,22 @@ export function formatDateTime(iso: string | null | undefined): string {
   return `${dateTimeFormatter.format(new Date(iso))} МСК`;
 }
 
+const moscowDay = new Intl.DateTimeFormat("ru-RU", { timeZone: MOSCOW_TZ, day: "2-digit", month: "2-digit", year: "numeric" });
+const moscowTime = new Intl.DateTimeFormat("ru-RU", { timeZone: MOSCOW_TZ, hour: "2-digit", minute: "2-digit" });
+
+/** Коротко для списков (по Москве): «сегодня, 21:56», «вчера, 09:10»,
+ *  «23.11, 21:56» в этом году, иначе «23.11.2025, 21:56». */
+export function formatShortDateTime(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  const day = moscowDay.format(date);
+  const time = moscowTime.format(date);
+  if (day === moscowDay.format(now)) return `сегодня, ${time}`;
+  if (day === moscowDay.format(new Date(now.getTime() - 86_400_000))) return `вчера, ${time}`;
+  const [dd, mm, yyyy] = day.split(".");
+  return yyyy === moscowDay.format(now).split(".")[2] ? `${dd}.${mm}, ${time}` : `${day}, ${time}`;
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   return dateFormatter.format(new Date(iso));

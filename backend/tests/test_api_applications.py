@@ -523,6 +523,11 @@ async def test_list_queues_are_per_role_and_sorted_by_waiting_time(
     assert str(waiting_id) not in ids(gray)
     today = (await admin_client.get("/api/applications", params={"view": "today", "page_size": 50})).json()
     assert {str(waiting_id), str(frozen_id)} <= ids(today)
+    # «Новые» — заявки без итога: переданная оператору — да, отказ — нет.
+    new = (await admin_client.get("/api/applications", params={"view": "new", "page_size": 50})).json()
+    assert str(waiting_id) in ids(new)
+    assert str(frozen_id) not in ids(new)
+    assert (await admin_client.get("/api/applications/quick-counts")).json()["new"] == new["total"]
     assert (await admin_client.get("/api/applications", params={"view": "bogus"})).status_code == 422
 
 

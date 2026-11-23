@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { components } from "../api/schema";
 import { useAuth } from "../auth/AuthProvider";
@@ -348,9 +348,7 @@ export function ApplicationDetailPage() {
   // документы и история — свёрнутыми разделами в самом низу.
   return (
     <div className={headerOutcome === "manual_review" ? "ac2 ac2--gray" : "ac2"}>
-      <p className="back-link">
-        <Link to="/applications">← Заявки</Link>
-      </p>
+      <BackLink />
 
       <section className={`ah ${verdictTone(headerOutcome)}`} aria-label="Главное по заявке">
         {/* Шапка (16.11.2026): кто клиент и кнопки — сверху; товар, сумма,
@@ -714,5 +712,26 @@ function KeyValue({ rows }: { rows: { label: string; value: string }[] }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+/** «Назад» — туда, откуда пришли (клиент в портфеле, список, перечни…);
+ *  открыли по прямой ссылке — в список заявок. */
+function BackLink() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  if (location.key === "default") {
+    return (
+      <p className="back-link">
+        <Link to="/applications">← Заявки</Link>
+      </p>
+    );
+  }
+  return (
+    <p className="back-link">
+      <button type="button" className="btn-link" onClick={() => navigate(-1)}>
+        ← Назад
+      </button>
+    </p>
   );
 }
