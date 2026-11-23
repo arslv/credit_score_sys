@@ -1241,6 +1241,10 @@ export interface components {
              * Format: date-time
              */
             requested_at: string;
+            /** Credit Details */
+            credit_details?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** BlacklistImportOut */
         BlacklistImportOut: {

@@ -31,6 +31,21 @@ test("ФССП от бюро: «Подробнее» — действующие 
   await expect(bureau.getByText(/ИП 01010\/11\/10101-ИП от 08\.11\.2016/)).toBeVisible();
 });
 
+test("кредитная история: «Показать кредиты» — действующие, закрытые, просрочки за историю", async ({ page }) => {
+  const seed = loadSeed();
+  await login(page, seed.admin.email, seed.admin.password);
+  await page.goto(`/applications/${seed.application.id}`);
+
+  await page.getByRole("button", { name: "Показать кредиты (действующих: 3–4 · закрытых видов: 1)" }).click();
+  const body = page.locator(".crd__body");
+  await expect(body.getByText("Потребительский кредит")).toBeVisible();
+  await expect(body.getByText("Ипотека")).toBeVisible();
+  await expect(body.locator(".crd__row", { hasText: "Худшая просрочка за всю историю" })).toContainText(
+    "Просрочка от 30 до 59 дней",
+  );
+  await expect(body.locator(".crd__row", { hasText: "Плохие долги" })).toContainText("не было");
+});
+
 test("«В чёрный список» из заявки — данные подставлены, нужна только причина", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);

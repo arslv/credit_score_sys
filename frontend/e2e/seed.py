@@ -25,7 +25,8 @@ from app.db import new_sessionmaker
 from app.engine.versions import get_active_ruleset_version
 from app.engine.stage_b_pipeline import STAGE_B_FEATURE_SET_VERSION
 from app.models import (
-    Application, BkiBureauCheck, Check, Client, Decision, Employee, FeatureSnapshot, Guarantor, ManualOverride,
+    Application, BkiBureauCheck, BkiReport, Check, Client, Decision, Employee, FeatureSnapshot, Guarantor,
+    ManualOverride,
 )
 from app.security.passwords import hash_password
 
@@ -113,6 +114,23 @@ async def _seed_discrepancy_application(session) -> dict:
             request={"e2e": True}, response_raw={"html": html},
             parsed={"productions": [{"subject": "Задолженность", "amount": "3841.59"}]},
             started_at=now, finished_at=now, duration_ms=1,
+        ))
+        # Отчёт бюро — «Кредитный рейтинг» по образцу из описания блока
+        # (Спектрум Дата): сводка по кредитам для разворота «Показать кредиты».
+        session.add(BkiReport(
+            client_id=application.client_id, application_id=application.id, status="ok", score=Decimal("736"),
+            report_type="detailed", requested_at=now, completed_at=now,
+            report_raw={"raw": {"data": [{"content": {"check_person": {"credit_history": {
+                "bills": {"activeAccounts": {"borrowerCount": "3-4", "guarantorCount": "0-2"},
+                          "activeCreditsSumLimit": "1000000.0-1999999.99", "averagePayment": "100000.0-149999.99"},
+                "credits": {"hasBadDebtOrPassedToCollection": False,
+                            "creditTypeInfosOpen": [{"type": 2, "typeDescription": "Потребительский кредит"}],
+                            "creditTypeInfosClosed": [{"type": 1, "typeDescription": "Ипотека"}]},
+                "activeCreditsDelays": {"maxCurrentDelay": "Оплата без просрочек",
+                                        "maxHistoryDelay": "Просрочка от 30 до 59 дней", "sumDelay": "0.0-999.99"},
+                "treatmentsInBanks": {"forLast7Days": 0, "forLast14Days": 0, "forLastMonth": 1, "all": 12},
+                "score": {"value": "736"}, "src_meta": {"state": "OK"},
+            }}}}]}},
         ))
         # ФССП из отчёта бюро — действующее и оконченное производство.
         session.add(BkiBureauCheck(

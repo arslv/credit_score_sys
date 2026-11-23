@@ -387,3 +387,17 @@ async def test_cached_report_brings_bureau_checks_to_the_new_application(
             select(BkiBureauCheck).where(BkiBureauCheck.application_id == application_ids[1])
         )).scalars().all()
     assert sorted(b.source for b in second) == ["fedresurs", "fssp"]
+
+
+def test_credit_history_details_open_closed_delays():
+    """Сводка для карточки: виды открытых и закрытых кредитов, худшая
+    просрочка сейчас и за историю, плохие долги, обращения."""
+    details = spectrum.credit_history_details(REPORT)
+    assert details["open_types"] == ["Потребительский кредит", "Кредитная карта"]
+    assert details["closed_types"] == ["Ипотека"]
+    assert details["active_count"] == "3-4"
+    assert details["current_delay"] == "Оплата без просрочек" and details["current_delay_days"] == 0
+    assert details["history_delay"] == "Просрочка от 30 до 59 дней" and details["history_delay_days"] == 30
+    assert details["bad_debt"] is False
+    assert details["inquiries"] == {"7d": 0, "14d": 0, "1mo": 1, "all": 100}
+    assert spectrum.credit_history_details(NOT_FOUND) is None

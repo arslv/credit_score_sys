@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { components } from "../api/schema";
 import { formatAmount, formatDateTime } from "../lib/format";
+import { CreditDetails } from "./CreditDetails";
 import { BureauFsspDetails, FsspDetails } from "./FsspDetails";
 import { checkResultLabel, fsspEndReason, passportCheckLabel, passportCheckStatusLabel, sourceMeta } from "../lib/labels";
 
@@ -393,6 +394,8 @@ function BkiTile({ result, tone, action }: { result: BkiResult | null; tone: Ton
         {outcome}
       </div>
       {result && <div className="chk__bki-meta">{formatDateTime(result.requested_at)}</div>}
+      {/* Кредиты — действующие и закрытые, просрочки за историю (решение владельца 23.11.2026). */}
+      {result?.credit_details && <CreditDetails details={result.credit_details as Record<string, unknown>} />}
       {action && <div className="chk__bki-action">{action}</div>}
     </section>
   );

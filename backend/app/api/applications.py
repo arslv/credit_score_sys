@@ -52,6 +52,7 @@ from app.security.pagination import Page, PageParams
 from app.sources.base import Subject
 from app.sources.factory import build_fns_egrip_source, build_fns_npd_source
 from app.sources.fssp import parse_fssp_details
+from app.sources.spectrum import credit_history_details
 from app.sources.runner import record_check
 from app.storage.base import Storage
 
@@ -900,6 +901,9 @@ class BkiResultOut(BaseModel):
     label: str | None
     score: Decimal | None
     requested_at: datetime
+    # Сводка кредитной истории (действующие и закрытые кредиты, просрочки,
+    # плохие долги, обращения) — из сохранённого ответа бюро, для разворота.
+    credit_details: dict[str, Any] | None = None
 
 
 class ApplicationDetail(BaseModel):
@@ -1032,10 +1036,12 @@ async def _bki_result(
     if report is None:
         return None
     labels = {t.code: t.label for t in types}
+    raw = (report.report_raw or {}).get("raw")
     return BkiResultOut(
         status=report.status, report_type=report.report_type,
         label=labels.get(report.report_type or "", report.report_type), score=report.score,
         requested_at=report.requested_at,
+        credit_details=credit_history_details(raw) if isinstance(raw, dict) else None,
     )
 
 

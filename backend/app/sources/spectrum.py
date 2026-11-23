@@ -94,6 +94,55 @@ def _credit_history(response: dict) -> tuple[dict | None, dict]:
     return None, {}
 
 
+def credit_history_details(response: dict) -> dict | None:
+    """Сводка кредитной истории для карточки (решение владельца 23.11.2026:
+    видеть и старые кредиты — закрытые, с просрочками или без). Блок
+    «Кредитный рейтинг» (P.0191) не даёт списка кредитов по одному — только
+    виды открытых и закрытых, количество (диапазоном), худшую просрочку
+    сейчас и за всю историю, сумму просрочки, плохие долги и обращения.
+    None — блока нет или источник не ответил. Только показ, в решение не входит."""
+    history, _content = _credit_history(response)
+    if not isinstance(history, dict):
+        return None
+    if str((history.get("src_meta") or {}).get("state", "OK")).upper() != "OK":
+        return None
+    bills = history.get("bills") or {}
+    credits = history.get("credits") or {}
+    delays = history.get("activeCreditsDelays") or {}
+    inquiries = history.get("treatmentsInBanks") or {}
+    active = bills.get("activeAccounts") or (history.get("summary") or {}).get("activeAccounts") or {}
+
+    def types(key: str) -> list[str]:
+        return [
+            str(t.get("typeDescription") or t.get("type"))
+            for t in credits.get(key) or []
+            if isinstance(t, dict) and (t.get("typeDescription") or t.get("type") is not None)
+        ]
+
+    details = {
+        "open_types": types("creditTypeInfosOpen"),
+        "closed_types": types("creditTypeInfosClosed"),
+        "active_count": active.get("borrowerCount"),
+        "guarantor_count": active.get("guarantorCount"),
+        "average_payment": bills.get("averagePayment"),
+        "active_limit": bills.get("activeCreditsSumLimit"),
+        "last_repayment_date": bills.get("lastRepaymentDate"),
+        "current_delay": delays.get("maxCurrentDelay"),
+        "history_delay": delays.get("maxHistoryDelay"),
+        "history_delay_days": overdue_days(delays.get("maxHistoryDelay")),
+        "current_delay_days": overdue_days(delays.get("maxCurrentDelay")),
+        "overdue_sum": delays.get("sumDelay"),
+        "bad_debt": bool(credits.get("hasBadDebtOrPassedToCollection")),
+        "inquiries": {
+            "7d": inquiries.get("forLast7Days"), "14d": inquiries.get("forLast14Days"),
+            "1mo": inquiries.get("forLastMonth"), "all": inquiries.get("all"),
+        },
+    }
+    if not any(v for k, v in details.items() if k not in ("bad_debt", "inquiries")) and not details["bad_debt"]:
+        return None  # кредитной истории нет — показывать нечего
+    return details
+
+
 def parse_credit_rating(response: dict) -> tuple[CheckStatus, BkiReport]:
     """Ответ отчёта → (статус, BkiReport с summary). Сведений нет (у человека
     нет кредитной истории) — no_data с пустым отчётом, как у прочих бюро."""
