@@ -53,3 +53,25 @@ test("«← Назад» из заявки возвращает к клиент�
   await page.getByRole("button", { name: "← Назад" }).click();
   await expect(page).toHaveURL(new RegExp(`${clientUrl}$`));
 });
+
+test("«← Назад» из заявки возвращает в ту же вкладку и на ту же страницу", async ({ page }) => {
+  const seed = loadSeed();
+  await login(page, seed.admin.email, seed.admin.password);
+  await page.goto("/applications");
+
+  await page.getByRole("button", { name: /^Серая зона · \d+/ }).click();
+  await expect(page).toHaveURL(/view=gray/);
+  await page.locator("tbody tr").first().locator("td.num").first().click();
+  await expect(page).toHaveURL(/\/applications\/[0-9a-f-]{36}$/);
+  await page.getByRole("button", { name: "← Назад" }).click();
+  await expect(page.getByRole("button", { name: /^Серая зона · \d+/ })).toHaveAttribute("aria-pressed", "true");
+
+  // Страница тоже сохраняется.
+  await page.getByRole("button", { name: /^Все · \d+/ }).click();
+  await page.getByRole("button", { name: /вперёд/ }).click();
+  await expect(page).toHaveURL(/view=all.*page=2|page=2.*view=all/);
+  await page.locator("tbody tr").first().locator("td.num").first().click();
+  await page.getByRole("button", { name: "← Назад" }).click();
+  await expect(page.getByText(/Страница 2 из/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Все · \d+/ })).toHaveAttribute("aria-pressed", "true");
+});

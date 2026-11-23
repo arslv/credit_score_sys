@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthProvider";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination, SearchInput, useDebounced } from "../components/ui";
@@ -48,12 +48,34 @@ const CREATE_ROLES = ["admin", "operator"];
 export function ApplicationsListPage() {
   const { employee } = useAuth();
   const navigate = useNavigate();
-  const [view, setView] = useState<View>("new");
+  // Вкладка, страница и поиск — в адресе (?view=gray&page=2&q=…): «Назад» из
+  // заявки возвращает в ту же вкладку и на ту же страницу (отзыв 24.11.2026).
+  const [params, setParams] = useSearchParams();
+  const rawView = params.get("view");
+  const view: View = rawView === "gray" || rawView === "all" ? rawView : "new";
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const patchParams = (patch: Record<string, string | null>) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [key, value] of Object.entries(patch)) {
+          if (value == null || value === "") next.delete(key);
+          else next.set(key, value);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  const setView = (next: View) => patchParams({ view: next === "new" ? null : next, page: null });
+  const setPage = (next: number) => patchParams({ page: next > 1 ? String(next) : null });
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [page, setPage] = useState(1);
   // Поиск (решение владельца 16.11.2026): ФИО, телефон, № заявки, № в CRM, паспорт.
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => params.get("q") ?? "");
   const q = useDebounced(search.trim());
+  useEffect(() => {
+    if ((params.get("q") ?? "") !== q) patchParams({ q: q || null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
   const countsQuery = useQuery({
     queryKey: ["applications", "quick-counts"],
@@ -92,7 +114,6 @@ export function ApplicationsListPage() {
   }
 
   function selectView(next: View) {
-    setPage(1);
     setView(next);
   }
 
@@ -144,9 +165,9 @@ export function ApplicationsListPage() {
           value={search}
           onChange={(value) => {
             setSearch(value);
-            setPage(1);
             // Ищем по всем заявкам, а не только в выбранной вкладке.
             if (value.trim() && view !== "all") setView("all");
+            else setPage(1);
           }}
           placeholder="ФИО, телефон, № заявки или паспорт"
           label="Поиск заявок"
