@@ -7521,3 +7521,122 @@ mark {
 .table--crm .cell-id { max-width: 130px; }
 .table--crm .cell-ellipsis { max-width: 170px; }
 .table--crm td.cell-status { min-width: 180px; max-width: 240px; }
+
+/* Панель списка заявок (24.11.2026): вкладки слева, поиск справа; под ними —
+   фильтры-кнопки, видны сразу и нажимаются в один клик. */
+.list-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.list-bar .chips {
+  margin: 0;
+}
+
+.list-bar__search {
+  flex: 0 1 420px;
+  min-width: 260px;
+}
+
+.list-bar__search > * {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.list-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.fpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fpill:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.fpill--on,
+.fpill--on:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.fpill--select {
+  padding-right: 8px;
+}
+
+.fpill__label {
+  color: inherit;
+}
+
+.fpill select {
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fpill--on select {
+  color: var(--color-accent);
+}
+
+.fpill select option {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.list-filters__reset {
+  margin-left: var(--space-2);
+  font-size: var(--font-sm);
+}
+
+.fpill select {
+  width: auto;
+  min-width: 0;
+  max-width: 200px;
+}
+
+/* Ноутбук 1366: колонки уже, всё помещается. */
+@media (max-width: 1500px) {
+  .table--crm .cell-ellipsis { max-width: 140px; }
+  .table--crm .cell-id { max-width: 110px; }
+  .table--crm td.cell-status { min-width: 160px; max-width: 210px; }
+  .crm-card .table--crm th,
+  .crm-card .table--crm td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
+
+/* Ширина списка «Статус» — по выбранному значению, а не по самому длинному. */
+.fpill select {
+  field-sizing: content;
+  padding-right: 18px;
+}

@@ -36,7 +36,7 @@ export const RULESET_DOCS: RulesetDocGroup[] = [
       { path: "value", text: "С чем сравниваем. Для between — два числа, для in / not_in — список, для is_null не пишется.", example: "value: [5000, 50000]" },
       { path: "reason", text: "Код причины — по нему подбирается человеческий текст для CRM и карточки (config/status_mapping.yaml)." , example: "reason: PTI_HIGH" },
       { path: "action", text: "Только для soft_rules: manual_review — серая зона, решение за оператором.", example: "action: manual_review" },
-      { path: "freeze", text: "Только для hard_stops: заморозить клиента до проверки по перечням (раздел «Проверка по перечням»).", example: "freeze: true" },
+      { path: "freeze", text: "Только для hard_stops: заморозить клиента до проверки по перечням (раздел «Росфинмониторинг»).", example: "freeze: true" },
     ],
   },
   {

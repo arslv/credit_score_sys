@@ -96,7 +96,7 @@ export function CompliancePage() {
   return (
     <section className="pg">
       <header className="pg-head">
-        <h1>Проверка по перечням</h1>
+        <h1>Росфинмониторинг — совпадения с перечнем</h1>
       </header>
 
       <Toolbar>

@@ -37,13 +37,13 @@ export function healthProblems(s: HealthInput): HealthProblem[] {
     problems.push({
       key: "ruleset-missing",
       what: "Нет действующей версии правил — решения по заявкам не принимаются.",
-      todo: "Опубликуйте версию правил: «Скоринг» → «Правила».",
+      todo: "Опубликуйте версию правил: раздел «Правила и пороги».",
     });
   } else if (s.ruleset_matches_file === false) {
     problems.push({
       key: "ruleset-mismatch",
       what: "Действующие правила отличаются от файла правил на сервере.",
-      todo: "Опубликуйте верную версию в «Скоринге» или поправьте файл.",
+      todo: "Опубликуйте верную версию в «Правилах и порогах» или поправьте файл.",
     });
   }
   if (!s.bki_configured) {

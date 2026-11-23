@@ -35,13 +35,6 @@ interface Filters {
   sourceUnavailableOnly: boolean;
 }
 
-const EMPTY_FILTERS: Filters = {
-  status: "",
-  discrepanciesOnly: false,
-  ocrFailedOnly: false,
-  sourceUnavailableOnly: false,
-};
-
 // Заявку без CRM заводят admin и operator (app/api/manual_applications.py).
 const CREATE_ROLES = ["admin", "operator"];
 
@@ -68,7 +61,15 @@ export function ApplicationsListPage() {
     );
   const setView = (next: View) => patchParams({ view: next === "new" ? null : next, page: null });
   const setPage = (next: number) => patchParams({ page: next > 1 ? String(next) : null });
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  // Фильтры — тоже в адресе: «Назад» из заявки их не сбрасывает.
+  const filters: Filters = {
+    status: params.get("status") ?? "",
+    discrepanciesOnly: params.get("disc") === "1",
+    ocrFailedOnly: params.get("ocr") === "1",
+    sourceUnavailableOnly: params.get("src") === "1",
+  };
+  const hasFilters =
+    filters.status !== "" || filters.discrepanciesOnly || filters.ocrFailedOnly || filters.sourceUnavailableOnly;
   // Поиск (решение владельца 16.11.2026): ФИО, телефон, № заявки, № в CRM, паспорт.
   const [search, setSearch] = useState(() => params.get("q") ?? "");
   const q = useDebounced(search.trim());
@@ -109,8 +110,21 @@ export function ApplicationsListPage() {
   });
 
   function updateFilters(patch: Partial<Filters>) {
-    setPage(1);
-    setFilters((prev) => ({ ...prev, ...patch }));
+    const flag = (v: boolean | undefined) => (v === undefined ? undefined : v ? "1" : null);
+    const next: Record<string, string | null> = { page: null };
+    if (patch.status !== undefined) next.status = patch.status || null;
+    for (const [key, value] of [
+      ["disc", flag(patch.discrepanciesOnly)],
+      ["ocr", flag(patch.ocrFailedOnly)],
+      ["src", flag(patch.sourceUnavailableOnly)],
+    ] as const) {
+      if (value !== undefined) next[key] = value;
+    }
+    patchParams(next);
+  }
+
+  function resetFilters() {
+    patchParams({ status: null, disc: null, ocr: null, src: null, page: null });
   }
 
   function selectView(next: View) {
@@ -157,85 +171,83 @@ export function ApplicationsListPage() {
             </Link>
           ) : undefined
         }
-        description="«Новые» — заявки, по которым ещё нет итога: идут проверки или нужно действие."
       />
 
-      <div className="list-search">
-        <SearchInput
-          value={search}
-          onChange={(value) => {
-            setSearch(value);
-            // Ищем по всем заявкам, а не только в выбранной вкладке.
-            if (value.trim() && view !== "all") setView("all");
-            else setPage(1);
-          }}
-          placeholder="ФИО, телефон, № заявки или паспорт"
-          label="Поиск заявок"
-        />
+      {/* Панель списка (отзыв 24.11.2026): вкладки и поиск — одной строкой,
+          фильтры — сразу видны, по клику, без раскрывашки «Ещё фильтры». */}
+      <div className="list-bar">
+        <div className="chips" role="group" aria-label="Быстрые фильтры">
+          {views.map((key) => (
+            <button
+              key={key}
+              type="button"
+              className={`chip${view === key ? " chip--active" : ""}`}
+              aria-pressed={view === key}
+              onClick={() => selectView(key)}
+            >
+              {VIEW_LABELS[key]}
+              {counts && counts[key] != null && (
+                <span className="chip-count">
+                  <span className="sr-only"> · </span>
+                  {counts[key]}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="list-bar__search">
+          <SearchInput
+            value={search}
+            onChange={(value) => {
+              setSearch(value);
+              // Ищем по всем заявкам, а не только в выбранной вкладке.
+              if (value.trim() && view !== "all") setView("all");
+              else setPage(1);
+            }}
+            placeholder="ФИО, телефон, № заявки или паспорт"
+            label="Поиск заявок"
+          />
+        </div>
       </div>
 
-      <div className="chips" role="group" aria-label="Быстрые фильтры">
-        {views.map((key) => (
+      <div className="list-filters" role="group" aria-label="Фильтры">
+        <label className={`fpill fpill--select${filters.status ? " fpill--on" : ""}`}>
+          <span className="fpill__label">Статус</span>
+          <select value={filters.status} onChange={(e) => updateFilters({ status: e.target.value })}>
+            <option value="">любой</option>
+            <option value="awaiting_data">{applicationStatusLabel("awaiting_data")}</option>
+            <option value="to_operator">{applicationStatusLabel("to_operator")}</option>
+            <option value="awaiting_bki">{applicationStatusLabel("awaiting_bki")}</option>
+            <option value="gray_zone">{applicationStatusLabel("gray_zone")}</option>
+            <option value="approved">{applicationStatusLabel("approved")}</option>
+            <option value="rejected_a,rejected_b">Отказ</option>
+            <option value="ocr_failed">{applicationStatusLabel("ocr_failed")}</option>
+          </select>
+        </label>
+        {(
+          [
+            ["discrepanciesOnly", "Оператор изменил статус"],
+            ["sourceUnavailableOnly", "Источник не ответил"],
+            ["ocrFailedOnly", "Паспорт не распознан"],
+          ] as const
+        ).map(([key, label]) => (
           <button
             key={key}
             type="button"
-            className={`chip${view === key ? " chip--active" : ""}`}
-            aria-pressed={view === key}
-            onClick={() => selectView(key)}
+            className={`fpill${filters[key] ? " fpill--on" : ""}`}
+            aria-pressed={filters[key]}
+            onClick={() => updateFilters({ [key]: !filters[key] })}
           >
-            {VIEW_LABELS[key]}
-            {counts && counts[key] != null && (
-              <span className="chip-count">
-                <span className="sr-only"> · </span>
-                {counts[key]}
-              </span>
-            )}
+            {filters[key] && <span aria-hidden="true">✓ </span>}
+            {label}
           </button>
         ))}
+        {hasFilters && (
+          <button type="button" className="btn-link list-filters__reset" onClick={resetFilters}>
+            Сбросить фильтры
+          </button>
+        )}
       </div>
-
-      <details className="more-filters">
-        <summary>Ещё фильтры</summary>
-        <div className="toolbar">
-          <label>
-            Статус
-            <select value={filters.status} onChange={(e) => updateFilters({ status: e.target.value })}>
-              <option value="">любой</option>
-              <option value="to_operator">{applicationStatusLabel("to_operator")}</option>
-              <option value="rejected_a,rejected_b">Отказ</option>
-              <option value="gray_zone">{applicationStatusLabel("gray_zone")}</option>
-              <option value="approved">{applicationStatusLabel("approved")}</option>
-              <option value="ocr_failed">{applicationStatusLabel("ocr_failed")}</option>
-              <option value="awaiting_data">{applicationStatusLabel("awaiting_data")}</option>
-              <option value="awaiting_bki">{applicationStatusLabel("awaiting_bki")}</option>
-            </select>
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={filters.discrepanciesOnly}
-              onChange={(e) => updateFilters({ discrepanciesOnly: e.target.checked })}
-            />
-            только расхождения с оператором
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={filters.ocrFailedOnly}
-              onChange={(e) => updateFilters({ ocrFailedOnly: e.target.checked })}
-            />
-            только не распознанные паспорта
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={filters.sourceUnavailableOnly}
-              onChange={(e) => updateFilters({ sourceUnavailableOnly: e.target.checked })}
-            />
-            есть недоступный источник
-          </label>
-        </div>
-      </details>
 
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message="Не удалось загрузить список заявок." onRetry={() => void query.refetch()} />}
@@ -243,13 +255,10 @@ export function ApplicationsListPage() {
         <EmptyState
           title={view === "new" ? "Новых заявок нет — всё разобрано" : "Заявок не нашлось"}
           action={
-            view !== "all" || filters !== EMPTY_FILTERS ? (
+            view !== "all" || hasFilters ? (
               <button
                 className="btn"
-                onClick={() => {
-                  setFilters(EMPTY_FILTERS);
-                  selectView("all");
-                }}
+                onClick={() => patchParams({ status: null, disc: null, ocr: null, src: null, page: null, view: "all" })}
               >
                 Показать все заявки
               </button>

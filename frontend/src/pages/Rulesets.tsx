@@ -552,7 +552,7 @@ export function RulesetsPage() {
   return (
     <section>
       <PageHeader
-        title="Скоринг"
+        title="Правила и пороги"
         description={
           <>
             Активная версия: {activeQuery.data.version}

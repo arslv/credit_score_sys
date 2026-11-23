@@ -458,7 +458,7 @@ export function ApplicationDetailPage() {
               <p className="verdict-action">
                 Похож на человека из перечня Росфинмониторинга — проверьте, он ли это.
                 <Link className="btn btn-primary btn-small" to="/compliance">
-                  К проверке по перечням
+                  Открыть в «Росфинмониторинге»
                 </Link>
               </p>
             )}

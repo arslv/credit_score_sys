@@ -30,7 +30,7 @@ test("оператор не видит раздел «Правила и поро
   const seed = loadSeed();
   await login(page, seed.operator.email, seed.operator.password);
 
-  await expect(page.getByRole("link", { name: "Скоринг" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Правила и пороги" })).toHaveCount(0);
 
   await page.goto("/rulesets");
   await expect(page.getByText("Недостаточно прав.")).toBeVisible();

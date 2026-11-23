@@ -2,14 +2,14 @@ import { test, expect } from "@playwright/test";
 import { loadSeed } from "./fixtures";
 import { login } from "./login";
 
-// T23: бывший «Комплаенс» — раздел меню «Проверка по перечням», доступен
+// T23: бывший «Комплаенс» — раздел меню «Росфинмониторинг», доступен
 // администратору и оператору.
 test("проверка по перечням: снятие заморозки требует причину", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.operator.email, seed.operator.password);
 
-  await page.getByRole("link", { name: "Перечни", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Проверка по перечням" })).toBeVisible();
+  await page.getByRole("link", { name: "Росфинмониторинг", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Росфинмониторинг — совпадения/ })).toBeVisible();
   // Подсказки «Как разобрать совпадение» больше нет (решение владельца 16.11.2026).
   await expect(page.getByText("Как разобрать совпадение")).toHaveCount(0);
   // Дев-БД накапливает совпадения от прошлых прогонов (список — по всей
@@ -41,11 +41,11 @@ test("проверка по перечням: снятие заморозки т
 test("администратор видит «Проверку по перечням», наблюдатель — нет", async ({ page }) => {
   const seed = loadSeed();
   await login(page, seed.admin.email, seed.admin.password);
-  await expect(page.getByRole("link", { name: "Перечни", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Росфинмониторинг", exact: true })).toBeVisible();
   await expect(page.getByText("Комплаенс")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Выйти" }).click();
   await login(page, seed.viewer.email, seed.viewer.password);
   await expect(page.getByRole("link", { name: "Заявки" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Перечни", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Росфинмониторинг", exact: true })).toHaveCount(0);
 });

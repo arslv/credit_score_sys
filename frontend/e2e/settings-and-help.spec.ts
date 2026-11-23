@@ -12,12 +12,12 @@ test("подменю Настроек показывает только разд
   for (const item of ["Сотрудники", "Чёрный список", "Логи", "Состояние системы"]) {
     await expect(nav.getByRole("link", { name: item })).toBeVisible();
   }
-  // T23: «Проверка по перечням» — отдельный раздел меню, не настройка.
-  await expect(nav.getByRole("link", { name: "Перечни", exact: true })).toHaveCount(0);
+  // T23: «Росфинмониторинг» — отдельный раздел меню, не настройка.
+  await expect(nav.getByRole("link", { name: "Росфинмониторинг", exact: true })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Выйти" }).click();
   await login(page, seed.operator.email, seed.operator.password);
-  await expect(page.getByRole("link", { name: "Перечни", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Росфинмониторинг", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Настройки" })).toHaveCount(0);
 });
 

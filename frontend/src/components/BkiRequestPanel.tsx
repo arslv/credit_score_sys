@@ -59,7 +59,7 @@ export function BkiRequestPanel({
   if (types.length === 0) {
     return (
       <p className="alert" role="alert" data-testid="bki-request">
-        В правилах нет видов отчёта БКИ — администратору: «Скоринг» → принять версию из файла.
+        В правилах нет видов отчёта БКИ — администратору: «Правила и пороги» → принять версию из файла.
       </p>
     );
   }

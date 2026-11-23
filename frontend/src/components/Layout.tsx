@@ -38,18 +38,19 @@ const NAV_GROUPS: NavGroup[] = [
       { to: "/applications", label: "Заявки", roles: ["admin", "operator", "viewer"] },
     ],
   },
-  {
-    key: "watchlist",
-    // Коротко — в одну строку меню; полное название — заголовок страницы.
-    label: "Перечни",
-    icon: ShieldAlert,
-    items: [{ to: "/compliance", label: "Перечни", roles: ["admin", "operator"] }],
-  },
+  // Отзыв 24.11.2026: «Скоринг» и «Перечни» были непонятны — названия по
+  // сути; правила выше, Росфинмониторинг — под ними, перед аналитикой.
   {
     key: "scoring",
-    label: "Скоринг",
+    label: "Правила и пороги",
     icon: SlidersHorizontal,
-    items: [{ to: "/rulesets", label: "Скоринг", roles: ["admin"] }],
+    items: [{ to: "/rulesets", label: "Правила и пороги", roles: ["admin"] }],
+  },
+  {
+    key: "watchlist",
+    label: "Росфинмониторинг",
+    icon: ShieldAlert,
+    items: [{ to: "/compliance", label: "Росфинмониторинг", roles: ["admin", "operator"] }],
   },
   {
     key: "analytics",
