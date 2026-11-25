@@ -300,22 +300,37 @@ async def receive_new_order(
         await session.execute(select(Application.id).where(Application.external_id == external_id))
     ).scalar_one_or_none()
 
-    photos: dict[str, bytes] = {}
-    if existing_application_id is None:
-        if len(payload.passportPhotos) < 2:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="нужны два фото паспорта: passportPhotos[0] — разворот с фото, [1] — прописка",
-            )
-        # Фото — ДО записи в базу: сеть может подвести, не хотим частично
-        # созданную заявку без документов на руках.
-        photos["passport_main"] = await _fetch_photo(payload.passportPhotos[0])
-        photos["passport_reg"] = await _fetch_photo(payload.passportPhotos[1])
-
-    now = datetime.now(timezone.utc)
     # Распознавание выключено в админке -> заявка ждёт паспортные данные от
     # CRM в /scoring, стадия А сейчас не запускается.
-    initial_status = "received" if await is_ocr_enabled(session) else "awaiting_data"
+    ocr_enabled = await is_ocr_enabled(session)
+    photos: dict[str, bytes] = {}
+    if existing_application_id is None:
+        if ocr_enabled:
+            # Распознаём фото — без двух фото заявку не из чего проверять.
+            if len(payload.passportPhotos) < 2:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="нужны два фото паспорта: passportPhotos[0] — разворот с фото, [1] — прописка",
+                )
+            # Фото — ДО записи в базу: сеть может подвести, не хотим частично
+            # созданную заявку без документов на руках.
+            photos["passport_main"] = await _fetch_photo(payload.passportPhotos[0])
+            photos["passport_reg"] = await _fetch_photo(payload.passportPhotos[1])
+        else:
+            # Распознавание выключено — фото не нужны (паспорт придёт в
+            # /scoring): заявку принимаем и без них (решение владельца
+            # 25.11.2026, CRM получала 422 и заявка не создавалась). Пришли —
+            # сохраним как документы; битые фото заявку не валят.
+            for kind, value in zip(("passport_main", "passport_reg"), payload.passportPhotos[:2]):
+                try:
+                    photos[kind] = await _fetch_photo(value)
+                except HTTPException as exc:
+                    logger.warning(
+                        "partner_photo_skipped", external_id=external_id, kind=kind, reason=str(exc.detail)[:120],
+                    )
+
+    now = datetime.now(timezone.utc)
+    initial_status = "received" if ocr_enabled else "awaiting_data"
     form = {
         "last_name": payload.lastName, "first_name": payload.firstName,
         "middle_name": payload.fatherName, "phone": payload.phone,
@@ -421,6 +436,31 @@ def _guarantor_payload(g: ScoringGuarantorIn) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if v is not None}
 
 
+def _application_from_scoring(external_id: str, payload: "ScoringIn") -> Application:
+    """Заявка из /scoring, когда /new-order не приходил: ФИО — из applicant,
+    телефона в /scoring нет. Паспортные данные проверяются ниже, как у
+    заявки в awaiting_data."""
+    applicant = payload.applicant or ApplicantPassportIn()
+    now = datetime.now(timezone.utc)
+    return Application(
+        external_id=external_id,
+        status="awaiting_data",
+        goods_name="—",
+        goods_price=Decimal("0"),
+        down_payment=Decimal("0"),
+        term_months=0,
+        tariff="unknown",
+        requested_amount=Decimal("0"),
+        profile={
+            "last_name": applicant.lastName, "first_name": applicant.firstName,
+            "middle_name": applicant.fatherName,
+        },
+        consent_pd_at=now,
+        submitted_at=now,
+        partner_last_known_status="new",
+    )
+
+
 @router.post("/scoring", dependencies=[Depends(verify_partner_webhook)])
 async def receive_scoring(payload: ScoringIn, request: Request, session: AsyncSession = Depends(get_session)) -> dict:
     external_id = str(payload.orderId)
@@ -436,9 +476,25 @@ async def receive_scoring(payload: ScoringIn, request: Request, session: AsyncSe
         await session.execute(select(Application).where(Application.external_id == external_id))
     ).scalar_one_or_none()
     if application is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="orderId не известен — заявка не приходила через /new-order",
+        # «Рассмотреть» по заявке, которой у нас нет (/new-order не дошёл —
+        # например, CRM слала его на старый адрес): создаём заявку прямо из
+        # /scoring (решение владельца 20.11.2026). Фото нет — паспорт берём из
+        # блока applicant, заявка ждёт паспортные данные (awaiting_data) и
+        # ниже идёт обычным путём. Без паспорта — 422 до любой записи.
+        application = _application_from_scoring(external_id, payload)
+        session.add(application)
+        await session.flush()
+        session.add(
+            StatusHistory(
+                application_id=application.id, from_status=None, to_status="awaiting_data", actor_type="system",
+            )
+        )
+        form_payload = {"form": application.profile, "created_from": "scoring"}
+        session.add(
+            ExternalSnapshot(
+                application_id=application.id, stage="A",
+                payload_raw=form_payload, content_hash=compute_content_hash(form_payload),
+            )
         )
 
     # Заявка ждёт паспортные данные от CRM (распознавание было выключено):

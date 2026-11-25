@@ -139,9 +139,12 @@ async def test_scoring_same_body_once_changed_body_again(
     assert application.consent_bki_at is not None
 
 
-async def test_scoring_for_unknown_order_is_404(partner_webhook_client):
+async def test_scoring_for_unknown_order_without_passport_is_422(partner_webhook_client):
+    """Неизвестный orderId больше не 404: заявка создаётся из самого /scoring
+    (решение владельца 20.11.2026, tests/test_scoring_creates_application.py) —
+    но без паспорта applicant создавать её не из чего, ответ 422."""
     response = await partner_webhook_client.post(SCORING_PATH, json=scoring_body(new_order_id()), headers=crm_headers())
-    assert response.status_code == 404
+    assert response.status_code == 422
 
 
 async def test_manual_status_change_causes_conflict_from_409_body(

@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, Response, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 
 from app.api.applications import router as applications_router
@@ -56,6 +58,31 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="DIALOG Scoring", lifespan=lifespan)
+
+_CRM_PREFIX = "/api/v1/crm/"
+
+
+# Запрос CRM отклонён — в лог причину (25.11.2026: CRM получала 422, а у нас
+# в логах был только код). Только путь, код и что не так с полями — без
+# значений (правило 7: там ФИО и паспорт).
+@app.exception_handler(RequestValidationError)
+async def _log_crm_validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith(_CRM_PREFIX):
+        logger.warning(
+            "partner_webhook_rejected", path=request.url.path, status_code=422,
+            errors=[{"loc": ".".join(str(p) for p in e.get("loc", ())), "type": e.get("type")} for e in exc.errors()],
+        )
+    return await request_validation_exception_handler(request, exc)
+
+
+@app.exception_handler(HTTPException)
+async def _log_crm_http_error(request: Request, exc: HTTPException):
+    if request.url.path.startswith(_CRM_PREFIX) and exc.status_code >= 400:
+        logger.warning(
+            "partner_webhook_rejected", path=request.url.path, status_code=exc.status_code,
+            detail=str(exc.detail)[:200],
+        )
+    return await http_exception_handler(request, exc)
 # На уровне модуля, не в lifespan: ASGI-транспорт в тестах (httpx.ASGITransport)
 # не шлёт lifespan-события вовсе, а само хранилище — дешёвый объект без I/O
 # при создании (само чтение/запись — уже с диском, при вызове save/read).
