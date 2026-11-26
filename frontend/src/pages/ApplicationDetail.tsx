@@ -11,6 +11,7 @@ import { ClientRatingPanel } from "../components/ClientRating";
 import { FedresursPanel } from "../components/FedresursPanel";
 import { BkiRequestPanel } from "../components/BkiRequestPanel";
 import { BlacklistAddButton } from "../components/BlacklistAddButton";
+import { DeleteApplicationButton } from "../components/DeleteApplication";
 import { FsspPanel } from "../components/FsspPanel";
 import { SnapshotHistory } from "../components/SnapshotHistory";
 import { SourceBadge } from "../components/SourceBadge";
@@ -418,6 +419,7 @@ export function ApplicationDetailPage() {
                   }}
                 />
               )}
+              {employee?.role === "admin" && <DeleteApplicationButton applicationId={app.id} number={app.number} />}
               <div className="decision-stub__row" title="Пока недоступно — появится позже">
                 <button type="button" className="btn decision-stub__btn" disabled>
                   Принять

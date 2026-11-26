@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import Text, and_, case, cast, exists, func, or_, select
@@ -57,6 +58,7 @@ from app.sources.runner import record_check
 from app.storage.base import Storage
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
+logger = structlog.get_logger(__name__)
 
 _MASKED_NAME = "Клиент скрыт"
 
@@ -1651,3 +1653,46 @@ async def retry_check(
             can_retry=_can_retry(new_check.source, new_check.status),
         )
     )
+
+
+# --- удаление заявки ---------------------------------------------------------
+
+_DELETE_ROLES = ("admin",)
+
+
+@router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_application(
+    application_id: UUID,
+    request: Request,
+    confirm_number: int = Query(..., description="номер заявки — подтверждение, что удаляют именно её"),
+    employee: Employee = Depends(require_roles(*_DELETE_ROLES)),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Удалить заявку целиком (решение владельца 26.11.2026: кнопка в админке
+    — раньше только консольная команда app/cli/delete_application.py, та же
+    логика). Осознанное исключение из правила 1 CLAUDE.md: удаляются заявка и
+    всё, что на неё ссылается (проверки, решения, история…); клиент и фото в
+    хранилище остаются. Только администратор, с подтверждением номером
+    заявки. Факт удаления — в журнал аудита (номер и номер в CRM, без
+    персданных); запись аудита остаётся."""
+    from app.cli.delete_application import delete_applications
+
+    application = await session.get(Application, application_id)
+    if application is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="заявка не найдена")
+    if confirm_number != application.number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="номер для подтверждения не совпадает с номером заявки",
+        )
+    number, external_id = application.number, application.external_id
+    session.expunge(application)
+    await delete_applications(session, [application_id], dry_run=False)
+    await record_audit(
+        session, employee_id=employee.id, action="delete_application",
+        object_type="application", object_id=application_id, request=request,
+        details={"number": number, "external_id": external_id},
+    )
+    await session.commit()
+    logger.warning("application_deleted", application_number=number, external_id=external_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

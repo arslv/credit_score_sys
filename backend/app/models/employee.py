@@ -35,6 +35,8 @@ AUDIT_LOG_ACTIONS = (
     "create_application",
     # Правка анкеты сотрудником (заявка проверяется заново).
     "edit_application",
+    # Удаление заявки целиком администратором (миграция 0028).
+    "delete_application",
 )
 STATUS_HISTORY_ACTOR_TYPES = ("system", "employee", "client")
 

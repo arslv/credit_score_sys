@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
+import { DeleteApplicationDialog } from "../components/DeleteApplication";
 import { useAuth } from "../auth/AuthProvider";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination, SearchInput, useDebounced } from "../components/ui";
 import { formatAmount, formatDateTime, formatElapsed, formatShortDateTime } from "../lib/format";
@@ -286,7 +287,12 @@ export function ApplicationsListPage() {
                   )}
                 </td>
                 <td className="cell-menu">
-                  <RowMenu id={item.id} canEdit={CREATE_ROLES.includes(employee?.role ?? "")} />
+                  <RowMenu
+                    id={item.id}
+                    number={item.number}
+                    canEdit={CREATE_ROLES.includes(employee?.role ?? "")}
+                    canDelete={employee?.role === "admin"}
+                  />
                 </td>
               </tr>
             ))}
@@ -305,8 +311,19 @@ export function ApplicationsListPage() {
 // «⋮» у строки — действия с заявкой, как в списке CRM. Меню «плавает»
 // поверх страницы (position: fixed): таблица в рамке с прокруткой и иначе
 // его обрезает. У нижнего края экрана открывается вверх.
-function RowMenu({ id, canEdit }: { id: string; canEdit: boolean }) {
+function RowMenu({
+  id,
+  number,
+  canEdit,
+  canDelete,
+}: {
+  id: string;
+  number: number;
+  canEdit: boolean;
+  canDelete: boolean;
+}) {
   const [place, setPlace] = useState<React.CSSProperties | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const open = place !== null;
   const ref = useRef<HTMLDivElement>(null);
   const anchor = useRef<{ el: HTMLElement; top: number; left: number } | null>(null);
@@ -365,7 +382,29 @@ function RowMenu({ id, canEdit }: { id: string; canEdit: boolean }) {
               Изменить анкету
             </button>
           )}
+          {canDelete && (
+            <button
+              type="button"
+              role="menuitem"
+              className="row-menu__danger"
+              onClick={() => {
+                setPlace(null);
+                setDeleting(true);
+              }}
+            >
+              Удалить заявку
+            </button>
+          )}
         </div>
+      )}
+      {canDelete && (
+        <DeleteApplicationDialog
+          applicationId={id}
+          number={number}
+          open={deleting}
+          onClose={() => setDeleting(false)}
+          onDeleted={() => setDeleting(false)}
+        />
       )}
     </div>
   );

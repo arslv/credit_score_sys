@@ -5473,6 +5473,9 @@ mark {
   grid-template-areas:
     "bki passport lists"
     "debts passport tax";
+  /* Первая строка — по содержимому (кредитная история и перечни не
+     растягиваются, когда паспорт длинный); добирает высоту вторая. */
+  grid-template-rows: auto 1fr;
   gap: var(--space-3);
 }
 
@@ -5490,6 +5493,7 @@ mark {
       "bki debts"
       "passport lists"
       "passport tax";
+    grid-template-rows: auto auto 1fr;
   }
 }
 
@@ -5497,6 +5501,7 @@ mark {
   .chk__grid {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "bki" "debts" "passport" "lists" "tax";
+    grid-template-rows: none;
   }
 }
 
@@ -7793,4 +7798,18 @@ mark {
 
 .sidebar-foot .theme-switch {
   flex: 0 0 auto;
+}
+
+/* Удаление заявки (components/DeleteApplication.tsx). */
+.del-app__text {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+}
+
+.del-app__field input {
+  max-width: 160px;
+}
+
+.row-menu__list .row-menu__danger {
+  color: var(--status-bad);
 }

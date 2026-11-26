@@ -424,6 +424,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   change_setting: "Изменение настройки",
   request_bki_report: "Запрос отчёта БКИ",
   create_application: "Заявка заведена вручную",
+  edit_application: "Правка анкеты",
+  delete_application: "Удаление заявки",
 };
 
 export function auditActionLabel(action: string): string {
