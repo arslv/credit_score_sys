@@ -266,6 +266,12 @@ export function ChecksOverview({
   const present = order.filter((t) => count(t) > 0);
   const summaryText = present.map((t) => `${count(t)} ${TONE_TEXT[t](count(t))}`).join(", ");
 
+  const byTitle = new Map(sections.map((section) => [section.title, section]));
+  const card = (title: string) => {
+    const section = byTitle.get(title);
+    return section ? <GroupCard key={title} title={title} rows={section.rows} actions={rowActions} /> : null;
+  };
+
   return (
     <section className="pf-card chk" aria-labelledby="chk-title">
       <header className="chk__head">
@@ -294,15 +300,31 @@ export function ChecksOverview({
         </div>
       </header>
 
+      {/* Три независимые колонки (26.11.2026): карточка идёт сразу под
+          соседней по колонке — высокие «Перечни» или «Паспорт» больше не
+          растягивают кредитную историю; нижняя карточка колонки добирает
+          высоту, низ ровный. На узком экране — прежняя сетка (index.css). */}
       <div className="chk__grid">
-        <BkiTile result={bki} tone={bkiTone} action={bkiAction} />
-        {sections.map((section) => (
-          <GroupCard key={section.title} title={section.title} rows={section.rows} actions={rowActions} />
-        ))}
+        <div className="chk__col">
+          <BkiTile result={bki} tone={bkiTone} action={bkiAction} />
+          {card("Долги и банкротство")}
+        </div>
+        <div className="chk__col">{card("Паспорт")}</div>
+        <div className="chk__col">
+          {card("Перечни")}
+          {card("Налоговая")}
+        </div>
+        {sections
+          .filter((section) => !PLACED.has(section.title))
+          .map((section) => (
+            <GroupCard key={section.title} title={section.title} rows={section.rows} actions={rowActions} />
+          ))}
       </div>
     </section>
   );
 }
+
+const PLACED = new Set(["Паспорт", "Перечни", "Налоговая", "Долги и банкротство"]);
 
 function GroupCard({ title, rows, actions }: { title: string; rows: Row[]; actions: Record<string, ReactNode> }) {
   const rowTones = rows.map((r) => worst(r.lines.map((l) => l.tone)));
