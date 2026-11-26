@@ -7822,9 +7822,9 @@ mark {
 }
 
 .court__summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  margin: 0 0 6px;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
 }
 
 .court__chip {
@@ -7854,7 +7854,9 @@ mark {
 .court__list {
   display: grid;
   gap: 4px;
-  max-height: 340px;
+  max-height: 300px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
   margin: 0;
   padding: 0 4px 0 0;
   overflow-y: auto;
@@ -7875,9 +7877,7 @@ mark {
 .court__head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto 14px;
-  grid-template-areas:
-    "kind date chevron"
-    "meta meta chevron";
+  grid-template-areas: "kind date chevron";
   align-items: center;
   column-gap: 8px;
   width: 100%;
@@ -7980,7 +7980,8 @@ mark {
   .chk__grid {
     grid-template-areas: none;
     grid-template-rows: none;
-    align-items: stretch;
+    /* Карточки — по высоте содержимого, без пустоты внутри (26.11.2026). */
+    align-items: start;
   }
 
   .chk__col {
@@ -7990,9 +7991,6 @@ mark {
     min-width: 0;
   }
 
-  .chk__col > :last-child {
-    flex: 1 1 auto;
-  }
 }
 
 @media (max-width: 1100px) {

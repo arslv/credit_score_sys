@@ -38,8 +38,16 @@ function isClient(side: CourtSide, clientName: string | null): boolean {
 }
 
 // Вид дела: бюро присылает код (CIVIL) и описание («Гражданские дела») —
-// показываем описание.
-const caseKind = (c: CourtCase) => c.case_type?.description || c.case_type?.name || "Дело";
+// показываем описание, коротко: «Гражданские дела» → «Гражданское».
+const KIND_SHORT: Record<string, string> = {
+  "Гражданские дела": "Гражданское",
+  "Административные дела": "Административное",
+  "Уголовные дела": "Уголовное",
+};
+const caseKind = (c: CourtCase) => {
+  const kind = c.case_type?.description || c.case_type?.name || "Дело";
+  return KIND_SHORT[kind] ?? kind;
+};
 
 const clientRole = (c: CourtCase, clientName: string | null) =>
   c.sides?.find((s) => isClient(s, clientName))?.category ?? null;
@@ -83,21 +91,12 @@ export function CourtDetails({ parsed, clientName }: { parsed: Record<string, un
       </button>
       {open && (
         <div className="court__body">
-          <div className="court__summary">
-            {kinds.map(([kind, n]) => (
-              <span key={kind} className="court__chip">
-                {kind} <b>{n}</b>
-              </span>
-            ))}
-            {roles.map(([role, n]) => (
-              <span key={role} className="court__chip court__chip--role">
-                клиент — {role.toLowerCase()} <b>{n}</b>
-              </span>
-            ))}
-          </div>
-          <p className="court__note">
-            Поиск по ФИО — бывают однофамильцы.
-            {total > raw.length && ` Показаны ${items.length} из ${total}.`}
+          <p className="court__summary">
+            {kinds.map(([kind, n]) => `${kind} ${n}`).join(" · ")}
+            {roles.length > 0 && (
+              <span className="court__role"> · {roles.map(([role, n]) => `${role.toLowerCase()} ${n}`).join(", ")}</span>
+            )}
+            {total > raw.length && <span> · показаны {items.length} из {total}</span>}
           </p>
           <ul className="court__list">
             {items.map((c, i) => {
@@ -112,19 +111,21 @@ export function CourtDetails({ parsed, clientName }: { parsed: Record<string, un
                     aria-expanded={isOpen}
                     onClick={() => setExpanded(isOpen ? null : id)}
                   >
-                    <span className="court__kind">{caseKind(c)}</span>
-                    {c.registration_date && <span className="court__date">{ruDate(c.registration_date)}</span>}
-                    <span className="court__meta">
-                      {c.number ? `№ ${c.number}` : "без номера"}
-                      {role && <span className="court__role">{role}</span>}
-                      {c.case_status && <span className="court__status">{c.case_status}</span>}
+                    <span className="court__kind">
+                      {caseKind(c)}
+                      {role && <span className="court__role"> · {role}</span>}
                     </span>
+                    {c.registration_date && <span className="court__date">{ruDate(c.registration_date)}</span>}
                     <span className="court__chevron" aria-hidden="true">
                       ›
                     </span>
                   </button>
                   {isOpen && (
                     <div className="court__more">
+                      <div className="court__muted">
+                        {c.number ? `№ ${c.number}` : "без номера"}
+                        {c.case_status && ` · ${c.case_status}`}
+                      </div>
                       {c.articles && c.articles.length > 0 && <div>Статьи: {c.articles.join(", ")}</div>}
                       {c.sides && c.sides.length > 0 && (
                         <ul className="court__sides">
