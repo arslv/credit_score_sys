@@ -475,6 +475,7 @@ export function ApplicationDetailPage() {
         bureau={bureauChecks}
         guarantorId={app.guarantor_id ?? null}
         guarantorName={guarantorName || null}
+        clientName={app.client_name ?? null}
         bki={app.bki_result ?? null}
         bkiAction={
           bkiWaiting || bkiRetry || app.bki_order?.pending ? (

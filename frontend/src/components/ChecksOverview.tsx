@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { components } from "../api/schema";
 import { formatAmount, formatDateTime } from "../lib/format";
 import { CreditDetails } from "./CreditDetails";
+import { CourtDetails } from "./CourtDetails";
 import { BureauFsspDetails, FsspDetails } from "./FsspDetails";
 import { checkResultLabel, fsspEndReason, passportCheckLabel, passportCheckStatusLabel, sourceMeta } from "../lib/labels";
 
@@ -148,6 +149,7 @@ export function ChecksOverview({
   bureau,
   guarantorId,
   guarantorName = null,
+  clientName = null,
   bki,
   bkiAction = null,
   rowActions = {},
@@ -158,6 +160,8 @@ export function ChecksOverview({
   guarantorId: string | null;
   /** ФИО поручителя — рядом с пометкой «поручитель», чтобы было видно, кого проверяем. */
   guarantorName?: string | null;
+  /** ФИО заявителя — выделить его среди сторон судебных дел. */
+  clientName?: string | null;
   bki: BkiResult | null;
   /** Кнопки запроса отчёта БКИ — внизу плитки «Кредитная история». */
   bkiAction?: ReactNode;
@@ -178,7 +182,13 @@ export function ChecksOverview({
     tone: checkTone(b.status),
     bureau: true,
     // ФССП от бюро — производства с разворотом (23.11.2026).
-    details: b.source === "fssp" && b.parsed ? <BureauFsspDetails parsed={b.parsed} /> : undefined,
+    details:
+      b.source === "fssp" && b.parsed ? (
+        <BureauFsspDetails parsed={b.parsed} />
+      ) : b.source === "courts" && b.parsed ? (
+        // Суды — дела с разворотом (26.11.2026).
+        <CourtDetails parsed={b.parsed} clientName={clientName} />
+      ) : undefined,
   });
 
   // Строки раздела: наши проверки, «не проверено» для ручных и итоги бюро —

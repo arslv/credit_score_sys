@@ -7813,3 +7813,55 @@ mark {
 .row-menu__list .row-menu__danger {
   color: var(--status-bad);
 }
+
+/* Суды из отчёта бюро — дела с разворотом (components/CourtDetails.tsx). */
+.court-det__note {
+  margin: 0 0 8px;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+.court-det__muted {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.court-det__title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.court-det__status {
+  margin-top: 2px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.fssp-det__item.court-det__item {
+  border-left-color: var(--color-border-strong);
+}
+
+.court-det__line {
+  margin-top: 3px;
+  font-size: var(--font-sm);
+}
+
+.court-det__sides {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-sm);
+}
+
+.court-det__side--client {
+  font-weight: 600;
+  color: var(--status-bad);
+}
+
+.court-det__link {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: var(--font-xs);
+}
