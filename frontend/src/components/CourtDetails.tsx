@@ -1,23 +1,22 @@
 import { useState } from "react";
+import { explainArticle } from "../lib/courtArticles";
 
 // Дело из блока «Суды общей юрисдикции» отчёта бюро (Спектрум, «Премиум»).
-// Поля — по реальному отчёту (сервер, 26.11.2026): номер, суд, регион,
-// судья, вид дела, стороны, последнее событие, ссылка на карточку дела.
+// Поля — по реальному отчёту (сервер, 26.11.2026): номер, вид дела, статьи,
+// стороны, статус, последнее событие, ссылка на карточку дела. Суммы иска
+// бюро не присылает. Суд, регион и судью не показываем — для решения по
+// рассрочке они ничего не дают (решение владельца 26.11.2026).
 type CourtSide = { name?: string; category?: string; code?: string; type?: string; inn?: string; ogrn?: string };
 type CourtCase = {
   uid?: string;
   number?: string;
   court_name?: string;
-  region?: string;
-  judge?: string;
   registration_date?: string;
   case_status?: string;
   case_type?: { name?: string; description?: string };
   articles?: string[];
   sides?: CourtSide[];
   last_event?: { name?: string; date?: string };
-  events_count?: number;
-  documents_count?: number;
   source_url?: string;
 };
 
@@ -37,8 +36,7 @@ function isClient(side: CourtSide, clientName: string | null): boolean {
   return name.includes(first) || name.includes(`${first[0]}.`);
 }
 
-// Вид дела: бюро присылает код (CIVIL) и описание («Гражданские дела») —
-// показываем описание, коротко: «Гражданские дела» → «Гражданское».
+// Вид дела: бюро присылает код (CIVIL) и описание («Гражданские дела»).
 const KIND_SHORT: Record<string, string> = {
   "Гражданские дела": "Гражданское",
   "Административные дела": "Административное",
@@ -49,8 +47,44 @@ const caseKind = (c: CourtCase) => {
   return KIND_SHORT[kind] ?? kind;
 };
 
-const clientRole = (c: CourtCase, clientName: string | null) =>
-  c.sides?.find((s) => isClient(s, clientName))?.category ?? null;
+type Gist = {
+  /** Суть дела одной фразой — заголовок строки. */
+  title: string;
+  /** Пояснение мелко: статья или вторая сторона. */
+  note: string | null;
+  /** Дело про деньги и долги — выделяем красным. */
+  money: boolean;
+};
+
+/**
+ * Суть дела вместо «Административное · Ответчик»: по статье КоАП/УК — что
+ * за нарушение; по гражданскому — кто и к кому (судебный приказ — это
+ * взыскание бесспорного долга).
+ */
+function gist(c: CourtCase, clientName: string | null): Gist {
+  const kind = caseKind(c);
+  const article = c.articles?.[0] ?? null;
+  if (kind === "Административное" || kind === "Уголовное") {
+    const code = kind === "Уголовное" ? "УК" : "КоАП";
+    const ex = article ? explainArticle(article, code) : null;
+    const ref = article ? `${article.replace(/^ст\.?\s*/i, "ст. ")} ${code}` : null;
+    return { title: ex?.label ?? kind, note: ref, money: Boolean(ex?.money) };
+  }
+  const other = c.sides?.find((s) => !isClient(s, clientName) && s.name) ?? null;
+  const who = other ? `${other.category ? `${other.category}: ` : ""}${other.name}` : null;
+  const role = c.sides?.find((s) => isClient(s, clientName))?.category?.toLowerCase() ?? "";
+  const status = `${c.case_status ?? ""} ${c.last_event?.name ?? ""}`.toLowerCase();
+  if (status.includes("приказ")) {
+    return { title: "Взыскание долга", note: who, money: true };
+  }
+  if (/истец|взыскатель|заявитель/.test(role)) {
+    return { title: "Иск клиента", note: who, money: false };
+  }
+  if (/ответчик|должник/.test(role)) {
+    return { title: "Иск к клиенту", note: who, money: true };
+  }
+  return { title: kind, note: who, money: false };
+}
 
 // Бюро присылает одно и то же дело дважды (разные записи по одному номеру).
 function dedupe(items: CourtCase[]): CourtCase[] {
@@ -70,9 +104,10 @@ function countBy(values: string[]): [string, number][] {
 }
 
 /**
- * «Суды общей юрисдикции» из отчёта бюро: сводка (виды дел, роль клиента) и
- * компактный список — по строке на дело, подробности по клику; длинный
- * список прокручивается внутри. Поиск у бюро — по ФИО, бывают однофамильцы.
+ * «Суды общей юрисдикции» из отчёта бюро: сводка и компактный список —
+ * строка на дело (суть · дата), по клику итог, ход дела и ссылка на суд;
+ * длинный список прокручивается внутри. Поиск у бюро — по ФИО, бывают
+ * однофамильцы.
  */
 export function CourtDetails({ parsed, clientName }: { parsed: Record<string, unknown>; clientName: string | null }) {
   const [open, setOpen] = useState(false);
@@ -81,8 +116,9 @@ export function CourtDetails({ parsed, clientName }: { parsed: Record<string, un
   if (raw.length === 0) return null;
   const items = dedupe(raw);
   const total = typeof parsed.count === "number" ? parsed.count : raw.length;
+  const gists = items.map((c) => gist(c, clientName));
   const kinds = countBy(items.map(caseKind));
-  const roles = countBy(items.map((c) => clientRole(c, clientName)).filter((r): r is string => Boolean(r)));
+  const money = gists.filter((g) => g.money).length;
 
   return (
     <div className="fssp-det court">
@@ -93,16 +129,14 @@ export function CourtDetails({ parsed, clientName }: { parsed: Record<string, un
         <div className="court__body">
           <p className="court__summary">
             {kinds.map(([kind, n]) => `${kind} ${n}`).join(" · ")}
-            {roles.length > 0 && (
-              <span className="court__role"> · {roles.map(([role, n]) => `${role.toLowerCase()} ${n}`).join(", ")}</span>
-            )}
+            {money > 0 && <span className="court__money"> · про долги и деньги {money}</span>}
             {total > raw.length && <span> · показаны {items.length} из {total}</span>}
           </p>
           <ul className="court__list">
             {items.map((c, i) => {
               const id = c.uid ?? `${c.number}-${i}`;
               const isOpen = expanded === id;
-              const role = clientRole(c, clientName);
+              const g = gists[i];
               return (
                 <li key={id} className={isOpen ? "court__case court__case--open" : "court__case"}>
                   <button
@@ -112,8 +146,8 @@ export function CourtDetails({ parsed, clientName }: { parsed: Record<string, un
                     onClick={() => setExpanded(isOpen ? null : id)}
                   >
                     <span className="court__kind">
-                      {caseKind(c)}
-                      {role && <span className="court__role"> · {role}</span>}
+                      <span className={g.money ? "court__money" : undefined}>{g.title}</span>
+                      {g.note && <span className="court__note">{g.note}</span>}
                     </span>
                     {c.registration_date && <span className="court__date">{ruDate(c.registration_date)}</span>}
                     <span className="court__chevron" aria-hidden="true">
@@ -121,39 +155,36 @@ export function CourtDetails({ parsed, clientName }: { parsed: Record<string, un
                     </span>
                   </button>
                   {isOpen && (
-                    <div className="court__more">
-                      <div className="court__muted">
-                        {c.number ? `№ ${c.number}` : "без номера"}
-                        {c.case_status && ` · ${c.case_status}`}
-                      </div>
-                      {c.articles && c.articles.length > 0 && <div>Статьи: {c.articles.join(", ")}</div>}
-                      {c.sides && c.sides.length > 0 && (
-                        <ul className="court__sides">
-                          {c.sides.map((s, k) => (
-                            <li key={k} className={isClient(s, clientName) ? "court__side court__side--client" : "court__side"}>
-                              <span className="court__muted">{s.category ?? "сторона"}:</span> {s.name ?? "—"}
-                            </li>
-                          ))}
-                        </ul>
+                    <dl className="court__more">
+                      {c.articles && c.articles.length > 1 && (
+                        <>
+                          <dt>Статьи</dt>
+                          <dd>{c.articles.join(", ")}</dd>
+                        </>
+                      )}
+                      {c.case_status && (
+                        <>
+                          <dt>Итог</dt>
+                          <dd>{c.case_status}</dd>
+                        </>
                       )}
                       {c.last_event?.name && (
-                        <div>
-                          Последнее: {c.last_event.name}
-                          {c.last_event.date && ` · ${ruDate(c.last_event.date)}`}
-                          {typeof c.events_count === "number" && c.events_count > 1 && (
-                            <span className="court__muted"> (событий: {c.events_count})</span>
-                          )}
-                        </div>
+                        <>
+                          <dt>Последнее</dt>
+                          <dd>
+                            {c.last_event.name}
+                            {c.last_event.date && <span className="court__muted"> · {ruDate(c.last_event.date)}</span>}
+                          </dd>
+                        </>
                       )}
-                      <div className="court__muted">
-                        {[c.court_name, c.region, c.judge && `судья ${c.judge}`].filter(Boolean).join(" · ")}
-                      </div>
-                      {c.source_url && /^https?:\/\//.test(c.source_url) && (
+                      {c.source_url && /^https?:\/\//.test(c.source_url) ? (
                         <a href={c.source_url} target="_blank" rel="noreferrer noopener">
-                          Карточка дела на сайте суда ↗
+                          Дело {c.number ? `№ ${c.number}` : ""} на сайте суда ↗
                         </a>
+                      ) : (
+                        c.number && <span className="court__muted">Дело № {c.number}</span>
                       )}
-                    </div>
+                    </dl>
                   )}
                 </li>
               );

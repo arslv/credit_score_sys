@@ -7814,7 +7814,7 @@ mark {
   color: var(--status-bad);
 }
 
-/* Суды из отчёта бюро (components/CourtDetails.tsx): сводка чипами и
+/* Суды из отчёта бюро (components/CourtDetails.tsx): сводка строкой и
    компактный список — строка на дело, подробности по клику; длинный
    список прокручивается внутри, карточку не растягивает. */
 .court__body {
@@ -7827,29 +7827,9 @@ mark {
   color: var(--color-text-muted);
 }
 
-.court__chip {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
-  background: color-mix(in srgb, var(--status-neutral) 16%, transparent);
-}
 
-.court__chip b {
-  margin-left: 2px;
-  color: var(--color-text);
-}
 
-.court__chip--role {
-  color: var(--status-bad);
-  background: color-mix(in srgb, var(--status-bad) 12%, transparent);
-}
 
-.court__note {
-  margin: 6px 0 8px;
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
-}
 
 .court__list {
   display: grid;
@@ -7878,7 +7858,7 @@ mark {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto 14px;
   grid-template-areas: "kind date chevron";
-  align-items: center;
+  align-items: baseline;
   column-gap: 8px;
   width: 100%;
   padding: 7px 10px;
@@ -7898,11 +7878,10 @@ mark {
 
 .court__kind {
   grid-area: kind;
-  overflow: hidden;
+  min-width: 0;
   font-size: var(--font-sm);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
 }
 
 .court__date {
@@ -7912,27 +7891,8 @@ mark {
   color: var(--color-text-muted);
 }
 
-.court__meta {
-  grid-area: meta;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  margin-top: 2px;
-  font-size: var(--font-xs);
-  color: var(--color-text-muted);
-}
 
-.court__role {
-  font-weight: 600;
-  color: var(--status-bad);
-}
 
-.court__status {
-  padding: 0 6px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--status-neutral) 16%, transparent);
-}
 
 .court__chevron {
   grid-area: chevron;
@@ -7945,26 +7905,47 @@ mark {
   transform: rotate(90deg);
 }
 
+
+
+
+
+.court__money {
+  font-weight: 600;
+  color: var(--status-bad);
+}
+
+.court__note {
+  display: block;
+  font-weight: 400;
+  font-size: var(--font-xs);
+  color: var(--color-text-muted);
+}
+
+/* Раскрытое дело: подпись слева, значение справа. */
 .court__more {
   display: grid;
-  gap: 3px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 10px;
+  margin: 0;
   padding: 0 10px 9px;
   font-size: var(--font-sm);
 }
 
-.court__more a {
+.court__more dt {
   font-size: var(--font-xs);
+  line-height: 1.6;
+  color: var(--color-text-muted);
 }
 
-.court__sides {
+.court__more dd {
   margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
-.court__side--client {
-  font-weight: 600;
-  color: var(--status-bad);
+.court__more > a,
+.court__more > span {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  font-size: var(--font-xs);
 }
 
 .court__muted {
